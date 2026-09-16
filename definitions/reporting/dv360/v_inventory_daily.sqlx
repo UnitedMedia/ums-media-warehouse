@@ -38,5 +38,5 @@ SELECT
   ${metrics.ctr("f.clicks", "f.impressions")}                    AS ctr,
   ${metrics.interactionRate("f.interactions", "f.impressions")}  AS interaction_rate,
   ${metrics.completionRate("f.complete_views", "f.impressions")} AS completion_rate
-FROM ${ref("fct_dv360_inventory_daily")} f
+FROM ${ref({ schema: constants.SCHEMAS.dv360_marts, name: "fct_dv360_inventory_daily" })} f
 LEFT JOIN ${ref("dim_dv360_line_item")} d USING (line_item_id)

@@ -68,6 +68,21 @@ FROM ${ref({ schema: constants.DATASETS.kebooladv, name: "fct_dv360_geo_daily" }
 This holds for all sources, not only the colliding ones, so nobody has to
 remember which six are dangerous.
 
+**And the same applies in the other direction.** Because those six names are
+shared, a bare `ref("fct_dv360_geo_daily")` aimed at the *mart* is just as
+ambiguous. Every reference to one of the six — from a reporting view, from an
+assertion, from anywhere — names its schema too:
+
+```sqlx
+FROM ${ref({ schema: constants.SCHEMAS.dv360_marts, name: "fct_dv360_geo_daily" })}
+```
+
+Dataform fails compilation on this rather than guessing, so you find out
+immediately. The six names are: `fct_dv360_creative_daily`,
+`fct_dv360_geo_daily`, `fct_dv360_inventory_daily`,
+`fct_dv360_placement_daily`, `fct_dv360_reach_daily`,
+`fct_dv360_timeofday_daily`.
+
 ---
 
 ## Seeds: two kinds, and they behave differently
@@ -140,8 +155,18 @@ number is wrong:
 | `assert_meta_spend_reconciliation` | de-duplication changed the money |
 | `assert_meta_alias_leak` | a purchase alias got past the whitelist |
 | `assert_meta_results_coverage` | spend exists under an optimization goal with no Results definition |
+| `assert_meta_ad_daily_grain` | duplicate or null-keyed rows at Meta's base grain |
+| `assert_staging_date_parsing` | a channel's date or hour string stopped parsing |
 
 Thresholds live in `workflow_settings.yaml`, not in the SQL.
+
+Two tables carry `requirePartitionFilter` and therefore have **no** `assertions`
+block in their config: `fct_meta_ad_daily` and `fct_cm360_placement_hourly`.
+Dataform generates those assertions without a date filter, and BigQuery refuses
+to run an unfiltered query against such a table. The equivalent checks are
+written by hand in `assert_meta_ad_daily_grain` and `assert_cm360_hourly_grain`,
+where the filter can go in. If you add `requirePartitionFilter` to another
+table, move its assertions out the same way.
 
 **`reporting.v_data_gaps`** is everything else: unmapped sites, unnamed
 advertisers, unmapped clients, action types with no seed row, breakdown rows

@@ -17,5 +17,5 @@ SELECT
   d.line_item_id,
   d.line_item_type,
   f.unique_reach
-FROM ${ref("fct_dv360_reach_daily")} f
+FROM ${ref({ schema: constants.SCHEMAS.dv360_marts, name: "fct_dv360_reach_daily" })} f
 LEFT JOIN ${ref("dim_dv360_line_item")} d USING (line_item_id)

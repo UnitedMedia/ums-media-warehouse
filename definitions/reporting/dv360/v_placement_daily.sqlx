@@ -25,5 +25,5 @@ SELECT
   f.spend,
   ${metrics.cpm("f.spend", "f.impressions")}  AS cpm,
   ${metrics.ctr("f.clicks", "f.impressions")} AS ctr
-FROM ${ref("fct_dv360_placement_daily")} f
+FROM ${ref({ schema: constants.SCHEMAS.dv360_marts, name: "fct_dv360_placement_daily" })} f
 LEFT JOIN ${ref("dim_dv360_line_item")} d USING (line_item_id)

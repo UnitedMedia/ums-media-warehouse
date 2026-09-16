@@ -1,0 +1,39 @@
+config {
+  type: "assertion",
+  tags: ["meta", "monitoring"],
+  description: "fct_meta_ad_daily must hold one row per date + ad, with no null keys. A duplicate here doubles that ad's spend in every Meta report."
+}
+
+-- This replaces the uniqueKey / nonNull assertions that would normally sit
+-- in the table's config. Dataform generates those WITHOUT a date filter,
+-- and fct_meta_ad_daily carries requirePartitionFilter, so BigQuery would
+-- refuse to run them. Written by hand, the filter goes in.
+--
+-- The null-key half runs against staging rather than the mart: a row with
+-- a NULL date lands in the table's __NULL__ partition, which the partition
+-- filter excludes, so the mart cannot see its own null dates.
+
+WITH duplicates AS (
+  SELECT
+    'duplicate date + ad_id'    AS problem,
+    CAST(date AS STRING)        AS date,
+    ad_id,
+    COUNT(*)                    AS rows_affected
+  FROM ${ref("fct_meta_ad_daily")}
+  WHERE ${constants.allPartitions()}
+  GROUP BY 1, 2, 3
+  HAVING COUNT(*) > 1
+),
+null_keys AS (
+  SELECT
+    'null date or ad_id in staging' AS problem,
+    CAST(date AS STRING)            AS date,
+    ad_id,
+    COUNT(*)                        AS rows_affected
+  FROM ${ref("stg_meta_ad_insight")}
+  WHERE date IS NULL OR ad_id IS NULL
+  GROUP BY 1, 2, 3
+)
+SELECT * FROM duplicates
+UNION ALL
+SELECT * FROM null_keys

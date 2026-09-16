@@ -1,0 +1,37 @@
+config {
+  type: "assertion",
+  tags: ["freshness", "monitoring"],
+  description: "Every channel delivers its date as a STRING and staging parses it. A parse failure is silent — the row survives with a NULL date and is then dropped by the mart, so money vanishes with no error anywhere. This is the check that makes that loud."
+}
+
+-- Also covers the CM360 hour column, which is extracted with a regex.
+-- If hour comes back NULL for every row, the backslash escaping in
+-- stg_cm360_hourly did not survive compilation — a .sqlx body is a JS
+-- template literal, so a lone backslash is swallowed.
+
+WITH checks AS (
+  SELECT
+    'stg_dv360_lineitem.date' AS check_name,
+    COUNTIF(date IS NULL)     AS bad_rows,
+    COUNT(*)                  AS total_rows
+  FROM ${ref("stg_dv360_lineitem")}
+
+  UNION ALL
+  SELECT 'stg_cm360_hourly.date', COUNTIF(date IS NULL), COUNT(*)
+  FROM ${ref("stg_cm360_hourly")}
+
+  UNION ALL
+  SELECT 'stg_cm360_hourly.hour', COUNTIF(hour IS NULL), COUNT(*)
+  FROM ${ref("stg_cm360_hourly")}
+
+  UNION ALL
+  SELECT 'stg_meta_ad_insight.date', COUNTIF(date IS NULL), COUNT(*)
+  FROM ${ref("stg_meta_ad_insight")}
+)
+SELECT
+  check_name,
+  bad_rows,
+  total_rows,
+  SAFE_DIVIDE(bad_rows, total_rows) AS bad_share
+FROM checks
+WHERE bad_rows > 0

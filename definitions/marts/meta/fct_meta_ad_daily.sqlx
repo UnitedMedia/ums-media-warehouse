@@ -9,14 +9,15 @@ config {
     clusterBy: ["account_id", "campaign_id", "ad_id"],
     requirePartitionFilter: true
   },
-  assertions: {
-    uniqueKey: ["date", "ad_id"],
-    nonNull: ["date", "ad_id"]
-  },
   columns: {
     reach: "Deduplicated by Meta at ad x day. Never SUM it above this grain — roll-ups of reach are not reach."
   }
 }
+
+-- No config-level assertions on this table. Dataform generates them
+-- without a date filter, and requirePartitionFilter makes BigQuery
+-- reject any such query. The equivalent checks live in
+-- assert_meta_ad_daily_grain, which filters explicitly.
 
 SELECT
   date,

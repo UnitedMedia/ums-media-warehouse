@@ -8,7 +8,7 @@ WITH backbone AS (
   SELECT SUM(spend) AS spend FROM ${ref("fct_dv360_daily")}
 ),
 creative AS (
-  SELECT SUM(spend) AS spend FROM ${ref("fct_dv360_creative_daily")}
+  SELECT SUM(spend) AS spend FROM ${ref({ schema: constants.SCHEMAS.dv360_marts, name: "fct_dv360_creative_daily" })}
 )
 SELECT
   b.spend AS backbone_spend,

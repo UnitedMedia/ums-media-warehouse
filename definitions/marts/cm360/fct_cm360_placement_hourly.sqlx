@@ -8,11 +8,12 @@ config {
     partitionBy: "date",
     clusterBy: ["campaign_id", "placement_id", "ad_id", "creative_id"],
     requirePartitionFilter: true
-  },
-  assertions: {
-    nonNull: ["date"]
   }
 }
+
+-- No config-level assertions here: Dataform generates them without a
+-- date filter and requirePartitionFilter makes BigQuery reject that.
+-- assert_cm360_hourly_grain covers the grain at staging instead.
 
 -- GRAIN RULE for the whole CM360 stack:
 --   fct_cm360_placement_hourly = date + hour + placement + ad + creative
