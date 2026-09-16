@@ -33,9 +33,20 @@ const ACTION_TYPES = [
   ["post_interaction_gross",          "interactions",         "engagement", true,  null],
   ["post_interaction_net",            "interactions_net",     "engagement", true,  null],
 
+  // Negative and net counterparts, found unmapped on 2026-09-16. Each gets
+  // its OWN metric — an unlike is not a like with a minus sign, and folding
+  // them together would hide the signal people actually want to see.
+  ["onsite_conversion.post_unlike",   "post_unlikes",         "engagement", true,  "Negative signal. Never net this off post_likes_net, which is already net."],
+  ["onsite_conversion.post_net_save", "post_saves_net",       "engagement", true,  "Saves net of unsaves. post_saves is the gross figure — do not add the two."],
+  ["onsite_conversion.post_unsave",   "post_unsaves",         "engagement", true,  "Negative signal."],
+  ["onsite_conversion.post_net_comment", "post_comments_net", "engagement", true,  "Comments net of deletions. post_comments is gross — do not add the two."],
+  ["post_uncomment",                  "post_uncomments",      "engagement", true,  "Negative signal."],
+  ["onsite_conversion.messaging_block","messaging_blocks",    "engagement", true,  "A person blocked the business in Messenger. Strong negative signal, worth watching on its own."],
+
   // ---- traffic ------------------------------------------------------
   ["link_click",                      "link_clicks",          "traffic",    true,  "Also on the parent table as inline_link_clicks; prefer the parent"],
   ["landing_page_view",               "landing_page_views",   "traffic",    true,  null],
+  ["onsite_conversion.engaged_page_view", "engaged_page_views", "traffic",  true,  "Meta's engaged page view. Not the same as a landing page view — do not add the two."],
 
   // ---- awareness ----------------------------------------------------
   ["video_view",                      "views_3s",             "awareness",  true,  "3-second video views. Not the full video funnel."],
@@ -92,6 +103,16 @@ const ACTION_TYPES = [
   ["offsite_complete_registration_add_20_s_calls", "registrations_incl_20s_calls",  "client_custom", true, null],
   ["offsite_content_view_add_meta_leads",          "content_views_incl_meta_leads", "client_custom", true, null],
   ["offsite_search_add_meta_leads",                "searches_incl_meta_leads",      "client_custom", true, null],
+  ["grouped_pixel_custom_conversions_add_20_s_calls", "custom_pixel_conversions_incl_20s_calls", "client_custom", true, null],
+  ["custom_event_actions_add_20_s_calls",             "custom_events_incl_20s_calls",            "client_custom", true, null],
+
+  // Meta's ROLL-UP of every custom pixel conversion on an ad. Kept visible
+  // and named "_all" rather than dropped, because dropping it would make 7
+  // real conversions vanish with no trace. But it OVERLAPS with the
+  // individually-named custom conversions resolved from
+  // offsite_conversion.custom.<id> — never add n_custom_pixel_conversions_all
+  // to those, or you count the same event twice.
+  ["offsite_conversion.fb_pixel_custom", "custom_pixel_conversions_all", "client_custom", true, "ROLL-UP. Overlaps with the named custom conversions. Report one or the other, never the sum."],
 ];
 
 // Meta's "Results" is not a field. It resolves from the ad set's
