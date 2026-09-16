@@ -1,0 +1,51 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.cm360_reporting,
+  name: "v_daily",
+  tags: ["cm360", "reporting"],
+  description: "Primary CM360 Looker Studio source. One row per date + placement + ad + creative, fully labelled. Ratios are computed here, never stored, which is what keeps them correct at every level Looker rolls them up to.",
+  columns: {
+    viewable_rate: "NOT CM360's 'Active View: % Viewable Impressions'. That metric's denominator is Measurable Impressions, which is absent from the Keboola report, so this reads LOWER than the CM360 UI. Add activeViewMeasurableImpressions to the report to close the gap.",
+    placement_first_active_date: "DERIVED from delivery, not the booked Placement Start Date. Do not use it for pacing."
+  }
+}
+
+SELECT
+  f.date,
+
+  -- dimensions, labelled
+  f.advertiser_id,
+  adv.advertiser_name,
+  f.campaign_id,
+  c.campaign_name,
+  f.site_id,
+  p.site_name,
+  p.channel_group,
+  f.placement_id,
+  f.ad_id,
+  f.creative_id,
+  ac.landing_page_url,
+
+  -- placement flight window, DERIVED from delivery
+  p.first_active_date AS placement_first_active_date,
+  p.last_active_date  AS placement_last_active_date,
+
+  -- additive metrics
+  f.impressions,
+  f.clicks,
+  f.viewable_impressions,
+  f.video_views,
+  f.media_cost,
+
+  -- derived ratios
+  ${metrics.ctr("f.clicks", "f.impressions")}                          AS click_rate,
+  ${metrics.cpm("f.media_cost", "f.impressions")}                      AS effective_cpm,
+  ${metrics.cpc("f.media_cost", "f.clicks")}                           AS effective_cpc,
+  ${metrics.viewableRate("f.viewable_impressions", "f.impressions")}   AS viewable_rate,
+  ${metrics.viewRate("f.video_views", "f.impressions")}                AS video_view_rate
+
+FROM ${ref("fct_cm360_placement_daily")} f
+LEFT JOIN ${ref("dim_cm360_advertiser")}   adv USING (advertiser_id)
+LEFT JOIN ${ref("dim_cm360_campaign")}     c   USING (campaign_id)
+LEFT JOIN ${ref("dim_cm360_placement")}    p   USING (placement_id)
+LEFT JOIN ${ref("dim_cm360_ad_creative")}  ac  USING (ad_id, creative_id)

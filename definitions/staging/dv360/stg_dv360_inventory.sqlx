@@ -1,0 +1,37 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.dv360_staging,
+  name: "stg_dv360_inventory",
+  tags: ["dv360", "staging"],
+  description: "DV360 inventory / environment breakdown. Media Type, Device Type, Environment, Exchange, Inventory Source, Channel and Ad Position live here and nowhere else. WARNING: the source held ONE day (2026-08-25, 84 rows) at the time of the probe."
+}
+
+SELECT
+  ${metrics.parseSlashDate("Date")} AS date,
+  Advertiser_ID         AS advertiser_id,
+  Advertiser            AS advertiser,
+  Advertiser_Currency   AS advertiser_currency,
+  Insertion_Order_ID    AS insertion_order_id,
+  Insertion_Order       AS insertion_order,
+  Line_Item_ID          AS line_item_id,
+  Line_Item             AS line_item,
+  Line_Item_Type        AS line_item_type,
+  Media_Type            AS media_type,
+  Device_Type           AS device_type,
+  Environment           AS environment,
+  Exchange_ID           AS exchange_id,
+  Exchange              AS exchange,
+  Inventory_Source      AS inventory_source,
+  Channel_ID            AS channel_id,
+  Channel               AS channel,
+  Channel_Type          AS channel_type,
+  Ad_Position           AS ad_position,
+  Impressions           AS impressions,
+  Clicks                AS clicks,
+  Engagements           AS interactions,
+  Complete_Views_Video  AS complete_views,
+  PostClick_Conversions AS postclick_conversions,
+  PostView_Conversions  AS postview_conversions,
+  Revenue_Adv_Currency  AS spend
+FROM ${ref({ schema: constants.DATASETS.kebooladv, name: "fct_dv360_inventory_daily" })}
+WHERE Date IS NOT NULL

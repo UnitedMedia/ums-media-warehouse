@@ -1,0 +1,58 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.meta_staging,
+  name: "stg_meta_breakdown",
+  tags: ["meta", "staging"],
+  description: "All five Meta breakdowns normalised to one shape. breakdown_1 / breakdown_2 hold whatever the slice is. These are five different cuts of the SAME spend — never union any of them with the ad-level fact.",
+  columns: {
+    ad_id: "NULL where Weld did not sync it for that breakdown. The NULL is meaningful: the row cannot be attributed below account level.",
+    breakdown_1: "First slice dimension — age, country, publisher_platform or region depending on breakdown_type",
+    breakdown_2: "Second slice dimension — gender or device_platform, NULL for one-dimensional breakdowns"
+  }
+}
+
+SELECT
+  'age_gender'                        AS breakdown_type,
+  DATE(date)                          AS date,
+  CAST(account_id AS STRING)          AS account_id,
+  CAST(NULL AS STRING)                AS ad_id,
+  age                                 AS breakdown_1,
+  gender                              AS breakdown_2,
+  CAST(spend AS NUMERIC)              AS spend,
+  CAST(impressions AS INT64)          AS impressions,
+  CAST(reach AS INT64)                AS reach,
+  CAST(clicks AS INT64)               AS clicks,
+  CAST(inline_link_clicks AS INT64)   AS link_clicks
+FROM ${ref({ schema: constants.DATASETS.meta, name: "demographics_age_and_gender" })}
+
+UNION ALL
+SELECT
+  'country', DATE(date), CAST(account_id AS STRING), CAST(ad_id AS STRING),
+  country, NULL,
+  CAST(spend AS NUMERIC), CAST(impressions AS INT64), CAST(reach AS INT64),
+  CAST(clicks AS INT64), CAST(inline_link_clicks AS INT64)
+FROM ${ref({ schema: constants.DATASETS.meta, name: "demographics_country_ad" })}
+
+UNION ALL
+SELECT
+  'publisher_platform', DATE(date), CAST(account_id AS STRING), CAST(ad_id AS STRING),
+  publisher_platform, NULL,
+  CAST(spend AS NUMERIC), CAST(impressions AS INT64), CAST(reach AS INT64),
+  CAST(clicks AS INT64), CAST(inline_link_clicks AS INT64)
+FROM ${ref({ schema: constants.DATASETS.meta, name: "demographics_delivery_platform_ad" })}
+
+UNION ALL
+SELECT
+  'platform_device', DATE(date), CAST(account_id AS STRING), CAST(NULL AS STRING),
+  publisher_platform, device_platform,
+  CAST(spend AS NUMERIC), CAST(impressions AS INT64), CAST(reach AS INT64),
+  CAST(clicks AS INT64), CAST(inline_link_clicks AS INT64)
+FROM ${ref({ schema: constants.DATASETS.meta, name: "demographics_delivery_platform_and_device" })}
+
+UNION ALL
+SELECT
+  'region', DATE(date), CAST(account_id AS STRING), CAST(NULL AS STRING),
+  region, NULL,
+  CAST(spend AS NUMERIC), CAST(impressions AS INT64), CAST(reach AS INT64),
+  CAST(clicks AS INT64), CAST(inline_link_clicks AS INT64)
+FROM ${ref({ schema: constants.DATASETS.meta, name: "demographics_region" })}

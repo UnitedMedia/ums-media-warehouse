@@ -1,0 +1,187 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.core,
+  name: "fct_ad_performance_daily",
+  tags: ["core"],
+  description: "Cross-channel daily performance in one schema, at CAMPAIGN grain — the coarsest grain all three channels share. Channel-specific detail stays in the channel marts and must not leak in here.",
+  bigquery: {
+    partitionBy: "date",
+    clusterBy: ["channel", "client_name", "campaign_id"]
+  },
+  assertions: {
+    uniqueKey: ["date", "channel", "campaign_id", "currency"],
+    nonNull: ["date", "channel"]
+  },
+  columns: {
+    client_name: "Canonical client, resolved through seed_client_name_map. Falls back to the channel's own spelling when the seed has no row — group on THIS, never on advertiser_raw_name.",
+    advertiser_raw_name: "Exactly what the channel calls the advertiser. Kept so an unmapped client can be traced back and added to the seed.",
+    currency: "NULL for CM360: the Keboola report carries no currency column. Do not add CM360 spend to another channel's without first deciding what currency you are in.",
+    conversions: "Each channel's OWN headline conversion count. These are NOT like for like — read conversions_definition on the same row before adding or comparing them.",
+    conversions_definition: "What produced the conversions figure on this row. Exists so nobody has to remember which channel means what.",
+    interactions: "NULL for CM360, which does not measure it. NULL means not measured; 0 would mean measured as zero.",
+    complete_views: "DV360 only. CM360 video_views and Meta views_3s are different measurements, not complete views, so they are NULL rather than silently equated."
+  }
+}
+
+-- Rules for adding a channel to this union:
+--   1. Same columns, same order, same EXPLICIT types in every branch.
+--      Do not rely on BigQuery's supertype coercion to line them up.
+--   2. A metric a channel does not measure is CAST(NULL AS <type>),
+--      never 0. Zero means "measured as zero"; NULL means "not measured".
+--   3. spend is always the client-facing figure in the channel's own
+--      currency. Nothing here converts currencies.
+--   4. No channel-specific dimension belongs here. If only one channel
+--      has it, it stays in that channel's mart.
+--   5. One row per date + channel + campaign + currency. Names are
+--      ANY_VALUE'd, not grouped on: a campaign renamed mid-flight must
+--      not split into two rows and double the spend on a scorecard.
+
+WITH dv360 AS (
+  SELECT
+    f.date,
+    '${constants.CHANNEL.dv360}'               AS channel,
+    ANY_VALUE(d.advertiser)                    AS advertiser_raw_name,
+    ANY_VALUE(CAST(d.advertiser_id AS STRING)) AS advertiser_id,
+    ANY_VALUE(d.campaign)                      AS campaign_name,
+    CAST(f.campaign_id AS STRING)              AS campaign_id,
+    f.advertiser_currency                      AS currency,
+    CAST(SUM(f.impressions)       AS INT64)    AS impressions,
+    CAST(SUM(f.clicks)            AS INT64)    AS clicks,
+    CAST(SUM(f.interactions)      AS INT64)    AS interactions,
+    CAST(SUM(f.complete_views)    AS INT64)    AS complete_views,
+    CAST(SUM(f.total_conversions) AS FLOAT64)  AS conversions,
+    'DV360 Total_Conversions'                  AS conversions_definition,
+    CAST(SUM(f.spend)             AS FLOAT64)  AS spend
+  FROM ${ref("fct_dv360_daily")} f
+  LEFT JOIN ${ref("dim_dv360_line_item")} d USING (line_item_id)
+  GROUP BY f.date, f.campaign_id, f.advertiser_currency
+),
+
+-- CM360 has no line item concept and no currency column. Its money
+-- lives at placement grain and its conversions at campaign grain, so
+-- the two are rolled up separately and joined rather than summed.
+cm360_delivery AS (
+  SELECT
+    date,
+    campaign_id,
+    CAST(SUM(impressions) AS INT64)   AS impressions,
+    CAST(SUM(clicks)      AS INT64)   AS clicks,
+    CAST(SUM(media_cost)  AS FLOAT64) AS spend
+  FROM ${ref("fct_cm360_placement_daily")}
+  GROUP BY 1, 2
+),
+cm360 AS (
+  SELECT
+    x.date,
+    '${constants.CHANNEL.cm360}'          AS channel,
+    c.advertiser_name                     AS advertiser_raw_name,
+    c.advertiser_id                       AS advertiser_id,
+    c.campaign_name                       AS campaign_name,
+    x.campaign_id                         AS campaign_id,
+    CAST(NULL AS STRING)                  AS currency,
+    x.impressions,
+    x.clicks,
+    CAST(NULL AS INT64)                   AS interactions,
+    CAST(NULL AS INT64)                   AS complete_views,
+    CAST(cd.total_conversions AS FLOAT64) AS conversions,
+    'CM360 Total Conversions (standard report, campaign level)' AS conversions_definition,
+    x.spend
+  FROM cm360_delivery x
+  LEFT JOIN ${ref("dim_cm360_campaign")}       c  USING (campaign_id)
+  LEFT JOIN ${ref("fct_cm360_campaign_daily")} cd USING (date, campaign_id)
+),
+
+-- Meta's headline conversion count is "Results", which is not a field:
+-- it resolves per ad set from the optimization goal. Interactions come
+-- from the long action fact, not from the ad fact.
+meta_delivery AS (
+  SELECT
+    f.date,
+    ANY_VALUE(d.account_name)         AS advertiser_raw_name,
+    ANY_VALUE(f.account_id)           AS advertiser_id,
+    ANY_VALUE(d.campaign_name)        AS campaign_name,
+    f.campaign_id                     AS campaign_id,
+    f.currency                        AS currency,
+    CAST(SUM(f.impressions) AS INT64)   AS impressions,
+    CAST(SUM(f.clicks)      AS INT64)   AS clicks,
+    CAST(SUM(f.spend)       AS FLOAT64) AS spend
+  FROM ${ref("fct_meta_ad_daily")} f
+  LEFT JOIN ${ref("dim_meta_ad")} d USING (ad_id)
+  WHERE ${constants.allPartitions("f")}
+  GROUP BY f.date, f.campaign_id, f.currency
+),
+meta_interactions AS (
+  SELECT
+    date,
+    campaign_id,
+    CAST(SUM(action_count) AS INT64) AS interactions
+  FROM ${ref("fct_meta_ad_action_daily")}
+  WHERE ${constants.allPartitions()}
+    AND metric_name = 'interactions'
+  GROUP BY 1, 2
+),
+meta_results AS (
+  SELECT
+    a.date,
+    a.campaign_id,
+    CAST(SUM(a.action_count) AS FLOAT64) AS conversions
+  FROM ${ref("fct_meta_ad_action_daily")} a
+  JOIN ${ref("dim_meta_ad")} d
+    ON a.ad_id = d.ad_id
+  JOIN ${ref("seed_result_type")} r
+    ON d.optimization_goal = r.optimization_goal
+   AND a.metric_name       = r.result_metric_name
+  WHERE ${constants.allPartitions("a")}
+  GROUP BY 1, 2
+),
+meta AS (
+  SELECT
+    m.date,
+    '${constants.CHANNEL.meta}' AS channel,
+    m.advertiser_raw_name,
+    m.advertiser_id,
+    m.campaign_name,
+    m.campaign_id,
+    m.currency,
+    m.impressions,
+    m.clicks,
+    i.interactions,
+    CAST(NULL AS INT64)         AS complete_views,
+    r.conversions,
+    'Meta Results (resolved from ad set optimization_goal)' AS conversions_definition,
+    m.spend
+  FROM meta_delivery m
+  LEFT JOIN meta_interactions i USING (date, campaign_id)
+  LEFT JOIN meta_results      r USING (date, campaign_id)
+),
+
+unioned AS (
+  SELECT * FROM dv360
+  UNION ALL
+  SELECT * FROM cm360
+  UNION ALL
+  SELECT * FROM meta
+)
+
+SELECT
+  u.date,
+  u.channel,
+  COALESCE(m.canonical_name, u.advertiser_raw_name) AS client_name,
+  m.client_group,
+  (m.canonical_name IS NULL)                        AS is_client_unmapped,
+  u.advertiser_raw_name,
+  u.advertiser_id,
+  u.campaign_name,
+  u.campaign_id,
+  u.currency,
+  u.impressions,
+  u.clicks,
+  u.interactions,
+  u.complete_views,
+  u.conversions,
+  u.conversions_definition,
+  u.spend
+FROM unioned u
+LEFT JOIN ${ref("seed_client_name_map")} m
+  ON m.channel  = u.channel
+ AND m.raw_name = u.advertiser_raw_name

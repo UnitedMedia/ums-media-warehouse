@@ -1,0 +1,119 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.reporting,
+  name: "v_data_gaps",
+  tags: ["monitoring", "reporting", "docs"],
+  description: "Every known gap in the warehouse, sized. These are things to fix in a seed or upstream in an extractor, NOT pipeline failures — an empty seed on day one is expected, so none of this belongs in an assertion that turns the workflow red. Review it, work the list down.",
+  columns: {
+    gap_type: "What kind of gap. Stable string — safe to filter a dashboard on.",
+    gap_key: "The specific offender, where there is one: a site_id, an action type, an advertiser name.",
+    rows_affected: "Scale of the gap in rows. Compare against the channel's total before deciding it matters.",
+    spend_affected: "Money sitting behind the gap, in the channel's own currency. This is the number that decides priority."
+  }
+}
+
+WITH gaps AS (
+
+  -- DV360: line items with no booked flight dates
+  SELECT
+    '${constants.CHANNEL.dv360}'         AS channel,
+    'dv360_missing_flight_dates'         AS gap_type,
+    CAST(NULL AS STRING)                 AS gap_key,
+    'No row in seed_line_item_flight. Reporting falls back to first/last active date, which is delivery, not the booking.' AS detail,
+    COUNT(*)                             AS rows_affected,
+    CAST(SUM(lifetime_spend) AS FLOAT64) AS spend_affected
+  FROM ${ref("dim_dv360_line_item")}
+  WHERE flight_start_date IS NULL
+
+  UNION ALL
+
+  -- CM360: sites with no name in seed_site
+  SELECT
+    '${constants.CHANNEL.cm360}',
+    'cm360_unmapped_site',
+    p.site_id,
+    'No row in seed_site, so the dashboard shows site_<id>. Populate from CM360 Admin > Sites.',
+    COUNT(*),
+    CAST(SUM(f.media_cost) AS FLOAT64)
+  FROM ${ref("fct_cm360_placement_daily")} f
+  JOIN ${ref("dim_cm360_placement")} p USING (placement_id)
+  WHERE p.is_site_unmapped
+  GROUP BY p.site_id
+
+  UNION ALL
+
+  -- CM360: advertisers the reach bridge never named
+  SELECT
+    '${constants.CHANNEL.cm360}',
+    'cm360_unnamed_advertiser',
+    advertiser_id,
+    'cm360_reach is the only source carrying advertiser_id and name on the same row, and this advertiser never appeared in it.',
+    COUNT(*),
+    CAST(NULL AS FLOAT64)
+  FROM ${ref("dim_cm360_advertiser")}
+  WHERE is_name_missing
+  GROUP BY advertiser_id
+
+  UNION ALL
+
+  -- Meta: action types that fell through every mapping rule
+  SELECT
+    '${constants.CHANNEL.meta}',
+    'meta_unmapped_action_type',
+    raw_action_type,
+    'No row in seed_action_type and no matching custom conversion. It still reports, under its raw Meta name. Add it to includes/meta_actions.js.',
+    COUNT(*),
+    CAST(NULL AS FLOAT64)
+  FROM ${ref("fct_meta_ad_action_daily")}
+  WHERE ${constants.allPartitions()}
+    AND metric_group = 'unmapped'
+  GROUP BY raw_action_type
+
+  UNION ALL
+
+  -- Meta: facts whose ad was deleted before Weld synced the entity
+  SELECT
+    '${constants.CHANNEL.meta}',
+    'meta_orphan_ad',
+    CAST(NULL AS STRING),
+    'Ads that spent money but have no row in dim_meta_ad, so they carry no campaign or creative labels.',
+    COUNT(DISTINCT f.ad_id),
+    CAST(SUM(f.spend) AS FLOAT64)
+  FROM ${ref("fct_meta_ad_daily")} f
+  LEFT JOIN ${ref("dim_meta_ad")} d USING (ad_id)
+  WHERE ${constants.allPartitions("f")}
+    AND d.ad_id IS NULL
+
+  UNION ALL
+
+  -- Meta: breakdown spend that cannot be attributed to an ad
+  SELECT
+    '${constants.CHANNEL.meta}',
+    'meta_breakdown_without_ad_id',
+    breakdown_type,
+    'Weld does not sync ad_id for this breakdown, so these rows cannot be joined to dim_meta_ad. This is the number to show whoever configures Weld.',
+    COUNTIF(ad_id IS NULL),
+    CAST(SUM(IF(ad_id IS NULL, spend, 0)) AS FLOAT64)
+  FROM ${ref("fct_meta_breakdown_daily")}
+  WHERE ${constants.allPartitions()}
+  GROUP BY breakdown_type
+
+  UNION ALL
+
+  -- Core: clients with no canonical name — this is what splits one
+  -- client into three in every cross-channel report
+  SELECT
+    channel,
+    'core_unmapped_client',
+    advertiser_raw_name,
+    'No row in seed_client_name_map for this (channel, name), so the cross-channel report groups it under the channel spelling.',
+    COUNT(*),
+    CAST(SUM(spend) AS FLOAT64)
+  FROM ${ref("fct_ad_performance_daily")}
+  WHERE is_client_unmapped
+  GROUP BY channel, advertiser_raw_name
+)
+
+SELECT *
+FROM gaps
+WHERE rows_affected > 0

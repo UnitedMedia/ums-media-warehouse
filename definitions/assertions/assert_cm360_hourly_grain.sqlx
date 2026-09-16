@@ -1,0 +1,16 @@
+config {
+  type: "assertion",
+  tags: ["cm360", "monitoring"],
+  description: "The CM360 base grain must be one row per date + hour + placement + ad + creative. Rows here mean the extraction started delivering duplicates, which would inflate every CM360 number downstream. If this fires, add the QUALIFY de-duplication documented in stg_cm360_hourly — and not before."
+}
+
+SELECT
+  date,
+  hour,
+  placement_id,
+  ad_id,
+  creative_id,
+  COUNT(*) AS rows_at_grain
+FROM ${ref("stg_cm360_hourly")}
+GROUP BY 1, 2, 3, 4, 5
+HAVING COUNT(*) > 1

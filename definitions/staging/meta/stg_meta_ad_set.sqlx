@@ -1,0 +1,19 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.meta_staging,
+  name: "stg_meta_ad_set",
+  tags: ["meta", "staging"],
+  description: "Meta ad set entity, latest sync per ad set. optimization_goal is what resolves Meta's 'Results' metric downstream."
+}
+
+SELECT
+  CAST(id AS STRING)               AS adset_id,
+  name                             AS adset_name,
+  optimization_goal,
+  billing_event,
+  bid_strategy,
+  CAST(daily_budget    AS NUMERIC) AS adset_daily_budget,
+  CAST(lifetime_budget AS NUMERIC) AS adset_lifetime_budget,
+  effective_status                 AS adset_status
+FROM ${ref({ schema: constants.DATASETS.meta, name: "ad_set" })}
+QUALIFY ROW_NUMBER() OVER (PARTITION BY id ORDER BY _weld_synced DESC) = 1

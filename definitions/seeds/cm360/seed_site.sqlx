@@ -1,0 +1,26 @@
+config {
+  type: "operations",
+  schema: constants.SCHEMAS.cm360_seeds,
+  name: "seed_site",
+  hasOutput: true,
+  tags: ["cm360", "seeds"],
+  description: "Hand-maintained site_id -> readable name and channel grouping. None of the three CM360 source tables carries a site NAME, so until the Keboola report is reconfigured to include Site, Placement, Ad and Creative names, this is the only way a dashboard shows anything but a numeric ID."
+}
+
+-- CREATE TABLE IF NOT EXISTS, never CREATE OR REPLACE — the rows here
+-- are typed in by a human from the CM360 UI (Admin -> Sites).
+--
+-- Leave unmapped IDs out rather than inventing names: dim_cm360_placement
+-- falls back to 'site_<id>' and flags is_site_unmapped, which is how
+-- assert_cm360_site_mapping finds the gap.
+
+CREATE TABLE IF NOT EXISTS ${self()} (
+  site_id       STRING NOT NULL OPTIONS(description = "CM360 Site ID, as STRING"),
+  site_name     STRING          OPTIONS(description = "Readable site name from the CM360 UI"),
+  channel_group STRING          OPTIONS(description = "display | video | native | social | search | other"),
+  is_premium    BOOL            OPTIONS(description = "Direct/premium buy vs programmatic"),
+  notes         STRING
+)
+OPTIONS (
+  description = "Hand-maintained. Site names do not exist in the source data. Dataform creates this table but never writes rows to it."
+)

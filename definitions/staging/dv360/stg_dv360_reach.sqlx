@@ -1,0 +1,18 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.dv360_staging,
+  name: "stg_dv360_reach",
+  tags: ["dv360", "staging"],
+  description: "DV360 reach. NON-ADDITIVE — unique reach cannot be summed across days or line items, and must never be joined into an impression fact. No Total_Users column exists in the source."
+}
+
+SELECT
+  ${metrics.parseSlashDate("Date")} AS date,
+  Partner_ID               AS partner_id,
+  Partner                  AS partner,
+  Advertiser_ID            AS advertiser_id,
+  Line_Item_ID             AS line_item_id,
+  Line_Item                AS line_item,
+  Unique_Reach_Total_Reach AS unique_reach
+FROM ${ref({ schema: constants.DATASETS.kebooladv, name: "fct_dv360_reach_daily" })}
+WHERE Date IS NOT NULL

@@ -1,0 +1,25 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.cm360_marts,
+  name: "fct_cm360_campaign_daily",
+  tags: ["cm360", "marts"],
+  description: "CM360 standard report at date + campaign. The only source of total_conversions. Its impressions and clicks are a CHECKSUM against the hourly rollup, not a second source to add — hence the _check suffix.",
+  bigquery: {
+    partitionBy: "date",
+    clusterBy: ["campaign_id"]
+  },
+  assertions: {
+    uniqueKey: ["date", "campaign_id"],
+    nonNull: ["date"]
+  }
+}
+
+SELECT
+  date,
+  campaign_id,
+  SUM(impressions)       AS impressions_check,
+  SUM(clicks)            AS clicks_check,
+  SUM(total_conversions) AS total_conversions
+FROM ${ref("stg_cm360_campaign_daily")}
+WHERE date IS NOT NULL
+GROUP BY 1, 2

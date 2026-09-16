@@ -1,0 +1,41 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.cm360_marts,
+  name: "fct_cm360_placement_hourly",
+  tags: ["cm360", "marts"],
+  description: "CM360 base fact: date + hour + placement + ad + creative. Largest table in the stack. requirePartitionFilter is ON — every query, including downstream models, must filter on date. That is the main cost control.",
+  bigquery: {
+    partitionBy: "date",
+    clusterBy: ["campaign_id", "placement_id", "ad_id", "creative_id"],
+    requirePartitionFilter: true
+  },
+  assertions: {
+    nonNull: ["date"]
+  }
+}
+
+-- GRAIN RULE for the whole CM360 stack:
+--   fct_cm360_placement_hourly = date + hour + placement + ad + creative
+--   fct_cm360_placement_daily  = the same money rolled to date
+--   fct_cm360_campaign_daily   = the same money again, campaign level
+--   fct_cm360_reach_daily      = a different, non-additive measure
+-- These are the SAME SPEND expressed four ways. Never UNION them.
+-- Never join two of them on date alone.
+
+SELECT
+  date,
+  hour,
+  advertiser_id,
+  campaign_id,
+  site_id,
+  placement_id,
+  ad_id,
+  creative_id,
+  SUM(impressions)          AS impressions,
+  SUM(clicks)               AS clicks,
+  SUM(viewable_impressions) AS viewable_impressions,
+  SUM(video_views)          AS video_views,
+  SUM(media_cost)           AS media_cost
+FROM ${ref("stg_cm360_hourly")}
+WHERE date IS NOT NULL
+GROUP BY 1,2,3,4,5,6,7,8

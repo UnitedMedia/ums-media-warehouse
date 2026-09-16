@@ -1,0 +1,46 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.meta_staging,
+  name: "stg_meta_ad_action",
+  tags: ["meta", "staging"],
+  description: "Meta ad x day x action_type, counts and money values stitched into one long view. Still raw action types — the seed whitelist is applied in the mart, not here."
+}
+
+WITH counts AS (
+  SELECT
+    DATE(date)                  AS date,
+    CAST(account_id  AS STRING) AS account_id,
+    CAST(campaign_id AS STRING) AS campaign_id,
+    CAST(adset_id    AS STRING) AS adset_id,
+    CAST(ad_id       AS STRING) AS ad_id,
+    action_type,
+    CAST(value AS NUMERIC)      AS action_count
+  FROM ${ref({ schema: constants.DATASETS.meta, name: "ad_roas_insight_actions" })}
+  QUALIFY ROW_NUMBER() OVER (
+    PARTITION BY DATE(date), CAST(ad_id AS STRING), action_type
+    ORDER BY _weld_synced DESC
+  ) = 1
+),
+vals AS (
+  SELECT
+    DATE(date)             AS date,
+    CAST(ad_id AS STRING)  AS ad_id,
+    action_type,
+    CAST(value AS NUMERIC) AS action_value
+  FROM ${ref({ schema: constants.DATASETS.meta, name: "ad_roas_insight_action_values" })}
+  QUALIFY ROW_NUMBER() OVER (
+    PARTITION BY DATE(date), CAST(ad_id AS STRING), action_type
+    ORDER BY _weld_synced DESC
+  ) = 1
+)
+SELECT
+  c.date,
+  c.account_id,
+  c.campaign_id,
+  c.adset_id,
+  c.ad_id,
+  c.action_type,
+  c.action_count,
+  v.action_value
+FROM counts c
+LEFT JOIN vals v USING (date, ad_id, action_type)

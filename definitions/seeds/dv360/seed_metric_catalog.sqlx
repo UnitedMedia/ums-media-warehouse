@@ -1,0 +1,40 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.dv360_seeds,
+  name: "seed_metric_catalog",
+  tags: ["dv360", "seeds"],
+  description: "One row per DV360 metric. The formula column is the single definition Looker Studio should implement — it stops each dashboard inventing its own CTR. Code-defined: edit this file, not the table.",
+  assertions: {
+    uniqueKey: ["metric_key"]
+  }
+}
+
+SELECT * FROM UNNEST([
+  STRUCT<
+    metric_key   STRING,
+    display_name STRING,
+    funnel_stage STRING,
+    formula      STRING,
+    availability STRING
+  >
+  ('impressions',       'Impressions',               'Awareness',   'SUM(impressions)',                                      'all facts'),
+  ('cpm',               'CPM',                       'Awareness',   'SAFE_DIVIDE(SUM(spend), SUM(impressions)) * 1000',       'all facts'),
+  ('unique_reach',      'Unique Reach: Total Reach', 'Awareness',   'SUM(unique_reach) at a single grain only',               'reach mart only — NON-ADDITIVE'),
+  ('total_users',       'Total users',               'Awareness',   'n/a',                                                    'MISSING — no source column'),
+  ('complete_views',    'Complete Views (Video)',    'Awareness',   'SUM(complete_views)',                                    'all facts except placement'),
+  ('completion_rate',   'Compl. rate (Video)',       'Awareness',   'SAFE_DIVIDE(SUM(complete_views), SUM(impressions))',     'proxy — no video starts column'),
+  ('trueview_views',    'TrueView: Views',           'Awareness',   'SUM(trueview_views)',                                    'backbone only'),
+  ('trueview_view_rate','TrueView: View Rate',       'Awareness',   'SAFE_DIVIDE(SUM(trueview_views), SUM(impressions))',     'backbone only'),
+  ('clicks',            'Clicks',                    'Traffic',     'SUM(clicks)',                                            'all facts'),
+  ('invalid_clicks',    'Invalid Clicks',            'Traffic',     'SUM(invalid_clicks)',                                    'backbone only'),
+  ('ctr',               'Click Rate (CTR)',          'Traffic',     'SAFE_DIVIDE(SUM(clicks), SUM(impressions))',             'all facts'),
+  ('interactions',      'Interactions',              'Traffic',     'SUM(interactions) -- source column: Engagements',        'all facts except placement'),
+  ('interaction_rate',  'Int rate',                  'Traffic',     'SAFE_DIVIDE(SUM(interactions), SUM(impressions))',       'all facts except placement'),
+  ('total_conversions', 'Total Conversions',         'Conversions', 'SUM(total_conversions)',                                 'backbone only — breakdowns use postclick+postview'),
+  ('conversions_pc_pv', 'Conversions (PC+PV)',       'Conversions', 'SUM(postclick_conversions) + SUM(postview_conversions)', 'breakdown facts'),
+  ('cpa',               'CPA',                       'Conversions', 'SAFE_DIVIDE(SUM(spend), SUM(total_conversions))',        'backbone only'),
+  ('spend',             'Revenue (=Spent)',          'Generic',     'SUM(spend) -- source column: Revenue_Adv_Currency',      'all facts — sell-side, advertiser currency'),
+  ('spend_usd',         'Spent (USD)',               'Generic',     'SUM(spend_usd) -- source column: Revenue_USD',           'backbone only'),
+  ('flight_start_date', 'Start Date',                'Generic',     'MIN(flight_start_date)',                                 'seed_line_item_flight — hand-maintained'),
+  ('flight_end_date',   'End Date',                  'Generic',     'MAX(flight_end_date)',                                   'seed_line_item_flight — hand-maintained')
+])

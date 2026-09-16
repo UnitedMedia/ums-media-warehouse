@@ -1,0 +1,25 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.cm360_marts,
+  name: "dim_cm360_advertiser",
+  tags: ["cm360", "marts"],
+  description: "One row per CM360 advertiser. Names come from the reach bridge, the only source that has advertiser_id and advertiser_name together. is_name_missing is the honest flag for advertisers that never appeared in the reach report.",
+  bigquery: {
+    clusterBy: ["advertiser_id"]
+  },
+  assertions: {
+    uniqueKey: ["advertiser_id"],
+    nonNull: ["advertiser_id"]
+  }
+}
+
+SELECT
+  h.advertiser_id,
+  COALESCE(b.advertiser_name, CONCAT('advertiser_', h.advertiser_id)) AS advertiser_name,
+  (b.advertiser_name IS NULL)                                         AS is_name_missing,
+  MIN(h.date) AS first_active_date,
+  MAX(h.date) AS last_active_date
+FROM ${ref("stg_cm360_hourly")} h
+LEFT JOIN ${ref("stg_cm360_advertiser_bridge")} b USING (advertiser_id)
+WHERE h.advertiser_id IS NOT NULL
+GROUP BY 1, 2, 3

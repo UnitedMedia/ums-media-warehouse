@@ -1,0 +1,18 @@
+config {
+  type: "assertion",
+  tags: ["meta", "monitoring"],
+  description: "Every optimization goal that spends money needs a row in seed_result_type, or Results and cost_per_result come back NULL for that spend with nothing to say why. Rows here are the goals to add to the seed."
+}
+
+SELECT
+  d.optimization_goal,
+  SUM(f.spend) AS spend
+FROM ${ref("fct_meta_ad_daily")} f
+JOIN ${ref("dim_meta_ad")} d USING (ad_id)
+LEFT JOIN ${ref("seed_result_type")} r
+  ON d.optimization_goal = r.optimization_goal
+WHERE ${constants.allPartitions("f")}
+  AND r.optimization_goal IS NULL
+  AND d.optimization_goal IS NOT NULL
+GROUP BY 1
+HAVING SUM(f.spend) > 0

@@ -1,0 +1,35 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.dv360_marts,
+  name: "fct_dv360_creative_daily",
+  tags: ["dv360", "marts"],
+  description: "DV360 creative breakdown: line item x creative x day. Partial spend coverage by design (~85%) — compare creatives with it, never total money. Conversions here are post-click + post-view and will not tie back to total_conversions on the backbone.",
+  bigquery: {
+    partitionBy: "date",
+    clusterBy: ["advertiser_id", "line_item_id", "creative_id"]
+  },
+  assertions: {
+    nonNull: ["date", "line_item_id"]
+  }
+}
+
+SELECT
+  date,
+  advertiser_id,
+  line_item_id,
+  creative_id,
+  creative,
+  creative_asset,
+  creative_size,
+  ad_type,
+  advertiser_currency,
+  SUM(impressions)           AS impressions,
+  SUM(clicks)                AS clicks,
+  SUM(interactions)          AS interactions,
+  SUM(complete_views)        AS complete_views,
+  SUM(postclick_conversions) AS postclick_conversions,
+  SUM(postview_conversions)  AS postview_conversions,
+  SUM(spend)                 AS spend
+FROM ${ref("stg_dv360_creative")}
+WHERE date IS NOT NULL
+GROUP BY 1,2,3,4,5,6,7,8,9

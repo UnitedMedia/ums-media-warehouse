@@ -1,0 +1,59 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.dv360_marts,
+  name: "dim_dv360_line_item",
+  tags: ["dv360", "marts"],
+  description: "The DV360 spine. One row per line item: latest attributes, delivery window, and hand-maintained flight dates. Every breakdown fact stays narrow and picks up campaign/partner from here at read time, so changing the dimension does not mean rebuilding six facts.",
+  bigquery: {
+    clusterBy: ["advertiser_id", "line_item_id"]
+  },
+  assertions: {
+    uniqueKey: ["line_item_id"],
+    nonNull: ["line_item_id", "advertiser_id"]
+  },
+  columns: {
+    flight_start_date: "BOOKED start, from seed_line_item_flight. NULL until a human fills the seed.",
+    first_active_date: "DERIVED from delivery — the first day this line item served an impression. A usable fallback for flight_start_date, but not the same thing: a line item booked and not yet delivering has no row here at all."
+  }
+}
+
+WITH latest AS (
+  SELECT
+    *,
+    ROW_NUMBER() OVER (PARTITION BY line_item_id ORDER BY date DESC) AS rn
+  FROM ${ref("stg_dv360_lineitem")}
+  WHERE line_item_id IS NOT NULL
+),
+activity AS (
+  SELECT
+    line_item_id,
+    MIN(IF(impressions > 0, date, NULL)) AS first_active_date,
+    MAX(IF(impressions > 0, date, NULL)) AS last_active_date,
+    SUM(impressions)                     AS lifetime_impressions,
+    SUM(spend)                           AS lifetime_spend
+  FROM ${ref("stg_dv360_lineitem")}
+  GROUP BY line_item_id
+)
+SELECT
+  l.line_item_id,
+  l.line_item,
+  l.line_item_type,
+  l.insertion_order_id,
+  l.insertion_order,
+  l.campaign_id,
+  l.campaign,
+  l.advertiser_id,
+  l.advertiser,
+  l.advertiser_currency,
+  l.partner_id,
+  l.partner,
+  f.start_date AS flight_start_date,
+  f.end_date   AS flight_end_date,
+  a.first_active_date,
+  a.last_active_date,
+  a.lifetime_impressions,
+  a.lifetime_spend
+FROM latest l
+LEFT JOIN activity a USING (line_item_id)
+LEFT JOIN ${ref("seed_line_item_flight")} f ON f.line_item_id = l.line_item_id
+WHERE l.rn = 1

@@ -1,0 +1,50 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.cm360_reporting,
+  name: "v_campaign_daily",
+  tags: ["cm360", "reporting"],
+  description: "CM360 campaign roll-up with conversions and reach stitched on. The only view where reach appears, and it appears at the exact grain CM360 delivered it.",
+  columns: {
+    total_reach: "NON-ADDITIVE. In Looker Studio set this field's aggregation to MAX, not SUM. A campaign's monthly reach is not the sum of its daily reach.",
+    frequency: "impressions / total_reach at campaign x day. Valid only at this grain."
+  }
+}
+
+WITH placement_rollup AS (
+  SELECT
+    date,
+    campaign_id,
+    SUM(impressions)          AS impressions,
+    SUM(clicks)               AS clicks,
+    SUM(viewable_impressions) AS viewable_impressions,
+    SUM(video_views)          AS video_views,
+    SUM(media_cost)           AS media_cost
+  FROM ${ref("fct_cm360_placement_daily")}
+  GROUP BY 1, 2
+)
+SELECT
+  r.date,
+  r.campaign_id,
+  c.campaign_name,
+  c.advertiser_id,
+  c.advertiser_name,
+
+  r.impressions,
+  r.clicks,
+  r.viewable_impressions,
+  r.video_views,
+  r.media_cost,
+  cd.total_conversions,
+
+  rc.total_reach,
+  rc.has_suppressed_reach,
+
+  ${metrics.ctr("r.clicks", "r.impressions")}                        AS click_rate,
+  ${metrics.cpm("r.media_cost", "r.impressions")}                    AS effective_cpm,
+  ${metrics.viewableRate("r.viewable_impressions", "r.impressions")} AS viewable_rate,
+  ${metrics.frequency("r.impressions", "rc.total_reach")}            AS frequency
+
+FROM placement_rollup r
+LEFT JOIN ${ref("dim_cm360_campaign")}      c  USING (campaign_id)
+LEFT JOIN ${ref("fct_cm360_campaign_daily")} cd USING (date, campaign_id)
+LEFT JOIN ${ref("fct_cm360_reach_daily")}    rc USING (date, campaign_id)

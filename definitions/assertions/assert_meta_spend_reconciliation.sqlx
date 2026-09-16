@@ -1,0 +1,25 @@
+config {
+  type: "assertion",
+  tags: ["meta", "monitoring"],
+  description: "Meta spend must survive staging and the mart unchanged. Rows here mean the de-duplication in stg_meta_ad_insight dropped or kept the wrong sync, which is the one bug in this stack that silently changes money."
+}
+
+WITH raw AS (
+  SELECT DATE(date) AS date, SUM(CAST(spend AS NUMERIC)) AS spend
+  FROM ${ref({ schema: constants.DATASETS.meta, name: "ad_roas_insight" })}
+  GROUP BY 1
+),
+mart AS (
+  SELECT date, SUM(spend) AS spend
+  FROM ${ref("fct_meta_ad_daily")}
+  WHERE ${constants.allPartitions()}
+  GROUP BY 1
+)
+SELECT
+  COALESCE(r.date, m.date)                       AS date,
+  r.spend                                        AS raw_spend,
+  m.spend                                        AS mart_spend,
+  COALESCE(r.spend, 0) - COALESCE(m.spend, 0)    AS diff
+FROM raw r
+FULL JOIN mart m USING (date)
+WHERE ABS(COALESCE(r.spend, 0) - COALESCE(m.spend, 0)) > ${dataform.projectConfig.vars.metaSpendTolerance}

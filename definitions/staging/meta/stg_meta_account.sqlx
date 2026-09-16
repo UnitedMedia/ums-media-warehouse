@@ -1,0 +1,14 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.meta_staging,
+  name: "stg_meta_account",
+  tags: ["meta", "staging"],
+  description: "Meta ad account entity. account_currency is the currency every spend figure in the Meta stack is denominated in."
+}
+
+SELECT
+  CAST(id AS STRING) AS account_id,
+  name               AS account_name,
+  currency           AS account_currency
+FROM ${ref({ schema: constants.DATASETS.meta, name: "account" })}
+QUALIFY ROW_NUMBER() OVER (PARTITION BY id ORDER BY _weld_synced DESC) = 1

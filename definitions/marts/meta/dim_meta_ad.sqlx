@@ -1,0 +1,53 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.meta_marts,
+  name: "dim_meta_ad",
+  tags: ["meta", "marts"],
+  description: "One row per Meta ad, flattened across account, campaign, ad set and creative. No dates and no metrics, so it cannot double-count anything. Build this first.",
+  bigquery: {
+    clusterBy: ["account_id", "campaign_id", "ad_id"]
+  },
+  assertions: {
+    uniqueKey: ["ad_id"],
+    nonNull: ["ad_id"]
+  },
+  columns: {
+    optimization_goal: "From the ad set. This is what resolves Meta's 'Results' metric via seed_result_type."
+  }
+}
+
+SELECT
+  a.ad_id,
+  a.account_id,
+  a.adset_id,
+  a.campaign_id,
+  acc.account_name,
+  acc.account_currency,
+  c.campaign_name,
+  c.objective,
+  c.buying_type,
+  c.campaign_daily_budget,
+  c.campaign_lifetime_budget,
+  c.campaign_status,
+  s.adset_name,
+  s.optimization_goal,
+  s.billing_event,
+  s.adset_daily_budget,
+  s.adset_lifetime_budget,
+  s.adset_status,
+  a.ad_name,
+  a.ad_status,
+  a.ad_created_date,
+  cr.headline,
+  cr.primary_text,
+  cr.call_to_action_type,
+  cr.media_type,
+  cr.url_parameters,
+  cr.page_id,
+  cr.image_url,
+  cr.thumbnail_url
+FROM ${ref("stg_meta_ad")} a
+LEFT JOIN ${ref("stg_meta_ad_set")}   s   USING (adset_id)
+LEFT JOIN ${ref("stg_meta_campaign")} c   USING (campaign_id)
+LEFT JOIN ${ref("stg_meta_creative")} cr  USING (creative_id)
+LEFT JOIN ${ref("stg_meta_account")}  acc USING (account_id)

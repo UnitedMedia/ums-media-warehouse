@@ -1,0 +1,26 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.meta_seeds,
+  name: "seed_action_type",
+  tags: ["meta", "seeds"],
+  description: "Meta raw action_type -> reported metric_name. is_canonical = FALSE marks Meta's duplicate aliases: documented here, excluded from fct_meta_ad_action_daily so conversions are never double counted.",
+  assertions: {
+    uniqueKey: ["raw_action_type"],
+    nonNull: ["raw_action_type", "metric_name", "metric_group"]
+  }
+}
+
+-- Generated from includes/meta_actions.js. Edit the list there, not
+-- here: reporting/meta/v_ad_daily.sqlx reads the same array to build its
+-- PIVOT column list, and the two must never disagree.
+
+SELECT * FROM UNNEST([
+  STRUCT<
+    raw_action_type STRING,
+    metric_name     STRING,
+    metric_group    STRING,
+    is_canonical    BOOL,
+    notes           STRING
+  >
+${meta_actions.rowsToValues(meta_actions.ACTION_TYPES)}
+])

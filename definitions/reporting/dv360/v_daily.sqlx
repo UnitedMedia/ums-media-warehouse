@@ -1,0 +1,47 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.dv360_reporting,
+  name: "v_daily",
+  tags: ["dv360", "reporting"],
+  description: "Primary DV360 Looker Studio source. Line item x day with the full hierarchy and every calculated metric. Point Looker at this, not at the mart, and let it do no arithmetic of its own beyond re-aggregation.",
+  columns: {
+    spend: "Revenue_Adv_Currency — sell-side, ADVERTISER CURRENCY. Always filter or break out by advertiser_currency before summing across advertisers. Use spend_usd for cross-currency totals.",
+    cpa: "Against Total_Conversions, which only the backbone carries. The creative/geo/timeofday views compute CPA against post-click + post-view instead; the two will not tie."
+  }
+}
+
+SELECT
+  f.date,
+  d.partner,
+  d.partner_id,
+  d.advertiser,
+  d.advertiser_id,
+  d.campaign,
+  d.campaign_id,
+  d.insertion_order,
+  d.insertion_order_id,
+  d.line_item,
+  d.line_item_id,
+  d.line_item_type,
+  d.flight_start_date,
+  d.flight_end_date,
+  d.first_active_date,
+  d.last_active_date,
+  f.advertiser_currency,
+  f.impressions,
+  f.clicks,
+  f.invalid_clicks,
+  f.interactions,
+  f.complete_views,
+  f.trueview_views,
+  f.total_conversions,
+  f.spend,
+  f.spend_usd,
+  ${metrics.cpm("f.spend", "f.impressions")}                     AS cpm,
+  ${metrics.ctr("f.clicks", "f.impressions")}                    AS ctr,
+  ${metrics.interactionRate("f.interactions", "f.impressions")}  AS interaction_rate,
+  ${metrics.completionRate("f.complete_views", "f.impressions")} AS completion_rate,
+  ${metrics.viewRate("f.trueview_views", "f.impressions")}       AS trueview_view_rate,
+  ${metrics.cpa("f.spend", "f.total_conversions")}               AS cpa
+FROM ${ref("fct_dv360_daily")} f
+LEFT JOIN ${ref("dim_dv360_line_item")} d USING (line_item_id)

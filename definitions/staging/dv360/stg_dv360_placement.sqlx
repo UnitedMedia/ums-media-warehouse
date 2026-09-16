@@ -1,0 +1,22 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.dv360_staging,
+  name: "stg_dv360_placement",
+  tags: ["dv360", "staging"],
+  description: "DV360 placement / URL breakdown. Largest source (~297k rows/month). Impressions, clicks and spend only — no video, no conversions, no interactions."
+}
+
+SELECT
+  ${metrics.parseSlashDate("Date")} AS date,
+  Advertiser_ID         AS advertiser_id,
+  Advertiser            AS advertiser,
+  Advertiser_Currency   AS advertiser_currency,
+  Line_Item_ID          AS line_item_id,
+  Line_Item             AS line_item,
+  AppURL_ID             AS app_url_id,
+  AppURL                AS app_url,
+  Impressions           AS impressions,
+  Clicks                AS clicks,
+  Revenue_Adv_Currency  AS spend
+FROM ${ref({ schema: constants.DATASETS.kebooladv, name: "fct_dv360_placement_daily" })}
+WHERE Date IS NOT NULL

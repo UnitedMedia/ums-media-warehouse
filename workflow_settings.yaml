@@ -1,0 +1,32 @@
+# ums-media-warehouse — Dataform workflow settings
+#
+# defaultLocation MUST stay EU: kebooladv, facebook_ads_weld and every
+# downstream dataset live in EU, and BigQuery cannot join across
+# locations. Changing this does not move data, it breaks every model.
+
+dataformCoreVersion: 3.0.0
+defaultProject: ums-digital-core-automation
+defaultDataset: core
+defaultLocation: EU
+defaultAssertionDataset: dataform_assertions
+
+vars:
+  # Thresholds. Every one of these is referenced by an assertion, so a
+  # tuning change is a one-line edit here, not a hunt through SQL.
+
+  # An extraction is stale after this many days without new rows.
+  freshnessThresholdDays: "2"
+
+  # DV360 creative-level spend normally sits near 0.85 of backbone spend
+  # because DV360 drops impressions it cannot attribute to a creative.
+  # Below this floor it is a new gap, not the known behaviour.
+  dv360CreativeCoverageFloor: "0.70"
+
+  # Allowed relative divergence between two reports of the same
+  # delivery, e.g. CM360 hourly vs the standard campaign report.
+  reconciliationTolerance: "0.01"
+
+  # Allowed absolute divergence in Meta spend between raw and mart, in
+  # account currency. Anything above this means de-duplication changed
+  # the money.
+  metaSpendTolerance: "0.01"

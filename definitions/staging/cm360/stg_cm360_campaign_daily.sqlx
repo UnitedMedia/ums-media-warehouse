@@ -1,0 +1,19 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.cm360_staging,
+  name: "stg_cm360_campaign_daily",
+  tags: ["cm360", "staging"],
+  description: "The thin CM360 'standard' report. Its only unique contribution is total_conversions. It carries an advertiser NAME but no advertiserId — which is why stg_cm360_advertiser_bridge exists."
+}
+
+SELECT
+  CAST(profileId AS STRING)         AS profile_id,
+  profileName                       AS profile_name,
+  ${metrics.parseCm360Date("date")} AS date,
+  CAST(campaignId AS STRING)        AS campaign_id,
+  NULLIF(TRIM(campaign), '')        AS campaign_name,
+  NULLIF(TRIM(advertiser), '')      AS advertiser_name,
+  impressions                       AS impressions,
+  clicks                            AS clicks,
+  totalConversions                  AS total_conversions
+FROM ${ref({ schema: constants.DATASETS.kebooladv, name: "cm360_standard_table" })}

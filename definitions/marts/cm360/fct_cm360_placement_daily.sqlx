@@ -1,0 +1,32 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.cm360_marts,
+  name: "fct_cm360_placement_daily",
+  tags: ["cm360", "marts"],
+  description: "CM360 hourly rolled to date: date + placement + ad + creative. This is what most dashboards should use.",
+  bigquery: {
+    partitionBy: "date",
+    clusterBy: ["campaign_id", "placement_id", "ad_id", "creative_id"]
+  },
+  assertions: {
+    nonNull: ["date"]
+  }
+}
+
+SELECT
+  date,
+  advertiser_id,
+  campaign_id,
+  site_id,
+  placement_id,
+  ad_id,
+  creative_id,
+  SUM(impressions)          AS impressions,
+  SUM(clicks)               AS clicks,
+  SUM(viewable_impressions) AS viewable_impressions,
+  SUM(video_views)          AS video_views,
+  SUM(media_cost)           AS media_cost,
+  COUNT(DISTINCT hour)      AS active_hours
+FROM ${ref("fct_cm360_placement_hourly")}
+WHERE ${constants.allPartitions()}   -- satisfies requirePartitionFilter upstream
+GROUP BY 1,2,3,4,5,6,7

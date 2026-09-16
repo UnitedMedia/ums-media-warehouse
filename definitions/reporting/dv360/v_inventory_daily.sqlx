@@ -1,0 +1,42 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.dv360_reporting,
+  name: "v_inventory_daily",
+  tags: ["dv360", "reporting"],
+  description: "DV360 inventory context: Media Type, Device, Environment, Exchange, Inventory Source, Channel and Ad Position. These dimensions exist nowhere else. Backed by ONE day of source data at the time of writing."
+}
+
+SELECT
+  f.date,
+  d.partner,
+  d.advertiser,
+  d.advertiser_id,
+  d.campaign,
+  d.campaign_id,
+  d.insertion_order,
+  d.line_item,
+  d.line_item_id,
+  d.line_item_type,
+  f.media_type,
+  f.device_type,
+  f.environment,
+  f.exchange,
+  f.exchange_id,
+  f.inventory_source,
+  f.channel,
+  f.channel_id,
+  f.channel_type,
+  f.ad_position,
+  f.advertiser_currency,
+  f.impressions,
+  f.clicks,
+  f.interactions,
+  f.complete_views,
+  f.postclick_conversions + f.postview_conversions               AS conversions_pc_pv,
+  f.spend,
+  ${metrics.cpm("f.spend", "f.impressions")}                     AS cpm,
+  ${metrics.ctr("f.clicks", "f.impressions")}                    AS ctr,
+  ${metrics.interactionRate("f.interactions", "f.impressions")}  AS interaction_rate,
+  ${metrics.completionRate("f.complete_views", "f.impressions")} AS completion_rate
+FROM ${ref("fct_dv360_inventory_daily")} f
+LEFT JOIN ${ref("dim_dv360_line_item")} d USING (line_item_id)

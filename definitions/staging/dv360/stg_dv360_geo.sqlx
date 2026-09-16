@@ -1,0 +1,40 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.dv360_staging,
+  name: "stg_dv360_geo",
+  tags: ["dv360", "staging"],
+  description: "DV360 geo breakdown. Country only — no City / Region / Zip / Targeted Location. Coverage is near-empty (~61 rows/month); treat as directional until the extractor is fixed.",
+  columns: {
+    line_item_id: "SAFE_CAST from STRING — this is the one table where the extractor types it as STRING",
+    spend: "SAFE_CAST from STRING — same extractor defect on Revenue_Adv_Currency"
+  }
+}
+
+-- Two extractor defects are corrected here and only here:
+--   * Line_Item_ID is STRING in this table, INT64 everywhere else
+--   * Revenue_Adv_Currency is STRING in this table, FLOAT64 everywhere else
+-- Fixing them in staging is what lets the mart join and sum like any
+-- other breakdown.
+
+SELECT
+  ${metrics.parseSlashDate("Date")}          AS date,
+  Advertiser_ID                              AS advertiser_id,
+  Advertiser                                 AS advertiser,
+  Advertiser_Currency                        AS advertiser_currency,
+  Campaign_ID                                AS campaign_id,
+  Campaign                                   AS campaign,
+  Insertion_Order_ID                         AS insertion_order_id,
+  Insertion_Order                            AS insertion_order,
+  SAFE_CAST(Line_Item_ID AS INT64)           AS line_item_id,
+  Line_Item                                  AS line_item,
+  Line_Item_Type                             AS line_item_type,
+  Country                                    AS country,
+  Impressions                                AS impressions,
+  Clicks                                     AS clicks,
+  Engagements                                AS interactions,
+  Complete_Views_Video                       AS complete_views,
+  PostClick_Conversions                      AS postclick_conversions,
+  PostView_Conversions                       AS postview_conversions,
+  SAFE_CAST(Revenue_Adv_Currency AS FLOAT64) AS spend
+FROM ${ref({ schema: constants.DATASETS.kebooladv, name: "fct_dv360_geo_daily" })}
+WHERE Date IS NOT NULL

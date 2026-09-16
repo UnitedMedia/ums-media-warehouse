@@ -1,0 +1,35 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.meta_reporting,
+  name: "v_breakdown_daily",
+  tags: ["meta", "reporting"],
+  description: "Meta breakdowns for Looker Studio. A separate data source on purpose: union it with v_ad_daily and spend is counted as many times as there are breakdown types.",
+  columns: {
+    ad_id: "NULL for the age_gender, platform_device and region breakdowns — Weld does not sync ad_id for those, so the row has no ad-level labels."
+  }
+}
+
+SELECT
+  b.date,
+  DATE_TRUNC(b.date, WEEK(MONDAY)) AS week,
+  DATE_TRUNC(b.date, MONTH)        AS month,
+  b.account_id,
+  b.breakdown_type,
+  b.breakdown_1,
+  b.breakdown_2,
+  b.ad_id,
+  d.ad_name,
+  d.campaign_id,
+  d.campaign_name,
+  d.adset_name,
+  b.spend,
+  b.impressions,
+  b.clicks,
+  b.link_clicks,
+  b.reach,
+  ${metrics.cpm("b.spend", "b.impressions")}       AS cpm,
+  ${metrics.cpc("b.spend", "b.link_clicks")}       AS cpc,
+  ${metrics.ctr("b.link_clicks", "b.impressions")} AS ctr
+FROM ${ref("fct_meta_breakdown_daily")} b
+LEFT JOIN ${ref("dim_meta_ad")} d ON b.ad_id = d.ad_id
+WHERE ${constants.allPartitions("b")}

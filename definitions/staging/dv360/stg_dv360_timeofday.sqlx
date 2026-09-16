@@ -1,0 +1,29 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.dv360_staging,
+  name: "stg_dv360_timeofday",
+  tags: ["dv360", "staging"],
+  description: "DV360 day-of-week / hour-of-day breakdown. Time_of_Day is an hour 0-23."
+}
+
+SELECT
+  ${metrics.parseSlashDate("Date")} AS date,
+  Advertiser_ID         AS advertiser_id,
+  Advertiser            AS advertiser,
+  Advertiser_Currency   AS advertiser_currency,
+  Insertion_Order_ID    AS insertion_order_id,
+  Insertion_Order       AS insertion_order,
+  Line_Item_ID          AS line_item_id,
+  Line_Item             AS line_item,
+  Line_Item_Type        AS line_item_type,
+  Day_of_Week           AS day_of_week,
+  Time_of_Day           AS hour_of_day,
+  Impressions           AS impressions,
+  Clicks                AS clicks,
+  Engagements           AS interactions,
+  Complete_Views_Video  AS complete_views,
+  PostClick_Conversions AS postclick_conversions,
+  PostView_Conversions  AS postview_conversions,
+  Revenue_Adv_Currency  AS spend
+FROM ${ref({ schema: constants.DATASETS.kebooladv, name: "fct_dv360_timeofday_daily" })}
+WHERE Date IS NOT NULL

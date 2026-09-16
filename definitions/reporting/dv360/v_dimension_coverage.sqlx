@@ -1,0 +1,10 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.dv360_reporting,
+  name: "v_dimension_coverage",
+  tags: ["dv360", "reporting", "docs"],
+  description: "Documentation surface. Point 'can we split by X?' at this view instead of re-deriving the answer."
+}
+
+SELECT *
+FROM ${ref("seed_dimension_coverage")}

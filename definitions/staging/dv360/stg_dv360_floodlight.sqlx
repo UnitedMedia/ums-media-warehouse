@@ -1,0 +1,30 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.dv360_staging,
+  name: "stg_dv360_floodlight",
+  tags: ["dv360", "staging"],
+  description: "DV360 floodlight activity. The source table is EMPTY (0 rows). The view exists so the downstream mart can be switched on the day data arrives; nothing depends on it yet."
+}
+
+-- Deliberately has no mart and no reporting view. Adding either now
+-- would put an empty table on a dashboard, which reads as 'zero
+-- conversions' rather than 'no data'. Build them the day
+-- assert_source_freshness starts seeing rows here.
+
+SELECT
+  ${metrics.parseSlashDate("Date")} AS date,
+  Partner_ID               AS partner_id,
+  Partner                  AS partner,
+  Advertiser_ID            AS advertiser_id,
+  Advertiser               AS advertiser,
+  Advertiser_Currency      AS advertiser_currency,
+  Insertion_Order_ID       AS insertion_order_id,
+  Insertion_Order          AS insertion_order,
+  Line_Item_ID             AS line_item_id,
+  Line_Item                AS line_item,
+  Line_Item_Type           AS line_item_type,
+  Floodlight_Activity_ID   AS floodlight_activity_id,
+  Floodlight_Activity_Name AS floodlight_activity,
+  Total_Conversions        AS total_conversions
+FROM ${ref({ schema: constants.DATASETS.kebooladv, name: "fct_dv360_floodlight_daily" })}
+WHERE Date IS NOT NULL

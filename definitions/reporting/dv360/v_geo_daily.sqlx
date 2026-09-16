@@ -1,0 +1,30 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.dv360_reporting,
+  name: "v_geo_daily",
+  tags: ["dv360", "reporting"],
+  description: "DV360 by country. Country only, and sparsely populated (~61 rows/month). Directional until the geo feed is fixed — do not put it next to a total and imply the two reconcile."
+}
+
+SELECT
+  f.date,
+  d.partner,
+  d.advertiser,
+  d.advertiser_id,
+  d.campaign,
+  d.campaign_id,
+  d.line_item,
+  d.line_item_id,
+  d.line_item_type,
+  f.country,
+  f.advertiser_currency,
+  f.impressions,
+  f.clicks,
+  f.interactions,
+  f.complete_views,
+  f.postclick_conversions + f.postview_conversions AS conversions_pc_pv,
+  f.spend,
+  ${metrics.cpm("f.spend", "f.impressions")}       AS cpm,
+  ${metrics.ctr("f.clicks", "f.impressions")}      AS ctr
+FROM ${ref("fct_dv360_geo_daily")} f
+LEFT JOIN ${ref("dim_dv360_line_item")} d USING (line_item_id)

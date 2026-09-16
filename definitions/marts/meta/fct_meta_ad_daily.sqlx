@@ -1,0 +1,33 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.meta_marts,
+  name: "fct_meta_ad_daily",
+  tags: ["meta", "marts"],
+  description: "Meta ad x day. Additive metrics only, no ratios. requirePartitionFilter is ON, so every downstream query must filter on date.",
+  bigquery: {
+    partitionBy: "date",
+    clusterBy: ["account_id", "campaign_id", "ad_id"],
+    requirePartitionFilter: true
+  },
+  assertions: {
+    uniqueKey: ["date", "ad_id"],
+    nonNull: ["date", "ad_id"]
+  },
+  columns: {
+    reach: "Deduplicated by Meta at ad x day. Never SUM it above this grain — roll-ups of reach are not reach."
+  }
+}
+
+SELECT
+  date,
+  account_id,
+  campaign_id,
+  adset_id,
+  ad_id,
+  currency,
+  spend,
+  impressions,
+  clicks,
+  link_clicks,
+  reach
+FROM ${ref("stg_meta_ad_insight")}

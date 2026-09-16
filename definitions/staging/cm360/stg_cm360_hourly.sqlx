@@ -1,0 +1,55 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.cm360_staging,
+  name: "stg_cm360_hourly",
+  tags: ["cm360", "staging"],
+  description: "CM360 backbone: every dimension CM360 gives us lives here, at date + hour + placement + ad + creative grain.",
+  columns: {
+    hour: "0-23, pulled out of the extractor's STRING hour column",
+    src_pct_viewable: "Row-level audit only. NON-ADDITIVE — never SUM or AVG it.",
+    src_effective_cpm: "Row-level audit only. NON-ADDITIVE — the reporting layer recomputes CPM from media_cost and impressions."
+  }
+}
+
+SELECT
+  CAST(profileId AS STRING)                                  AS profile_id,
+  profileName                                                AS profile_name,
+
+  ${metrics.parseCm360Date("date")}                          AS date,
+
+  -- hour arrives as STRING; pull the leading integer, 0-23.
+  -- The backslashes are DOUBLED on purpose: a .sqlx body is compiled
+  -- as a JS template literal, so a lone backslash is swallowed and the
+  -- regex silently becomes r'^s*(d{1,2})' — which matches nothing.
+  SAFE_CAST(REGEXP_EXTRACT(hour, r'^\\s*(\\d{1,2})') AS INT64) AS hour,
+
+  -- every ID becomes STRING so joins never fight INT64 vs STRING
+  CAST(advertiserId AS STRING)                               AS advertiser_id,
+  CAST(campaignId   AS STRING)                               AS campaign_id,
+  CAST(siteId       AS STRING)                               AS site_id,
+  CAST(placementId  AS STRING)                               AS placement_id,
+  CAST(adId         AS STRING)                               AS ad_id,
+  CAST(creativeId   AS STRING)                               AS creative_id,
+  NULLIF(TRIM(landingPageUrl), '')                           AS landing_page_url,
+
+  -- additive metrics, kept raw
+  impressions                                                AS impressions,
+  clicks                                                     AS clicks,
+  activeViewViewableImpressions                              AS viewable_impressions,
+  richMediaVideoViews                                        AS video_views,
+  mediaCost                                                  AS media_cost,
+
+  -- NON-additive, kept only for row-level audit
+  activeViewPercentageViewableImpressions                    AS src_pct_viewable,
+  effectiveCpm                                               AS src_effective_cpm
+
+FROM ${ref({ schema: constants.DATASETS.kebooladv, name: "cm360_hourly" })}
+
+-- If the source ever starts delivering duplicate rows at this grain,
+-- add:
+--   QUALIFY ROW_NUMBER() OVER (
+--     PARTITION BY date, hour, placementId, adId, creativeId
+--     ORDER BY impressions DESC) = 1
+-- Do NOT add it pre-emptively — an arbitrary tiebreak on a clean table
+-- silently deletes legitimate rows. assert_cm360_hourly_grain is what
+-- tells you whether you need it.

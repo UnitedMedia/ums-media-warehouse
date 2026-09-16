@@ -1,0 +1,49 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.cm360_marts,
+  name: "dim_cm360_campaign",
+  tags: ["cm360", "marts"],
+  description: "One row per CM360 campaign. Names come from the standard table, falling back to reach; the most recently seen name wins if a campaign was renamed mid-flight.",
+  bigquery: {
+    clusterBy: ["campaign_id", "advertiser_id"]
+  },
+  assertions: {
+    uniqueKey: ["campaign_id"],
+    nonNull: ["campaign_id"]
+  }
+}
+
+WITH names AS (
+  SELECT campaign_id, campaign_name, date
+  FROM ${ref("stg_cm360_campaign_daily")}
+  WHERE campaign_name IS NOT NULL
+  UNION ALL
+  SELECT campaign_id, campaign_name, date
+  FROM ${ref("stg_cm360_reach")}
+  WHERE campaign_name IS NOT NULL
+),
+latest_name AS (
+  SELECT campaign_id, campaign_name
+  FROM names
+  QUALIFY ROW_NUMBER() OVER (PARTITION BY campaign_id ORDER BY date DESC) = 1
+),
+activity AS (
+  SELECT
+    campaign_id,
+    ANY_VALUE(advertiser_id) AS advertiser_id,
+    MIN(date)                AS first_active_date,
+    MAX(date)                AS last_active_date
+  FROM ${ref("stg_cm360_hourly")}
+  GROUP BY 1
+)
+SELECT
+  a.campaign_id,
+  COALESCE(n.campaign_name, CONCAT('campaign_', a.campaign_id)) AS campaign_name,
+  (n.campaign_name IS NULL)                                     AS is_name_missing,
+  a.advertiser_id,
+  d.advertiser_name,
+  a.first_active_date,
+  a.last_active_date
+FROM activity a
+LEFT JOIN latest_name n USING (campaign_id)
+LEFT JOIN ${ref("dim_cm360_advertiser")} d USING (advertiser_id)

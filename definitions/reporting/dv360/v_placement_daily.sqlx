@@ -1,0 +1,29 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.dv360_reporting,
+  name: "v_placement_daily",
+  tags: ["dv360", "reporting"],
+  description: "DV360 placement / URL performance. Impressions, clicks and spend only — the source carries no video and no conversions at this grain."
+}
+
+SELECT
+  f.date,
+  d.partner,
+  d.advertiser,
+  d.advertiser_id,
+  d.campaign,
+  d.campaign_id,
+  d.insertion_order,
+  d.line_item,
+  d.line_item_id,
+  d.line_item_type,
+  f.app_url,
+  f.app_url_id,
+  f.advertiser_currency,
+  f.impressions,
+  f.clicks,
+  f.spend,
+  ${metrics.cpm("f.spend", "f.impressions")}  AS cpm,
+  ${metrics.ctr("f.clicks", "f.impressions")} AS ctr
+FROM ${ref("fct_dv360_placement_daily")} f
+LEFT JOIN ${ref("dim_dv360_line_item")} d USING (line_item_id)

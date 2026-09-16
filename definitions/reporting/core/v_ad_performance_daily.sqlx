@@ -1,0 +1,39 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.reporting,
+  name: "v_ad_performance_daily",
+  tags: ["core", "reporting"],
+  description: "The cross-channel Looker Studio surface. One row per date + channel + campaign, with rate metrics computed here so they stay correct at every roll-up.",
+  columns: {
+    spend: "The channel's own currency, and CM360 does not say which one. Break out by currency before summing across channels.",
+    cpa: "Computed against a conversions figure that means something different per channel — always show conversions_definition next to it."
+  }
+}
+
+SELECT
+  c.date,
+  DATE_TRUNC(c.date, WEEK(MONDAY)) AS week,
+  DATE_TRUNC(c.date, MONTH)        AS month,
+  c.channel,
+  c.client_name,
+  c.client_group,
+  c.is_client_unmapped,
+  c.advertiser_raw_name,
+  c.advertiser_id,
+  c.campaign_name,
+  c.campaign_id,
+  c.currency,
+  c.impressions,
+  c.clicks,
+  c.interactions,
+  c.complete_views,
+  c.conversions,
+  c.conversions_definition,
+  c.spend,
+  ${metrics.cpm("c.spend", "c.impressions")}                     AS cpm,
+  ${metrics.ctr("c.clicks", "c.impressions")}                    AS ctr,
+  ${metrics.cpc("c.spend", "c.clicks")}                          AS cpc,
+  ${metrics.interactionRate("c.interactions", "c.impressions")}  AS interaction_rate,
+  ${metrics.completionRate("c.complete_views", "c.impressions")} AS completion_rate,
+  ${metrics.cpa("c.spend", "c.conversions")}                     AS cpa
+FROM ${ref("fct_ad_performance_daily")} c

@@ -1,0 +1,51 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.cm360_seeds,
+  name: "seed_metric",
+  tags: ["cm360", "seeds"],
+  description: "CM360 metric catalogue. is_additive is the column that matters: Looker Studio will happily SUM anything, and this is what tells a human that reach and the ratio metrics must never be summed. Code-defined: edit this file, not the table.",
+  assertions: {
+    uniqueKey: ["metric_name"]
+  }
+}
+
+SELECT * FROM UNNEST([
+  STRUCT<
+    metric_name  STRING,
+    display_name STRING,
+    funnel_stage STRING,
+    is_additive  BOOL,
+    calc_type    STRING,
+    source_table STRING,
+    notes        STRING
+  >
+  -- AWARENESS
+  ('impressions',            'Impressions',                         'awareness', TRUE,  'stored',      'cm360_hourly',         NULL),
+  ('viewable_impressions',   'Active View: Viewable Impressions',   'awareness', TRUE,  'stored',      'cm360_hourly',         NULL),
+  ('viewable_rate',          'Viewable Rate (of Impressions)',      'awareness', FALSE, 'derived',     NULL,
+     'NOT CM360 % Viewable. The real metric divides by Measurable Impressions, which is not in the report.'),
+  ('pct_viewable',           'Active View: % Viewable Impressions', 'awareness', FALSE, 'unavailable', NULL,
+     'Needs activeViewMeasurableImpressions added to the Keboola report.'),
+  ('floodlight_impressions', 'Floodlight Impressions',              'awareness', TRUE,  'unavailable', NULL,
+     'Requires a CM360 Floodlight report. Not in any of the three tables.'),
+  ('total_reach',            'Unique Reach: Total Reach',           'awareness', FALSE, 'stored',      'cm360_reach',
+     'NON-ADDITIVE. Deduplicated by CM360. Monthly reach is not the sum of daily reach.'),
+  ('total_conversions',      'Total Conversions',                   'awareness', TRUE,  'stored',      'cm360_standard_table',
+     'Campaign-level only. Closest available stand-in for Floodlight activity.'),
+
+  -- TRAFFIC
+  ('video_views',            'Video Views',                         'traffic',   TRUE,  'stored',      'cm360_hourly',
+     'Source column is richMediaVideoViews.'),
+  ('clicks',                 'Clicks',                              'traffic',   TRUE,  'stored',      'cm360_hourly',         NULL),
+  ('click_rate',             'Click Rate (CTR)',                    'traffic',   FALSE, 'derived',     NULL,
+     'clicks / impressions, computed at query time in cm360_reporting.'),
+
+  -- GENERIC
+  ('effective_cpm',          'Effective CPM',                       'generic',   FALSE, 'derived',     NULL,
+     'media_cost / impressions * 1000. The source column effectiveCpm is kept for audit only.'),
+  ('media_cost',             'Media Cost',                          'generic',   TRUE,  'stored',      'cm360_hourly',         NULL),
+  ('start_date',             'Start Date',                          'generic',   FALSE, 'unavailable', NULL,
+     'Placement Start Date is not in the report. dim_cm360_placement exposes first_active_date instead.'),
+  ('end_date',               'End Date',                            'generic',   FALSE, 'unavailable', NULL,
+     'Placement End Date is not in the report. dim_cm360_placement exposes last_active_date instead.')
+])

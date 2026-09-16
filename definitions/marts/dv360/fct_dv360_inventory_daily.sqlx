@@ -1,0 +1,40 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.dv360_marts,
+  name: "fct_dv360_inventory_daily",
+  tags: ["dv360", "marts"],
+  description: "DV360 inventory context: line item x media type / device / environment / exchange / inventory source / channel / ad position x day. Thin source — one day of data at build time. Rebuild once the extractor backfills.",
+  bigquery: {
+    partitionBy: "date",
+    clusterBy: ["advertiser_id", "line_item_id", "exchange_id"]
+  },
+  assertions: {
+    nonNull: ["date", "line_item_id"]
+  }
+}
+
+SELECT
+  date,
+  advertiser_id,
+  line_item_id,
+  media_type,
+  device_type,
+  environment,
+  exchange_id,
+  exchange,
+  inventory_source,
+  channel_id,
+  channel,
+  channel_type,
+  ad_position,
+  advertiser_currency,
+  SUM(impressions)           AS impressions,
+  SUM(clicks)                AS clicks,
+  SUM(interactions)          AS interactions,
+  SUM(complete_views)        AS complete_views,
+  SUM(postclick_conversions) AS postclick_conversions,
+  SUM(postview_conversions)  AS postview_conversions,
+  SUM(spend)                 AS spend
+FROM ${ref("stg_dv360_inventory")}
+WHERE date IS NOT NULL
+GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13,14

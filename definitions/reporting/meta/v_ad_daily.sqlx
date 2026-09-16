@@ -1,0 +1,94 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.meta_reporting,
+  name: "v_ad_daily",
+  tags: ["meta", "reporting"],
+  description: "The single object Looker Studio connects to for Meta. It does three things the marts deliberately do not: pivots the long action table into wide n_* / val_* columns, computes every ratio, and resolves Meta's 'Results' from the ad set optimization goal.",
+  columns: {
+    results: "Meta's 'Results'. Resolved per ad set via seed_result_type — NOT a field Meta delivers.",
+    reach: "Deduplicated by Meta at ad x day. Do not sum it in Looker above that grain.",
+    frequency: "impressions / reach at ad x day. Valid only at this grain."
+  }
+}
+
+-- The PIVOT column list is generated at compile time from
+-- includes/meta_actions.js, the same array that builds seed_action_type.
+-- Adding a metric means adding one row there: the seed, this pivot and
+-- every n_* / val_* column move together and cannot drift apart.
+--
+-- The deployed Weld script did this with DECLARE + EXECUTE IMMEDIATE.
+-- Dataform compiles to static SQL, so that machinery is gone.
+
+WITH wide_actions AS (
+  SELECT * FROM (
+    SELECT date, ad_id, metric_name, action_count, action_value
+    FROM ${ref("fct_meta_ad_action_daily")}
+    WHERE ${constants.allPartitions()}
+  )
+  PIVOT (
+    SUM(action_count) AS n,
+    SUM(action_value) AS val
+    FOR metric_name IN (${meta_actions.pivotColumnList()})
+  )
+),
+results AS (
+  SELECT
+    a.date,
+    a.ad_id,
+    SUM(a.action_count) AS results,
+    SUM(a.action_value) AS results_value
+  FROM ${ref("fct_meta_ad_action_daily")} a
+  JOIN ${ref("dim_meta_ad")} d
+    ON a.ad_id = d.ad_id
+  JOIN ${ref("seed_result_type")} r
+    ON d.optimization_goal = r.optimization_goal
+   AND a.metric_name       = r.result_metric_name
+  WHERE ${constants.allPartitions("a")}
+  GROUP BY 1, 2
+)
+SELECT
+  f.date,
+  DATE_TRUNC(f.date, WEEK(MONDAY)) AS week,
+  DATE_TRUNC(f.date, MONTH)        AS month,
+
+  d.account_id, d.account_name, d.account_currency,
+  d.campaign_id, d.campaign_name, d.objective, d.buying_type,
+  d.adset_id, d.adset_name, d.optimization_goal,
+  d.ad_id, d.ad_name,
+  d.headline, d.primary_text, d.call_to_action_type, d.media_type,
+  d.url_parameters, d.page_id,
+  d.campaign_daily_budget, d.campaign_lifetime_budget,
+  d.adset_daily_budget, d.adset_lifetime_budget,
+
+  f.spend, f.impressions, f.clicks, f.link_clicks, f.reach,
+
+  ${metrics.frequency("f.impressions", "f.reach")}      AS frequency,
+  ${metrics.cpm("f.spend", "f.impressions")}            AS cpm,
+  ${metrics.cpc("f.spend", "f.link_clicks")}            AS cpc,
+  ${metrics.ctr("f.link_clicks", "f.impressions")}      AS ctr,
+
+  r.results,
+  r.results_value,
+  ${metrics.ctr("r.results", "f.impressions")}          AS results_rate,
+  ${metrics.cpa("f.spend", "r.results")}                AS cost_per_result,
+  ${metrics.roas("r.results_value", "f.spend")}         AS results_roas,
+
+  w.* EXCEPT (date, ad_id),
+
+  ${metrics.cpa("f.spend", "w.n_link_clicks")}          AS cost_per_link_click,
+  ${metrics.cpa("f.spend", "w.n_landing_page_views")}   AS cost_per_landing_page_view,
+  ${metrics.cpa("f.spend", "w.n_leads")}                AS cost_per_lead,
+  ${metrics.cpa("f.spend", "w.n_purchases")}            AS cost_per_purchase,
+  ${metrics.cpa("f.spend", "w.n_adds_to_cart")}         AS cost_per_add_to_cart,
+  ${metrics.cpa("f.spend", "w.n_checkouts_initiated")}  AS cost_per_checkout_initiated,
+  ${metrics.cpa("f.spend", "w.n_adds_of_payment_info")} AS cost_per_add_of_payment_info,
+  ${metrics.cpa("f.spend", "w.n_post_engagement")}      AS cost_per_post_engagement,
+  ${metrics.cpa("f.spend", "w.n_facebook_page_likes")}  AS cost_per_page_like,
+  ${metrics.cpa("f.spend", "w.n_interactions")}         AS cost_per_interaction,
+  ${metrics.roas("w.val_purchases", "f.spend")}         AS purchase_roas
+
+FROM ${ref("fct_meta_ad_daily")} f
+LEFT JOIN ${ref("dim_meta_ad")} d USING (ad_id)
+LEFT JOIN wide_actions w ON f.date = w.date AND f.ad_id = w.ad_id
+LEFT JOIN results      r ON f.date = r.date AND f.ad_id = r.ad_id
+WHERE ${constants.allPartitions("f")}

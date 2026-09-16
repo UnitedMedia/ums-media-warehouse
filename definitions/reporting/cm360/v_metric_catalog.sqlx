@@ -1,0 +1,24 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.cm360_reporting,
+  name: "v_metric_catalog",
+  tags: ["cm360", "reporting", "docs"],
+  description: "Documentation surface. Exposes the metric seed to Looker so anyone can see which CM360 metrics are additive and which are not, without asking."
+}
+
+SELECT
+  funnel_stage,
+  display_name,
+  metric_name,
+  is_additive,
+  calc_type,
+  source_table,
+  notes
+FROM ${ref("seed_metric")}
+ORDER BY
+  CASE funnel_stage
+    WHEN 'awareness' THEN 1
+    WHEN 'traffic'   THEN 2
+    ELSE 3
+  END,
+  display_name

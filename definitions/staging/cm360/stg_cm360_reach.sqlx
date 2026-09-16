@@ -1,0 +1,31 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.cm360_staging,
+  name: "stg_cm360_reach",
+  tags: ["cm360", "staging"],
+  description: "CM360 reach, isolated on purpose. uniqueReachTotalReach arrives as STRING because CM360 suppresses reach under its privacy threshold and returns text instead of a number. Both the parsed value and the raw string are kept.",
+  columns: {
+    total_reach: "NON-ADDITIVE. Deduplicated by CM360 per row. Monthly reach is not the sum of daily reach.",
+    is_reach_suppressed: "TRUE where CM360 returned something non-numeric — a privacy suppression, not a zero."
+  }
+}
+
+SELECT
+  CAST(profileId AS STRING)         AS profile_id,
+  profileName                       AS profile_name,
+  ${metrics.parseCm360Date("date")} AS date,
+  CAST(advertiserId AS STRING)      AS advertiser_id,
+  NULLIF(TRIM(advertiser), '')      AS advertiser_name,
+  CAST(campaignId AS STRING)        AS campaign_id,
+  NULLIF(TRIM(campaign), '')        AS campaign_name,
+
+  -- strip thousands separators and spaces, then cast
+  SAFE_CAST(REGEXP_REPLACE(uniqueReachTotalReach, r'[^0-9]', '') AS INT64) AS total_reach,
+  uniqueReachTotalReach                                                    AS total_reach_raw,
+  (uniqueReachTotalReach IS NOT NULL
+   AND SAFE_CAST(REGEXP_REPLACE(uniqueReachTotalReach, r'[^0-9]', '') AS INT64) IS NULL)
+                                                                           AS is_reach_suppressed,
+
+  impressions AS impressions,
+  clicks      AS clicks
+FROM ${ref({ schema: constants.DATASETS.kebooladv, name: "cm360_reach" })}

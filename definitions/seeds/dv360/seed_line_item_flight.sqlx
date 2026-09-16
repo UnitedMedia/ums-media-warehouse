@@ -1,0 +1,33 @@
+config {
+  type: "operations",
+  schema: constants.SCHEMAS.dv360_seeds,
+  name: "seed_line_item_flight",
+  hasOutput: true,
+  tags: ["dv360", "seeds"],
+  description: "Hand-maintained booked flight dates per line item. Start Date / End Date are not delivered by the extractor. dim_line_item exposes first_active_date / last_active_date derived from delivery as a fallback while this is empty."
+}
+
+-- CREATE TABLE IF NOT EXISTS, never CREATE OR REPLACE.
+--
+-- This table holds rows a human typed in from the media plan. A run of
+-- this project must be able to happen a hundred times without losing
+-- them, which is why this is an operation and not a type: "table".
+-- hasOutput: true is what makes it ref()-able from dim_line_item.
+
+CREATE TABLE IF NOT EXISTS ${self()} (
+  line_item_id INT64 NOT NULL OPTIONS(description = "DV360 Line Item ID"),
+  start_date   DATE           OPTIONS(description = "Booked flight start"),
+  end_date     DATE           OPTIONS(description = "Booked flight end"),
+  source       STRING         OPTIONS(description = "Where the dates came from, e.g. media plan / DV360 UI"),
+  updated_at   DATE           OPTIONS(description = "When this row was last touched")
+)
+OPTIONS (
+  description = "Hand-maintained line item flight dates. Populate from the media plan. Dataform creates this table but never writes rows to it."
+)
+
+-- To load it, run this by hand in BigQuery — not from Dataform:
+--
+--   INSERT INTO ums-digital-core-automation.dv360_seeds.seed_line_item_flight
+--     (line_item_id, start_date, end_date, source, updated_at)
+--   VALUES
+--     (23930946872, DATE '2026-07-01', DATE '2026-08-31', 'media plan', CURRENT_DATE());

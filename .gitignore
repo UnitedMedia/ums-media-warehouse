@@ -1,0 +1,5 @@
+.df-credentials.json
+node_modules/
+.dataform/
+*.log
+.DS_Store

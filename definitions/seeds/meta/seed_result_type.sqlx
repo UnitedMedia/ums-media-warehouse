@@ -1,0 +1,21 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.meta_seeds,
+  name: "seed_result_type",
+  tags: ["meta", "seeds"],
+  description: "optimization_goal -> which metric counts as a Result. Meta's 'Results' is not a field; it resolves from the ad set's optimization goal. An ad set whose goal is missing here spends money with no Results definition — assert_meta_results_coverage catches that.",
+  assertions: {
+    uniqueKey: ["optimization_goal"]
+  }
+}
+
+-- Generated from includes/meta_actions.js.
+
+SELECT * FROM UNNEST([
+  STRUCT<
+    optimization_goal  STRING,
+    result_metric_name STRING,
+    notes              STRING
+  >
+${meta_actions.rowsToValues(meta_actions.RESULT_TYPES)}
+])

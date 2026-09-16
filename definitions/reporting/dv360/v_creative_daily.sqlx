@@ -1,0 +1,38 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.dv360_reporting,
+  name: "v_creative_daily",
+  tags: ["dv360", "reporting"],
+  description: "DV360 creative performance. Covers ~85% of spend — use it to compare creatives, never to total money. Conversions are post-click + post-view and will not tie back to total_conversions in v_daily."
+}
+
+SELECT
+  f.date,
+  d.partner,
+  d.advertiser,
+  d.advertiser_id,
+  d.campaign,
+  d.campaign_id,
+  d.insertion_order,
+  d.line_item,
+  d.line_item_id,
+  d.line_item_type,
+  f.creative,
+  f.creative_id,
+  f.creative_asset,
+  f.creative_size,
+  f.ad_type,
+  f.advertiser_currency,
+  f.impressions,
+  f.clicks,
+  f.interactions,
+  f.complete_views,
+  f.postclick_conversions + f.postview_conversions               AS conversions_pc_pv,
+  f.spend,
+  ${metrics.cpm("f.spend", "f.impressions")}                     AS cpm,
+  ${metrics.ctr("f.clicks", "f.impressions")}                    AS ctr,
+  ${metrics.interactionRate("f.interactions", "f.impressions")}  AS interaction_rate,
+  ${metrics.completionRate("f.complete_views", "f.impressions")} AS completion_rate,
+  ${metrics.cpa("f.spend", "f.postclick_conversions + f.postview_conversions")} AS cpa
+FROM ${ref("fct_dv360_creative_daily")} f
+LEFT JOIN ${ref("dim_dv360_line_item")} d USING (line_item_id)

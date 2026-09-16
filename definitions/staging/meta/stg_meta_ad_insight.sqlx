@@ -1,0 +1,28 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.meta_staging,
+  name: "stg_meta_ad_insight",
+  tags: ["meta", "staging"],
+  description: "Meta ad x day metrics. De-duplicated on the Weld sync timestamp: Weld re-syncs the same day repeatedly and only the newest row is true.",
+  columns: {
+    reach: "Deduplicated by Meta at THIS grain. Never SUM it above ad x day."
+  }
+}
+
+SELECT
+  DATE(date)                          AS date,
+  CAST(account_id  AS STRING)         AS account_id,
+  CAST(campaign_id AS STRING)         AS campaign_id,
+  CAST(adset_id    AS STRING)         AS adset_id,
+  CAST(ad_id       AS STRING)         AS ad_id,
+  account_currency                    AS currency,
+  CAST(spend              AS NUMERIC) AS spend,
+  CAST(impressions        AS INT64)   AS impressions,
+  CAST(clicks             AS INT64)   AS clicks,
+  CAST(inline_link_clicks AS INT64)   AS link_clicks,
+  CAST(reach              AS INT64)   AS reach
+FROM ${ref({ schema: constants.DATASETS.meta, name: "ad_roas_insight" })}
+QUALIFY ROW_NUMBER() OVER (
+  PARTITION BY DATE(date), CAST(ad_id AS STRING)
+  ORDER BY _weld_synced DESC
+) = 1

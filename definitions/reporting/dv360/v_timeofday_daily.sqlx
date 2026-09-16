@@ -1,0 +1,46 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.dv360_reporting,
+  name: "v_timeofday_daily",
+  tags: ["dv360", "reporting"],
+  description: "DV360 dayparting: day of week and hour of day.",
+  columns: {
+    day_of_week_sort: "Sort key 1-7. Without it Looker Studio orders weekdays alphabetically, which puts Friday first."
+  }
+}
+
+SELECT
+  f.date,
+  d.partner,
+  d.advertiser,
+  d.advertiser_id,
+  d.campaign,
+  d.campaign_id,
+  d.insertion_order,
+  d.line_item,
+  d.line_item_id,
+  d.line_item_type,
+  f.day_of_week,
+  CASE UPPER(f.day_of_week)
+    WHEN 'MONDAY'    THEN 1
+    WHEN 'TUESDAY'   THEN 2
+    WHEN 'WEDNESDAY' THEN 3
+    WHEN 'THURSDAY'  THEN 4
+    WHEN 'FRIDAY'    THEN 5
+    WHEN 'SATURDAY'  THEN 6
+    WHEN 'SUNDAY'    THEN 7
+    ELSE NULL
+  END                                                            AS day_of_week_sort,
+  f.hour_of_day,
+  f.advertiser_currency,
+  f.impressions,
+  f.clicks,
+  f.interactions,
+  f.complete_views,
+  f.postclick_conversions + f.postview_conversions               AS conversions_pc_pv,
+  f.spend,
+  ${metrics.cpm("f.spend", "f.impressions")}                     AS cpm,
+  ${metrics.ctr("f.clicks", "f.impressions")}                    AS ctr,
+  ${metrics.completionRate("f.complete_views", "f.impressions")} AS completion_rate
+FROM ${ref("fct_dv360_timeofday_daily")} f
+LEFT JOIN ${ref("dim_dv360_line_item")} d USING (line_item_id)

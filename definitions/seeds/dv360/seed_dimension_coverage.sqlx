@@ -1,0 +1,59 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.dv360_seeds,
+  name: "seed_dimension_coverage",
+  tags: ["dv360", "seeds"],
+  description: "The requested dimension matrix, answered row by row. Query this instead of re-deriving 'can we split by X?' from memory. status: available | partial | missing.",
+  assertions: {
+    uniqueKey: ["dimension"]
+  }
+}
+
+SELECT * FROM UNNEST([
+  STRUCT<
+    dimension      STRING,
+    source_table   STRING,
+    reporting_view STRING,
+    status         STRING,
+    note           STRING
+  >
+  ('Partner',            'fct_dv360_lineitem_daily_v5', 'v_daily',            'available', 'also on reach'),
+  ('Partner ID',         'fct_dv360_lineitem_daily_v5', 'v_daily',            'available', ''),
+  ('Advertiser',         'all tables',                  'all views',          'available', ''),
+  ('Advertiser ID',      'all tables',                  'all views',          'available', ''),
+  ('Campaign',           'fct_dv360_lineitem_daily_v5', 'v_daily',            'available', 'breakdowns inherit it via dim_line_item'),
+  ('Campaign ID',        'fct_dv360_lineitem_daily_v5', 'v_daily',            'available', ''),
+  ('Insertion Order',    'most tables',                 'all views',          'available', ''),
+  ('Insertion Order ID', 'most tables',                 'all views',          'available', ''),
+  ('Line Item',          'all tables',                  'all views',          'available', ''),
+  ('Line Item ID',       'all tables',                  'all views',          'available', 'STRING in geo, INT64 elsewhere — cast in staging'),
+  ('Line Item Type',     'most tables',                 'all views',          'available', 'absent from placement and reach'),
+  ('Ad Position',        'fct_dv360_inventory_daily',   'v_inventory_daily',  'partial',   'inventory table holds 1 day only'),
+  ('Ad Type',            'fct_dv360_creative_daily',    'v_creative_daily',   'available', ''),
+  ('URL',                'fct_dv360_placement_daily',   'v_placement_daily',  'available', 'AppURL — app bundle or site domain'),
+  ('Bid Strategy Type',  'n/a',                         'n/a',                'missing',   'not requested from the extractor'),
+  ('Channel',            'fct_dv360_inventory_daily',   'v_inventory_daily',  'partial',   'inventory table holds 1 day only'),
+  ('Channel ID',         'fct_dv360_inventory_daily',   'v_inventory_daily',  'partial',   ''),
+  ('Channel Type',       'fct_dv360_inventory_daily',   'v_inventory_daily',  'partial',   ''),
+  ('Creative',           'fct_dv360_creative_daily',    'v_creative_daily',   'available', ''),
+  ('Creative Asset',     'fct_dv360_creative_daily',    'v_creative_daily',   'available', ''),
+  ('Creative size',      'fct_dv360_creative_daily',    'v_creative_daily',   'available', ''),
+  ('Creative duration',  'n/a',                         'n/a',                'missing',   'not requested from the extractor'),
+  ('Exchange',           'fct_dv360_inventory_daily',   'v_inventory_daily',  'partial',   ''),
+  ('Exchange ID',        'fct_dv360_inventory_daily',   'v_inventory_daily',  'partial',   ''),
+  ('Media Type',         'fct_dv360_inventory_daily',   'v_inventory_daily',  'partial',   ''),
+  ('Targeted Location',  'n/a',                         'n/a',                'missing',   'geo table exposes Country only'),
+  ('City',               'n/a',                         'n/a',                'missing',   'geo table exposes Country only'),
+  ('Country',            'fct_dv360_geo_daily',         'v_geo_daily',        'partial',   '61 rows/month — coverage is near-empty'),
+  ('Region',             'n/a',                         'n/a',                'missing',   'geo table exposes Country only'),
+  ('Zip Code',           'n/a',                         'n/a',                'missing',   'geo table exposes Country only'),
+  ('Inventory Source',   'fct_dv360_inventory_daily',   'v_inventory_daily',  'partial',   ''),
+  ('Audience List',      'n/a',                         'n/a',                'missing',   'no audience table pulled'),
+  ('Audience Segment',   'n/a',                         'n/a',                'missing',   'no audience table pulled'),
+  ('Device Type',        'fct_dv360_inventory_daily',   'v_inventory_daily',  'partial',   ''),
+  ('Environment',        'fct_dv360_inventory_daily',   'v_inventory_daily',  'partial',   ''),
+  ('Categories',         'n/a',                         'n/a',                'missing',   'not requested from the extractor'),
+  ('Day of week',        'fct_dv360_timeofday_daily',   'v_timeofday_daily',  'available', ''),
+  ('Time of day',        'fct_dv360_timeofday_daily',   'v_timeofday_daily',  'available', 'hour 0-23'),
+  ('Floodlight Activity','fct_dv360_floodlight_daily',  'n/a',                'missing',   'table exists but is EMPTY — 0 rows')
+])

@@ -1,0 +1,19 @@
+config {
+  type: "assertion",
+  tags: ["dv360", "monitoring"],
+  description: "Creative-level spend sits around 85% of backbone spend because DV360 omits impressions it cannot attribute to a named creative. Fails below the configured floor, which would mean a NEW gap rather than the known behaviour."
+}
+
+WITH backbone AS (
+  SELECT SUM(spend) AS spend FROM ${ref("fct_dv360_daily")}
+),
+creative AS (
+  SELECT SUM(spend) AS spend FROM ${ref("fct_dv360_creative_daily")}
+)
+SELECT
+  b.spend AS backbone_spend,
+  c.spend AS creative_spend,
+  SAFE_DIVIDE(c.spend, b.spend) AS coverage
+FROM backbone b
+CROSS JOIN creative c
+WHERE SAFE_DIVIDE(c.spend, b.spend) < ${dataform.projectConfig.vars.dv360CreativeCoverageFloor}

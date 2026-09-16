@@ -1,0 +1,10 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.dv360_reporting,
+  name: "v_metric_catalog",
+  tags: ["dv360", "reporting", "docs"],
+  description: "Documentation surface. Point 'how is CPM defined here?' at this view instead of answering from memory."
+}
+
+SELECT *
+FROM ${ref("seed_metric_catalog")}

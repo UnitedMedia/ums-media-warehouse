@@ -1,0 +1,18 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.cm360_staging,
+  name: "stg_cm360_advertiser_bridge",
+  tags: ["cm360", "staging"],
+  description: "cm360_reach is the ONLY place where advertiserId and the advertiser name appear on the same row. Without this bridge, hourly data can never be labelled with an advertiser name. Fragile by design — an advertiser that never appears in the reach report has no name anywhere."
+}
+
+SELECT
+  advertiser_id,
+  advertiser_name,
+  MIN(date) AS first_seen_date,
+  MAX(date) AS last_seen_date
+FROM ${ref("stg_cm360_reach")}
+WHERE advertiser_id IS NOT NULL
+  AND advertiser_name IS NOT NULL
+GROUP BY 1, 2
+QUALIFY ROW_NUMBER() OVER (PARTITION BY advertiser_id ORDER BY MAX(date) DESC) = 1

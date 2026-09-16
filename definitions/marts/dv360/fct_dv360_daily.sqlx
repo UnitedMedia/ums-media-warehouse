@@ -1,0 +1,43 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.dv360_marts,
+  name: "fct_dv360_daily",
+  tags: ["dv360", "marts"],
+  description: "DV360 backbone fact: line item x day. The source of truth for spend, and the only fact carrying invalid clicks, TrueView views, Total_Conversions and USD spend.",
+  bigquery: {
+    partitionBy: "date",
+    clusterBy: ["advertiser_id", "campaign_id", "line_item_id"]
+  },
+  assertions: {
+    uniqueKey: ["date", "line_item_id", "advertiser_currency"],
+    nonNull: ["date", "line_item_id"]
+  }
+}
+
+SELECT
+  date,
+  advertiser_id,
+  campaign_id,
+  insertion_order_id,
+  line_item_id,
+  advertiser_currency,
+  SUM(impressions)           AS impressions,
+  SUM(clicks)                AS clicks,
+  SUM(invalid_clicks)        AS invalid_clicks,
+  SUM(interactions)          AS interactions,
+  SUM(complete_views)        AS complete_views,
+  SUM(trueview_views)        AS trueview_views,
+  SUM(total_conversions)     AS total_conversions,
+  SUM(postclick_conversions) AS postclick_conversions,
+  SUM(postview_conversions)  AS postview_conversions,
+  SUM(spend)                 AS spend,
+  SUM(spend_usd)             AS spend_usd
+FROM ${ref("stg_dv360_lineitem")}
+WHERE date IS NOT NULL
+GROUP BY 1,2,3,4,5,6
+
+-- Switch to type: "incremental" once the extraction is running daily and
+-- a full rebuild stops being cheap. When that happens the restatement
+-- window matters: DV360 revises conversions for several days after
+-- delivery, so the incremental predicate has to reprocess a trailing
+-- window, not just the newest date.

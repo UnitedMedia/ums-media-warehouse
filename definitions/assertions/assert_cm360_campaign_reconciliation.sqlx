@@ -1,0 +1,27 @@
+config {
+  type: "assertion",
+  tags: ["cm360", "monitoring"],
+  description: "CM360 delivers impressions twice — once in the hourly report and once in the standard campaign report. They describe the same delivery and must agree. A divergence beyond tolerance means one of the two extractions is incomplete, and the campaign report is where total_conversions comes from."
+}
+
+WITH hourly AS (
+  SELECT date, campaign_id, SUM(impressions) AS impressions
+  FROM ${ref("fct_cm360_placement_daily")}
+  GROUP BY 1, 2
+),
+standard AS (
+  SELECT date, campaign_id, impressions_check AS impressions
+  FROM ${ref("fct_cm360_campaign_daily")}
+)
+SELECT
+  COALESCE(h.date, s.date)               AS date,
+  COALESCE(h.campaign_id, s.campaign_id) AS campaign_id,
+  h.impressions                          AS hourly_impressions,
+  s.impressions                          AS standard_impressions,
+  SAFE_DIVIDE(ABS(COALESCE(h.impressions, 0) - COALESCE(s.impressions, 0)),
+              NULLIF(COALESCE(s.impressions, 0), 0)) AS relative_diff
+FROM hourly h
+FULL JOIN standard s USING (date, campaign_id)
+WHERE SAFE_DIVIDE(ABS(COALESCE(h.impressions, 0) - COALESCE(s.impressions, 0)),
+                  NULLIF(COALESCE(s.impressions, 0), 0))
+      > ${dataform.projectConfig.vars.reconciliationTolerance}

@@ -1,0 +1,28 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.dv360_marts,
+  name: "fct_dv360_placement_daily",
+  tags: ["dv360", "marts"],
+  description: "DV360 placement breakdown: line item x app/URL x day. Highest volume fact in the stack. Impressions, clicks and spend only.",
+  bigquery: {
+    partitionBy: "date",
+    clusterBy: ["advertiser_id", "line_item_id", "app_url"]
+  },
+  assertions: {
+    nonNull: ["date", "line_item_id"]
+  }
+}
+
+SELECT
+  date,
+  advertiser_id,
+  line_item_id,
+  app_url_id,
+  app_url,
+  advertiser_currency,
+  SUM(impressions) AS impressions,
+  SUM(clicks)      AS clicks,
+  SUM(spend)       AS spend
+FROM ${ref("stg_dv360_placement")}
+WHERE date IS NOT NULL
+GROUP BY 1,2,3,4,5,6

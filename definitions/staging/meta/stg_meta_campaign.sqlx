@@ -1,0 +1,19 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.meta_staging,
+  name: "stg_meta_campaign",
+  tags: ["meta", "staging"],
+  description: "Meta campaign entity, latest sync per campaign."
+}
+
+SELECT
+  CAST(id AS STRING)               AS campaign_id,
+  name                             AS campaign_name,
+  objective,
+  buying_type,
+  bid_strategy                     AS campaign_bid_strategy,
+  CAST(daily_budget    AS NUMERIC) AS campaign_daily_budget,
+  CAST(lifetime_budget AS NUMERIC) AS campaign_lifetime_budget,
+  effective_status                 AS campaign_status
+FROM ${ref({ schema: constants.DATASETS.meta, name: "campaign" })}
+QUALIFY ROW_NUMBER() OVER (PARTITION BY id ORDER BY _weld_synced DESC) = 1

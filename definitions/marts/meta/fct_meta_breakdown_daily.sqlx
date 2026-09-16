@@ -1,0 +1,29 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.meta_marts,
+  name: "fct_meta_breakdown_daily",
+  tags: ["meta", "marts"],
+  description: "Meta breakdowns at date + slice. Five different cuts of the SAME spend that already sits in fct_meta_ad_daily. Union this with the ad fact and spend is counted twice.",
+  bigquery: {
+    partitionBy: "date",
+    clusterBy: ["breakdown_type", "account_id", "ad_id"],
+    requirePartitionFilter: true
+  },
+  columns: {
+    ad_id: "NULL means Weld did not sync ad_id for that breakdown, so the row cannot be joined to dim_meta_ad. A data gap, not a bug — assert_meta_breakdown_attribution sizes it."
+  }
+}
+
+SELECT
+  date,
+  account_id,
+  ad_id,
+  breakdown_type,
+  breakdown_1,
+  breakdown_2,
+  spend,
+  impressions,
+  clicks,
+  link_clicks,
+  reach
+FROM ${ref("stg_meta_breakdown")}

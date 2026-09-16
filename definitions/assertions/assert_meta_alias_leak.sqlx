@@ -1,0 +1,24 @@
+config {
+  type: "assertion",
+  tags: ["meta", "monitoring"],
+  description: "Meta reports purchases under seven identical aliases. seed_action_type keeps exactly one. If the mart's purchase count exceeds the raw count for the single canonical action type, an alias got through the whitelist and every purchase number is inflated."
+}
+
+WITH mart AS (
+  SELECT SUM(action_count) AS purchases
+  FROM ${ref("fct_meta_ad_action_daily")}
+  WHERE ${constants.allPartitions()}
+    AND metric_name = 'purchases'
+),
+raw AS (
+  SELECT SUM(CAST(value AS NUMERIC)) AS purchases
+  FROM ${ref({ schema: constants.DATASETS.meta, name: "ad_roas_insight_actions" })}
+  WHERE action_type = 'purchase'
+)
+SELECT
+  m.purchases AS mart_purchases,
+  r.purchases AS raw_canonical_purchases,
+  m.purchases - r.purchases AS excess
+FROM mart m
+CROSS JOIN raw r
+WHERE m.purchases > r.purchases

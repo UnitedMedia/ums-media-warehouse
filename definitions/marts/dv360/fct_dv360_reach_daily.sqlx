@@ -1,0 +1,28 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.dv360_marts,
+  name: "fct_dv360_reach_daily",
+  tags: ["dv360", "marts"],
+  description: "DV360 unique reach. ISOLATED BY DESIGN: no metric from any other fact belongs in here. Unique reach is non-additive — summing it across days or line items overstates reach, and joining it to an impression fact multiplies impressions by the number of matching reach rows.",
+  bigquery: {
+    partitionBy: "date",
+    clusterBy: ["advertiser_id", "line_item_id"]
+  },
+  assertions: {
+    nonNull: ["date"]
+  }
+}
+
+-- Quarantining reach in its own table with no shared metrics is the
+-- only structural defence against someone writing SUM(unique_reach)
+-- next to SUM(impressions) and getting a number that looks plausible.
+
+SELECT
+  date,
+  partner_id,
+  advertiser_id,
+  line_item_id,
+  SUM(unique_reach) AS unique_reach
+FROM ${ref("stg_dv360_reach")}
+WHERE date IS NOT NULL
+GROUP BY 1,2,3,4

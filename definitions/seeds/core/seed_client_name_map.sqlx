@@ -1,0 +1,34 @@
+config {
+  type: "operations",
+  schema: constants.SCHEMAS.core_seeds,
+  name: "seed_client_name_map",
+  hasOutput: true,
+  tags: ["core", "seeds"],
+  description: "Hand-maintained (channel, raw advertiser name) -> canonical client name. The cross-channel union is meaningless without it: the same client is spelled differently in DV360, CM360 and Meta, so grouping on the raw name splits one client into three."
+}
+
+-- CREATE TABLE IF NOT EXISTS — human-entered rows, never truncated.
+--
+-- Fill this from the client list, one row per spelling per channel.
+-- fct_ad_performance_daily LEFT JOINs it and falls back to the raw name,
+-- so an unmapped client still appears; it just appears under whatever
+-- the channel calls it. assert_core_client_name_coverage lists those.
+
+CREATE TABLE IF NOT EXISTS ${self()} (
+  channel         STRING NOT NULL OPTIONS(description = "DV360 | CM360 | Meta — must match constants.CHANNEL"),
+  raw_name        STRING NOT NULL OPTIONS(description = "Advertiser / account name exactly as the channel spells it"),
+  canonical_name  STRING NOT NULL OPTIONS(description = "The one spelling reporting uses"),
+  client_group    STRING          OPTIONS(description = "Optional holding company / group roll-up"),
+  updated_at      DATE            OPTIONS(description = "When this row was last touched")
+)
+OPTIONS (
+  description = "Hand-maintained client name resolution across channels. Dataform creates this table but never writes rows to it."
+)
+
+-- Example:
+--   INSERT INTO ums-digital-core-automation.core_seeds.seed_client_name_map
+--     (channel, raw_name, canonical_name, client_group, updated_at)
+--   VALUES
+--     ('DV360', 'E.ON Energie Romania', 'E.ON', 'E.ON',   CURRENT_DATE()),
+--     ('CM360', 'EON Romania',          'E.ON', 'E.ON',   CURRENT_DATE()),
+--     ('Meta',  'E-ON RO',              'E.ON', 'E.ON',   CURRENT_DATE());

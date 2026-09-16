@@ -1,0 +1,24 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.meta_staging,
+  name: "stg_meta_creative",
+  tags: ["meta", "staging"],
+  description: "Meta creative entity, latest sync per creative. media_type is derived: Weld gives video_id / image_hash rather than a type."
+}
+
+SELECT
+  CAST(id       AS STRING) AS creative_id,
+  CAST(actor_id AS STRING) AS page_id,
+  title                    AS headline,
+  body                     AS primary_text,
+  call_to_action_type,
+  url_tags                 AS url_parameters,
+  CASE
+    WHEN video_id   IS NOT NULL THEN 'video'
+    WHEN image_hash IS NOT NULL THEN 'image'
+    ELSE COALESCE(object_type, 'unknown')
+  END                      AS media_type,
+  image_url,
+  thumbnail_url
+FROM ${ref({ schema: constants.DATASETS.meta, name: "creative" })}
+QUALIFY ROW_NUMBER() OVER (PARTITION BY id ORDER BY _weld_synced DESC) = 1

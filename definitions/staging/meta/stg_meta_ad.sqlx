@@ -1,0 +1,19 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.meta_staging,
+  name: "stg_meta_ad",
+  tags: ["meta", "staging"],
+  description: "Meta ad entity, latest sync per ad."
+}
+
+SELECT
+  CAST(id          AS STRING) AS ad_id,
+  CAST(account_id  AS STRING) AS account_id,
+  CAST(adset_id    AS STRING) AS adset_id,
+  CAST(campaign_id AS STRING) AS campaign_id,
+  CAST(creative_id AS STRING) AS creative_id,
+  name                        AS ad_name,
+  effective_status            AS ad_status,
+  DATE(created_time)          AS ad_created_date
+FROM ${ref({ schema: constants.DATASETS.meta, name: "ad" })}
+QUALIFY ROW_NUMBER() OVER (PARTITION BY id ORDER BY _weld_synced DESC) = 1

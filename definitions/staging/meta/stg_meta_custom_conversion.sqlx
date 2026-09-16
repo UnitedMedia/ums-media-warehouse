@@ -1,0 +1,13 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.meta_staging,
+  name: "stg_meta_custom_conversion",
+  tags: ["meta", "staging"],
+  description: "Custom conversion names. Resolves action types shaped like offsite_conversion.custom.<id> into something a human can read."
+}
+
+SELECT
+  CAST(id AS STRING) AS custom_conversion_id,
+  name               AS custom_conversion_name
+FROM ${ref({ schema: constants.DATASETS.meta, name: "custom_conversion" })}
+QUALIFY ROW_NUMBER() OVER (PARTITION BY id ORDER BY _weld_synced DESC) = 1

@@ -1,0 +1,41 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.dv360_staging,
+  name: "stg_dv360_lineitem",
+  tags: ["dv360", "staging"],
+  description: "DV360 backbone: line item x day. The only source with Partner, Campaign, Invalid_Clicks, TrueView_Views, Total_Conversions and Revenue_USD. Everything else joins back to it.",
+  columns: {
+    date: "Delivery date, parsed from the extractor's STRING YYYY/MM/DD",
+    spend: "Revenue_Adv_Currency — sell-side, advertiser currency",
+    spend_usd: "Revenue_USD — use for cross-currency totals",
+    total_conversions: "DV360 Total_Conversions. Not comparable with post-click + post-view on the breakdown tables."
+  }
+}
+
+SELECT
+  ${metrics.parseSlashDate("Date")} AS date,
+  Partner_ID            AS partner_id,
+  Partner               AS partner,
+  Advertiser_ID         AS advertiser_id,
+  Advertiser            AS advertiser,
+  Advertiser_Currency   AS advertiser_currency,
+  Campaign_ID           AS campaign_id,
+  Campaign              AS campaign,
+  Insertion_Order_ID    AS insertion_order_id,
+  Insertion_Order       AS insertion_order,
+  Line_Item_ID          AS line_item_id,
+  Line_Item             AS line_item,
+  Line_Item_Type        AS line_item_type,
+  Impressions           AS impressions,
+  Clicks                AS clicks,
+  Invalid_Clicks        AS invalid_clicks,
+  Engagements           AS interactions,
+  Complete_Views_Video  AS complete_views,
+  TrueView_Views        AS trueview_views,
+  Total_Conversions     AS total_conversions,
+  PostClick_Conversions AS postclick_conversions,
+  PostView_Conversions  AS postview_conversions,
+  Revenue_Adv_Currency  AS spend,
+  Revenue_USD           AS spend_usd
+FROM ${ref({ schema: constants.DATASETS.kebooladv, name: "fct_dv360_lineitem_daily_v5" })}
+WHERE Date IS NOT NULL

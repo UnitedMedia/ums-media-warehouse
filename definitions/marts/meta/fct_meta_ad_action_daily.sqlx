@@ -1,0 +1,59 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.meta_marts,
+  name: "fct_meta_ad_action_daily",
+  tags: ["meta", "marts"],
+  description: "Meta conversions at date + ad + metric. LONG, not wide: a new conversion event adds rows, never columns. Aliases are dropped here via the seed whitelist, which is what stops purchases being counted seven times.",
+  bigquery: {
+    partitionBy: "date",
+    clusterBy: ["account_id", "metric_name", "ad_id"],
+    requirePartitionFilter: true
+  },
+  columns: {
+    metric_name: "Resolved name. Falls back to the custom conversion name, then to the raw action type.",
+    metric_group: "'unmapped' means the action type fell through every rule — assert_meta_unmapped_actions lists them.",
+    raw_action_type: "Kept so any number can be traced back to what Meta actually sent."
+  }
+}
+
+WITH resolved AS (
+  SELECT
+    s.date,
+    s.account_id,
+    s.campaign_id,
+    s.adset_id,
+    s.ad_id,
+    s.action_type AS raw_action_type,
+    COALESCE(
+      seed.metric_name,
+      cc.custom_conversion_name,
+      s.action_type
+    ) AS metric_name,
+    COALESCE(
+      seed.metric_group,
+      IF(cc.custom_conversion_name IS NOT NULL, 'client_custom', 'unmapped')
+    ) AS metric_group,
+    COALESCE(seed.is_canonical, TRUE) AS is_canonical,
+    s.action_count,
+    s.action_value
+  FROM ${ref("stg_meta_ad_action")} s
+  LEFT JOIN ${ref("seed_action_type")} seed
+    ON s.action_type = seed.raw_action_type
+  -- Backslashes doubled on purpose: .sqlx bodies compile as JS template
+  -- literals, so a lone backslash is swallowed before BigQuery sees it.
+  LEFT JOIN ${ref("stg_meta_custom_conversion")} cc
+    ON REGEXP_EXTRACT(s.action_type, r'^offsite_conversion\\.custom\\.(\\d+)$') = cc.custom_conversion_id
+)
+SELECT
+  date,
+  account_id,
+  campaign_id,
+  adset_id,
+  ad_id,
+  metric_name,
+  metric_group,
+  raw_action_type,
+  action_count,
+  action_value
+FROM resolved
+WHERE is_canonical   -- aliases excluded here, and only here

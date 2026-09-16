@@ -1,0 +1,30 @@
+config {
+  type: "assertion",
+  tags: ["freshness", "monitoring"],
+  description: "Fails when a channel has not received new rows recently. This is the check that would have caught DV360 stopping on 2026-08-25 within a day instead of by accident weeks later."
+}
+
+-- An assertion FAILS if it returns rows. Empty result = healthy.
+-- One branch per channel, taken from each channel's backbone fact —
+-- the table that stops first when an extraction breaks.
+
+WITH latest AS (
+  SELECT '${constants.CHANNEL.dv360}' AS channel, MAX(date) AS latest_date
+  FROM ${ref("fct_dv360_daily")}
+
+  UNION ALL
+  SELECT '${constants.CHANNEL.cm360}', MAX(date)
+  FROM ${ref("fct_cm360_placement_daily")}
+
+  UNION ALL
+  SELECT '${constants.CHANNEL.meta}', MAX(date)
+  FROM ${ref("fct_meta_ad_daily")}
+  WHERE ${constants.allPartitions()}
+)
+SELECT
+  channel,
+  latest_date,
+  DATE_DIFF(CURRENT_DATE(), latest_date, DAY) AS days_stale
+FROM latest
+WHERE latest_date IS NULL
+   OR latest_date < DATE_SUB(CURRENT_DATE(), INTERVAL ${dataform.projectConfig.vars.freshnessThresholdDays} DAY)

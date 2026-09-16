@@ -1,0 +1,27 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.cm360_marts,
+  name: "fct_cm360_reach_daily",
+  tags: ["cm360", "marts"],
+  description: "CM360 unique reach, quarantined on purpose. total_reach is NON-ADDITIVE: it cannot be summed across dates, campaigns or advertisers. Its own table at its own coarse grain is the only structural defence against someone writing SUM(total_reach).",
+  bigquery: {
+    partitionBy: "date",
+    clusterBy: ["campaign_id", "advertiser_id"]
+  },
+  assertions: {
+    uniqueKey: ["date", "advertiser_id", "campaign_id"],
+    nonNull: ["date"]
+  }
+}
+
+SELECT
+  date,
+  advertiser_id,
+  campaign_id,
+  MAX(total_reach)                AS total_reach,
+  LOGICAL_OR(is_reach_suppressed) AS has_suppressed_reach,
+  SUM(impressions)                AS impressions_check,
+  SUM(clicks)                     AS clicks_check
+FROM ${ref("stg_cm360_reach")}
+WHERE date IS NOT NULL
+GROUP BY 1, 2, 3

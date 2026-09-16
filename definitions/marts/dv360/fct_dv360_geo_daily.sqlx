@@ -1,0 +1,32 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.dv360_marts,
+  name: "fct_dv360_geo_daily",
+  tags: ["dv360", "marts"],
+  description: "DV360 geo breakdown: line item x country x day. Coverage is near-empty (~61 rows/month). Do not present this as a complete geographic picture until the extractor is fixed.",
+  bigquery: {
+    partitionBy: "date",
+    clusterBy: ["advertiser_id", "line_item_id", "country"]
+  },
+  assertions: {
+    nonNull: ["date"]
+  }
+}
+
+SELECT
+  date,
+  advertiser_id,
+  campaign_id,
+  line_item_id,
+  country,
+  advertiser_currency,
+  SUM(impressions)           AS impressions,
+  SUM(clicks)                AS clicks,
+  SUM(interactions)          AS interactions,
+  SUM(complete_views)        AS complete_views,
+  SUM(postclick_conversions) AS postclick_conversions,
+  SUM(postview_conversions)  AS postview_conversions,
+  SUM(spend)                 AS spend
+FROM ${ref("stg_dv360_geo")}
+WHERE date IS NOT NULL
+GROUP BY 1,2,3,4,5,6

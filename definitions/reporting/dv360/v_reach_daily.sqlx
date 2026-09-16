@@ -1,0 +1,21 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.dv360_reporting,
+  name: "v_reach_daily",
+  tags: ["dv360", "reporting"],
+  description: "DV360 unique reach. Its own Looker Studio page, its own scorecards, its own data source. NEVER blend this with an impression source in Looker: the blend fans reach rows out against delivery rows and both sides lie. Reach is only additive over the dimensions DV360 de-duplicated it on."
+}
+
+SELECT
+  f.date,
+  d.partner,
+  d.advertiser,
+  d.advertiser_id,
+  d.campaign,
+  d.campaign_id,
+  d.line_item,
+  d.line_item_id,
+  d.line_item_type,
+  f.unique_reach
+FROM ${ref("fct_dv360_reach_daily")} f
+LEFT JOIN ${ref("dim_dv360_line_item")} d USING (line_item_id)

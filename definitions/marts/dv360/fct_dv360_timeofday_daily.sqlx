@@ -1,0 +1,32 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.dv360_marts,
+  name: "fct_dv360_timeofday_daily",
+  tags: ["dv360", "marts"],
+  description: "DV360 dayparting: line item x weekday x hour x day.",
+  bigquery: {
+    partitionBy: "date",
+    clusterBy: ["advertiser_id", "line_item_id", "hour_of_day"]
+  },
+  assertions: {
+    nonNull: ["date", "line_item_id"]
+  }
+}
+
+SELECT
+  date,
+  advertiser_id,
+  line_item_id,
+  day_of_week,
+  hour_of_day,
+  advertiser_currency,
+  SUM(impressions)           AS impressions,
+  SUM(clicks)                AS clicks,
+  SUM(interactions)          AS interactions,
+  SUM(complete_views)        AS complete_views,
+  SUM(postclick_conversions) AS postclick_conversions,
+  SUM(postview_conversions)  AS postview_conversions,
+  SUM(spend)                 AS spend
+FROM ${ref("stg_dv360_timeofday")}
+WHERE date IS NOT NULL
+GROUP BY 1,2,3,4,5,6
