@@ -202,7 +202,9 @@ either asserted on or surfaced in `v_data_gaps`.
 **DV360**
 
 - Stopped delivering on 2026-08-25. `assert_source_freshness` catches a repeat
-  within a day.
+  within a day, and as of 2026-09-16 it is still red for this and for CM360.
+  Leave it red: the fix is upstream in Keboola, and raising the threshold to
+  get a green tick would hide the single most important fact about the data.
 - `v_creative_daily` covers ~85% of spend. DV360 omits impressions it cannot
   attribute to a named creative. Use the creative stack to compare creatives,
   never to total money.
@@ -232,6 +234,14 @@ either asserted on or surfaced in `v_data_gaps`.
 - Placement Start/End Date are not in the report. `dim_cm360_placement` exposes
   first/last *active* date, derived from delivery. Do not use them for pacing.
 - No currency column anywhere. `core` carries `currency = NULL` for CM360.
+- **Stopped delivering on 2026-08-31.** Same as DV360, sixteen days later.
+- **`media_cost` is not comparable with DV360 or Meta spend — verify before
+  anyone sums across channels.** Verified 2026-09-16: CM360 media_cost totals
+  2,538 against DV360 68,916 and Meta 36,418 for the same period. That is the
+  shape of an ad-serving fee, not media spend. If CM360 is serving impressions
+  that were bought in DV360, then adding the two both double counts the
+  delivery and mislabels the money. `reporting.v_ad_performance_daily` will
+  happily add them, so this needs an answer before it goes on a dashboard.
 
 **Meta**
 
