@@ -19,7 +19,7 @@ config {
 -- dataset first. Statements in an operations block are separated by ---.
 
 CREATE SCHEMA IF NOT EXISTS ${constants.schemaOf(self())}
-OPTIONS (location = 'EU')
+OPTIONS (location = 'EU');
 
 ---
 
@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS ${self()} (
 )
 OPTIONS (
   description = "Hand-maintained client name resolution across channels. Dataform creates this table but never writes rows to it."
-)
+);
 
 -- Example:
 --   INSERT INTO ums-digital-core-automation.core_seeds.seed_client_name_map

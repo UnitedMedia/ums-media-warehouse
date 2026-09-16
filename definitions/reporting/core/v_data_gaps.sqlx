@@ -56,6 +56,25 @@ WITH gaps AS (
 
   UNION ALL
 
+  -- CM360: campaigns the hourly report never delivered. Without an hourly
+  -- row there is no placement, site or creative detail and no media cost
+  -- for that campaign-day — only the impression and conversion totals.
+  SELECT
+    '${constants.CHANNEL.cm360}',
+    'cm360_campaign_missing_from_hourly',
+    s.campaign_id,
+    'Present in the standard campaign report but absent from the hourly report, so it has no placement, site or creative breakdown and no media cost.',
+    COUNT(*),
+    CAST(NULL AS FLOAT64)
+  FROM ${ref("fct_cm360_campaign_daily")} s
+  LEFT JOIN (
+    SELECT DISTINCT date, campaign_id FROM ${ref("fct_cm360_placement_daily")}
+  ) h USING (date, campaign_id)
+  WHERE h.campaign_id IS NULL
+  GROUP BY s.campaign_id
+
+  UNION ALL
+
   -- Meta: action types that fell through every mapping rule
   SELECT
     '${constants.CHANNEL.meta}',

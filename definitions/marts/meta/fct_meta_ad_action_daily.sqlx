@@ -39,10 +39,10 @@ WITH resolved AS (
   FROM ${ref("stg_meta_ad_action")} s
   LEFT JOIN ${ref("seed_action_type")} seed
     ON s.action_type = seed.raw_action_type
-  -- Backslashes doubled on purpose: .sqlx bodies compile as JS template
-  -- literals, so a lone backslash is swallowed before BigQuery sees it.
+  -- [.] is a literal dot and [0-9] a digit — no backslashes anywhere, so
+  -- this cannot be broken by escaping rules.
   LEFT JOIN ${ref("stg_meta_custom_conversion")} cc
-    ON REGEXP_EXTRACT(s.action_type, r'^offsite_conversion\\.custom\\.(\\d+)$') = cc.custom_conversion_id
+    ON REGEXP_EXTRACT(s.action_type, r'^offsite_conversion[.]custom[.]([0-9]+)$') = cc.custom_conversion_id
 )
 SELECT
   date,

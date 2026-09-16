@@ -18,10 +18,13 @@ SELECT
   ${metrics.parseCm360Date("date")}                          AS date,
 
   -- hour arrives as STRING; pull the leading integer, 0-23.
-  -- The backslashes are DOUBLED on purpose: a .sqlx body is compiled
-  -- as a JS template literal, so a lone backslash is swallowed and the
-  -- regex silently becomes r'^s*(d{1,2})' — which matches nothing.
-  SAFE_CAST(REGEXP_EXTRACT(hour, r'^\\s*(\\d{1,2})') AS INT64) AS hour,
+  --
+  -- NO BACKSLASHES, on purpose. Whether a .sqlx body escapes them is not
+  -- worth betting a silent NULL column on, so this uses [0-9] instead of
+  -- the d shorthand. The trailing (?:[^0-9]|$) means a value that is not
+  -- an hour — a full timestamp, say — yields NULL rather than quietly
+  -- extracting the first two digits of the year.
+  SAFE_CAST(REGEXP_EXTRACT(TRIM(hour), r'^([0-9]{1,2})(?:[^0-9]|$)') AS INT64) AS hour,
 
   -- every ID becomes STRING so joins never fight INT64 vs STRING
   CAST(advertiserId AS STRING)                               AS advertiser_id,

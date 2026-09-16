@@ -270,12 +270,14 @@ either asserted on or surfaced in `v_data_gaps`.
 - Marts are internal. Looker Studio connects to reporting views, never to a
   mart and never to staging.
 - Names carry no version suffix.
-- A `.sqlx` body compiles as a JavaScript template literal. **Double every
-  backslash** — a lone \ is swallowed, so `r'\d+'` reaches BigQuery as
-  `r'd+'` and matches nothing, with no error anywhere. Backticks and a bare
-  `${` need escaping for the same reason; there are none in the SQL bodies
-  here, and the two regexes that need doubled backslashes say so in a
-  comment above them.
+- **No backslashes in `.sqlx` SQL bodies.** How a `.sqlx` body treats escape
+  sequences is not worth betting a silently-NULL column on, and we lost a run
+  to exactly that. Write `[0-9]` not the `d` shorthand, `[.]` not an escaped
+  dot. There are zero backslashes in any `.sqlx` file and it should stay that
+  way. Backticks are out for the same reason — that is why `constants.schemaOf()`
+  exists rather than an inline `CREATE SCHEMA`.
+- Every statement in a `type: "operations"` block ends with a semicolon, and
+  multiple statements are separated by `---` on its own line.
 
 ---
 

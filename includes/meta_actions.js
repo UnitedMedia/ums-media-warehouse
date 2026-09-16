@@ -112,6 +112,8 @@ const RESULT_TYPES = [
   ["VALUE",               "purchases",           null],
   ["REACH",               "reach",               "Comes from the fact table, not from actions"],
   ["IMPRESSIONS",         "impressions",         "Comes from the fact table, not from actions"],
+  ["EVENT_RESPONSES",     "event_responses",     "Found spending in Sep 2026 with no mapping. Clean match: the goal and the rsvp action are the same thing."],
+  ["QUALITY_CALL",        "calls_connected_60s", "UNCONFIRMED. Found spending in Sep 2026 with no mapping. Meta's quality-call optimisation counts calls past a duration threshold, and 60s is the longest we collect — but the real threshold is set per ad set. CONFIRM with the account team; if it is wrong, cost_per_result is wrong for this goal and nothing else."],
 ];
 
 // --- tiny SQL emitters -----------------------------------------------

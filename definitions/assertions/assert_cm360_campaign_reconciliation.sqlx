@@ -1,8 +1,18 @@
 config {
   type: "assertion",
   tags: ["cm360", "monitoring"],
-  description: "CM360 delivers impressions twice — once in the hourly report and once in the standard campaign report. They describe the same delivery and must agree. A divergence beyond tolerance means one of the two extractions is incomplete, and the campaign report is where total_conversions comes from."
+  description: "CM360 delivers impressions twice — once in the hourly report and once in the standard campaign report. Where BOTH cover the same campaign-day they describe the same delivery and must agree. A divergence beyond tolerance means one extraction is incomplete, and the standard report is where total_conversions comes from."
 }
+
+-- Scoped to campaign-days present in BOTH reports on purpose.
+--
+-- A campaign that appears in one report and not the other is a COVERAGE
+-- gap, not a contradiction: the extractions are configured separately and
+-- do not cover the same campaigns. That is real and worth knowing, but it
+-- is a work item rather than a broken number, so it is reported in
+-- reporting.v_data_gaps under 'cm360_campaign_missing_from_hourly'.
+-- Failing the workflow on it would leave this assertion permanently red
+-- and train everyone to ignore it.
 
 WITH hourly AS (
   SELECT date, campaign_id, SUM(impressions) AS impressions
@@ -12,16 +22,24 @@ WITH hourly AS (
 standard AS (
   SELECT date, campaign_id, impressions_check AS impressions
   FROM ${ref("fct_cm360_campaign_daily")}
+),
+both AS (
+  SELECT
+    h.date,
+    h.campaign_id,
+    h.impressions AS hourly_impressions,
+    s.impressions AS standard_impressions
+  FROM hourly h
+  JOIN standard s USING (date, campaign_id)
 )
 SELECT
-  COALESCE(h.date, s.date)               AS date,
-  COALESCE(h.campaign_id, s.campaign_id) AS campaign_id,
-  h.impressions                          AS hourly_impressions,
-  s.impressions                          AS standard_impressions,
-  SAFE_DIVIDE(ABS(COALESCE(h.impressions, 0) - COALESCE(s.impressions, 0)),
-              NULLIF(COALESCE(s.impressions, 0), 0)) AS relative_diff
-FROM hourly h
-FULL JOIN standard s USING (date, campaign_id)
-WHERE SAFE_DIVIDE(ABS(COALESCE(h.impressions, 0) - COALESCE(s.impressions, 0)),
-                  NULLIF(COALESCE(s.impressions, 0), 0))
+  date,
+  campaign_id,
+  hourly_impressions,
+  standard_impressions,
+  SAFE_DIVIDE(ABS(hourly_impressions - standard_impressions),
+              NULLIF(standard_impressions, 0)) AS relative_diff
+FROM both
+WHERE SAFE_DIVIDE(ABS(hourly_impressions - standard_impressions),
+                  NULLIF(standard_impressions, 0))
       > ${dataform.projectConfig.vars.reconciliationTolerance}
