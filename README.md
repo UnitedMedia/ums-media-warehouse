@@ -7,6 +7,10 @@ TikTok and Google Ads next.
 Everything in `definitions/` supersedes the hand-run scripts in `all_scripts/`.
 Those are kept as the record of what was deployed before; nothing reads them.
 
+**Looking for which table to query?** That is [CATALOG.md](CATALOG.md) — every
+table and view, what it is for, and what will catch you out. This file is about
+how the project is built and maintained.
+
 ---
 
 ## Layers
