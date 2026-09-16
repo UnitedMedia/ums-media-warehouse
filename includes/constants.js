@@ -62,6 +62,23 @@ function allPartitions(alias) {
   return `${col} > DATE '2000-01-01'`;
 }
 
+// Dataform auto-creates a dataset for a `table` or `view` action, but NOT
+// for an `operations` action — it just runs your SQL, and CREATE TABLE
+// against a missing dataset fails instantly. The hand-maintained seeds are
+// all operations, and core_seeds has nothing else in it, so its dataset
+// would never exist.
+//
+// self() gives `project.dataset.table` already backtick-quoted. This trims
+// it to `project.dataset` so an operation can create its own dataset first.
+// Done here rather than inline because a .sqlx body is a JS template
+// literal and a raw backtick in one would terminate it.
+//
+//   CREATE SCHEMA IF NOT EXISTS ${constants.schemaOf(self())}
+function schemaOf(selfTarget) {
+  const parts = selfTarget.split(".");
+  return `${parts[0]}.${parts[1]}\``;
+}
+
 module.exports = {
-  RAW_PROJECT, DATASETS, SCHEMAS, CHANNEL, allPartitions,
+  RAW_PROJECT, DATASETS, SCHEMAS, CHANNEL, allPartitions, schemaOf,
 };

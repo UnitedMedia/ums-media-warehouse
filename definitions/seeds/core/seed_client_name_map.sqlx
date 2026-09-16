@@ -14,6 +14,15 @@ config {
 -- so an unmapped client still appears; it just appears under whatever
 -- the channel calls it. assert_core_client_name_coverage lists those.
 
+-- Dataform creates the dataset for a table or view action, but not for an
+-- operation -- it just runs this SQL. So the operation creates its own
+-- dataset first. Statements in an operations block are separated by ---.
+
+CREATE SCHEMA IF NOT EXISTS ${constants.schemaOf(self())}
+OPTIONS (location = 'EU')
+
+---
+
 CREATE TABLE IF NOT EXISTS ${self()} (
   channel         STRING NOT NULL OPTIONS(description = "DV360 | CM360 | Meta — must match constants.CHANNEL"),
   raw_name        STRING NOT NULL OPTIONS(description = "Advertiser / account name exactly as the channel spells it"),

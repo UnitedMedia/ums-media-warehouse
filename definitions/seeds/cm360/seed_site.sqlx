@@ -14,6 +14,15 @@ config {
 -- falls back to 'site_<id>' and flags is_site_unmapped, which is how
 -- assert_cm360_site_mapping finds the gap.
 
+-- Dataform creates the dataset for a table or view action, but not for an
+-- operation -- it just runs this SQL. So the operation creates its own
+-- dataset first. Statements in an operations block are separated by ---.
+
+CREATE SCHEMA IF NOT EXISTS ${constants.schemaOf(self())}
+OPTIONS (location = 'EU')
+
+---
+
 CREATE TABLE IF NOT EXISTS ${self()} (
   site_id       STRING NOT NULL OPTIONS(description = "CM360 Site ID, as STRING"),
   site_name     STRING          OPTIONS(description = "Readable site name from the CM360 UI"),

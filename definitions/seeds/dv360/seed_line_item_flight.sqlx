@@ -14,6 +14,15 @@ config {
 -- them, which is why this is an operation and not a type: "table".
 -- hasOutput: true is what makes it ref()-able from dim_line_item.
 
+-- Dataform creates the dataset for a table or view action, but not for an
+-- operation -- it just runs this SQL. So the operation creates its own
+-- dataset first. Statements in an operations block are separated by ---.
+
+CREATE SCHEMA IF NOT EXISTS ${constants.schemaOf(self())}
+OPTIONS (location = 'EU')
+
+---
+
 CREATE TABLE IF NOT EXISTS ${self()} (
   line_item_id INT64 NOT NULL OPTIONS(description = "DV360 Line Item ID"),
   start_date   DATE           OPTIONS(description = "Booked flight start"),
