@@ -227,8 +227,16 @@ seed, its results come back NULL and `assert_meta_results_coverage` goes red.
 
 **Caveats that matter:**
 
-- **Never union `v_breakdown_daily` with `v_ad_daily`.** They are five different
-  cuts of the same spend. Union them and spend is counted six times.
+- **Always filter `v_breakdown_daily` to exactly one `breakdown_type`.** All
+  five breakdowns cover the *same* spend. Measured 2026-09-16: age_gender
+  36,418.67 / country 36,418.50 / platform_device 36,418.33 /
+  publisher_platform 36,417.95 / region 36,418.83 — against an ad-level total
+  of 36,418.29. A scorecard with no `breakdown_type` filter reports 182,091,
+  five times the real figure, and looks entirely plausible. One breakdown per
+  chart, one per page, never a total across them. (The sub-cent variance is
+  Meta's own per-breakdown rounding and privacy suppression.)
+- **Never union `v_breakdown_daily` with `v_ad_daily`** either — that is the
+  same spend a sixth time.
 - Three of the five breakdowns (age/gender, platform+device, region) have **no
   `ad_id`**, so those rows carry no campaign or ad labels at all. Weld does not
   sync it. Sized in `reporting.v_data_gaps`.
