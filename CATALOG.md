@@ -267,6 +267,12 @@ All three facts **require a date filter on every query**.
 | `core.fct_ad_performance_daily` | the same | The table behind it. Query the view. |
 | `reporting.v_data_gaps` | one row per gap | **Your work list.** Everything unmapped or unattributable, sized by rows and by spend. |
 
+**Do not `SUM(spend_affected)` across gap types.** Each row is sized against its
+own source, and those sources overlap. `meta_breakdown_without_ad_id` has one row
+per breakdown type and each carries the *full* Meta spend, so summing its three
+rows reports three times the real figure. Read the rows, sort by `spend_affected`
+to prioritise, but never total the column.
+
 Campaign grain is the coarsest grain all three channels share, so that is where
 the union sits. Channel-specific detail stays in the channel marts.
 
