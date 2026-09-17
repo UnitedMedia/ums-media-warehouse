@@ -1,0 +1,39 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.tiktok_marts,
+  name: "fct_tiktok_ad_hourly",
+  tags: ["tiktok", "marts"],
+  description: "TikTok ad x hour, for dayparting. The same spend as fct_tiktok_ad_daily at a finer time grain — its own chart, its own data source, never unioned with the daily fact.",
+  bigquery: {
+    partitionBy: "date",
+    clusterBy: ["advertiser_id", "ad_id", "hour"]
+  },
+  assertions: {
+    uniqueKey: ["date", "hour", "ad_id"],
+    nonNull: ["date", "ad_id"]
+  }
+}
+
+SELECT
+  date,
+  hour,
+  advertiser_id,
+  ad_id,
+  SUM(impressions)            AS impressions,
+  SUM(clicks)                 AS clicks,
+  SUM(reach)                  AS reach,
+  SUM(spend)                  AS spend,
+  SUM(conversion)             AS conversions,
+  SUM(result)                 AS results,
+  SUM(total_purchase)         AS purchases,
+  SUM(total_purchase_value)   AS purchase_value,
+  SUM(likes)                  AS likes,
+  SUM(comments)               AS comments,
+  SUM(shares)                 AS shares,
+  SUM(follows)                AS follows,
+  SUM(video_play_actions)     AS video_plays,
+  SUM(video_views_p100)       AS video_views_p100,
+  SUM(video_watched_6s)       AS video_watched_6s
+FROM ${ref("stg_tiktok_ad_hourly")}
+WHERE date IS NOT NULL
+GROUP BY 1, 2, 3, 4

@@ -1,0 +1,23 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.tiktok_staging,
+  name: "stg_tiktok_campaign",
+  tags: ["tiktok", "staging"],
+  description: "TikTok campaign entity. objective_type is what `result` counts on the fact tables — TikTok's Results metric means whatever the campaign optimised for, the same way Meta's does."
+}
+
+SELECT
+  CAST(id AS STRING)            AS campaign_id,
+  CAST(advertiser_id AS STRING) AS advertiser_id,
+  campaign_name,
+  campaign_type,
+  objective,
+  objective_type,
+  budget                        AS campaign_budget,
+  budget_mode                   AS campaign_budget_mode,
+  budget_optimize_on,
+  status                        AS campaign_status,
+  opt_status                    AS campaign_opt_status,
+  DATE(create_time)             AS campaign_created_date
+FROM ${ref({ schema: constants.DATASETS.tiktok, name: "campaign" })}
+QUALIFY ROW_NUMBER() OVER (PARTITION BY id ORDER BY _weld_synced DESC) = 1

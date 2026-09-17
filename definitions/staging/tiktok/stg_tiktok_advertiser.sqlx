@@ -1,0 +1,19 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.tiktok_staging,
+  name: "stg_tiktok_advertiser",
+  tags: ["tiktok", "staging"],
+  description: "TikTok advertiser entity. The ONLY table in the whole TikTok feed that carries currency — no report table has it, so every spend figure is unlabelled until this is joined."
+}
+
+SELECT
+  CAST(id AS STRING) AS advertiser_id,
+  name               AS advertiser_name,
+  company            AS company,
+  currency           AS currency,
+  country            AS country,
+  timezone           AS timezone,
+  industry           AS industry,
+  status             AS advertiser_status
+FROM ${ref({ schema: constants.DATASETS.tiktok, name: "advertiser" })}
+QUALIFY ROW_NUMBER() OVER (PARTITION BY id ORDER BY _weld_synced DESC) = 1

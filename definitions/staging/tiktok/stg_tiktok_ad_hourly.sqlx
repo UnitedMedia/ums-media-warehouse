@@ -1,0 +1,42 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.tiktok_staging,
+  name: "stg_tiktok_ad_hourly",
+  tags: ["tiktok", "staging"],
+  description: "TikTok ad x hour, for dayparting. The same spend as stg_tiktok_ad_daily at a finer time grain — never union the two.",
+  columns: {
+    hour: "0-23, taken from characters 12-13 of stat_time_hour."
+  }
+}
+
+SELECT
+  ${metrics.parseTiktokDate("stat_time_hour")} AS date,
+  ${metrics.parseTiktokHour("stat_time_hour")} AS hour,
+  CAST(advertiser_id AS STRING)                AS advertiser_id,
+  CAST(ad_id AS STRING)                        AS ad_id,
+
+  impressions,
+  clicks,
+  reach,
+  spend,
+  conversion,
+  result,
+  secondary_goal_result,
+  sales_lead,
+  total_sales_lead,
+  total_sales_lead_value,
+  total_purchase,
+  total_purchase_value,
+  likes,
+  comments,
+  shares,
+  follows,
+  profile_visits,
+  video_play_actions,
+  video_views_p25,
+  video_views_p50,
+  video_views_p75,
+  video_views_p100,
+  video_watched_2s,
+  video_watched_6s
+FROM ${ref({ schema: constants.DATASETS.tiktok, name: "ad_hourly_report" })}

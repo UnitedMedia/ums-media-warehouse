@@ -37,6 +37,10 @@ correct no matter how Looker rolls it up; a ratio stored in a table does not.
 | CM360 conversions or reach | `cm360_reporting.v_campaign_daily` |
 | Meta spend, conversions, ROAS, cost per anything | `meta_reporting.v_ad_daily` |
 | Meta by age, gender, country, platform, device | `meta_reporting.v_breakdown_daily` |
+| TikTok spend — the complete total | `tiktok_reporting.v_campaign_daily` |
+| TikTok by ad, creative, video performance | `tiktok_reporting.v_daily` |
+| TikTok by hour | `tiktok_reporting.v_hourly` |
+| TikTok by age, gender, country, language, platform | `tiktok_reporting.v_breakdown_daily` |
 | All three channels in one chart | `reporting.v_ad_performance_daily` |
 | What is broken or unmapped right now | `reporting.v_data_gaps` |
 | How a metric is defined | `dv360_reporting.v_metric_catalog`, `cm360_reporting.v_metric_catalog` |
@@ -50,6 +54,8 @@ correct no matter how Looker rolls it up; a ratio stored in a table does not.
 | DV360 | `spend_usd` | `dv360_reporting.v_daily` | Same, in USD. Use for cross-currency totals |
 | CM360 | `media_cost` | `cm360_reporting.v_daily` | See the warning below — probably a serving fee |
 | Meta | `spend` | `meta_reporting.v_ad_daily` | Account currency |
+| TikTok | `spend` | `tiktok_reporting.v_campaign_daily` | **Complete.** Advertiser currency |
+| TikTok | `spend` | `tiktok_reporting.v_daily` | Ad level — only ~98.6% of the above |
 
 ### Where the impressions are
 
@@ -62,6 +68,10 @@ within it but must never add two breakdowns together.
 ---
 
 ## Read this before you total anything
+
+**TikTok and Meta are live; DV360 and CM360 are not.**
+TikTok runs through today and updates daily, 46 days of history from 3 August.
+Meta is current. The other two stopped in August — see below.
 
 **DV360 and CM360 data stops in August 2026.** DV360's last day is 2026-08-25,
 CM360's is 2026-08-31. The Keboola extractions stopped and had not been
@@ -256,6 +266,66 @@ All three facts **require a date filter on every query**.
 | `fct_meta_ad_action_daily` | ad × day × metric | **Long, not wide.** A new conversion event adds rows, never columns. Aliases already excluded. |
 | `fct_meta_breakdown_daily` | breakdown slice × day | |
 | `dim_meta_ad` | ad | Account, campaign, ad set and creative flattened into one row. No dates, no metrics, so it cannot double-count. |
+
+---
+
+## TikTok
+
+Source: Weld → `tiktok_ads`. **The only channel currently delivering fresh data
+every day.**
+
+Weld lands 41 tables and 21 of them carry identical metrics — the same money at
+every hierarchy level, every time grain and every breakdown. Eleven are used.
+
+### Reporting views — `tiktok_reporting`
+
+| View | Grain | Use it for |
+|---|---|---|
+| **`v_campaign_daily`** | campaign × day | **Any TikTok total.** Complete spend. Impressions, clicks, reach, conversions, results, purchases, video and engagement metrics, plus CPM/CTR/CPC/frequency/completion rate/ROAS. |
+| **`v_daily`** | ad × day | **The detail.** Everything above plus ad name, format, text, CTA, landing page and the full video quartile curve. Covers ~98.6% of spend. |
+| `v_hourly` | ad × hour | Dayparting. Its own data source — same money as `v_daily`. |
+| `v_breakdown_daily` | slice × day | Age/gender, country, language, platform. |
+
+**Caveats that matter:**
+
+- **`v_daily` is ~1.4% short of `v_campaign_daily`.** TikTok cannot attribute
+  every impression to a named ad. Compare ads with `v_daily`; total money with
+  `v_campaign_daily`. `assert_tiktok_ad_coverage` watches the ratio.
+- **`results` counts whatever the campaign optimised for** — its
+  `objective_type`. Two campaigns with different objectives have incomparable
+  results, so always show `objective_type` next to it.
+- **Always filter `v_breakdown_daily` to one `breakdown_type`.** Four slices of
+  the same spend; no filter means four times the real figure.
+- **`platform` is campaign-level only**, so those breakdown rows have no `ad_id`.
+- `reach` is non-additive. MAX in Looker, never SUM.
+- `skan_conversions` is iOS SKAdNetwork — a separate, privacy-limited
+  attribution path. Never add it to `conversions`.
+- Video has a full quartile curve: `video_views_p25` / `p50` / `p75` / `p100`,
+  plus `video_watched_2s` and `video_watched_6s`. `completion_rate` uses p100.
+
+### Marts — `tiktok_marts`
+
+| Table | Grain | Notes |
+|---|---|---|
+| `fct_tiktok_campaign_daily` | campaign × day | **Source of truth for TikTok spend.** What `core` reads. |
+| `fct_tiktok_ad_daily` | ad × day | The detail, ~98.6% of spend. |
+| `fct_tiktok_ad_hourly` | ad × hour | Dayparting. |
+| `fct_tiktok_breakdown_daily` | slice × day | Four breakdowns normalised to one shape. |
+| `dim_tiktok_campaign` | campaign | Campaign attributes plus advertiser and **currency**. |
+| `dim_tiktok_ad` | ad | Ad, ad group, campaign and advertiser flattened. The only place the hierarchy exists — the ad report carries just `advertiser_id` and `ad_id`. |
+
+### Staging — `tiktok_staging`
+
+Eight views. `stg_tiktok_advertiser` is the only source of `currency` in the
+entire TikTok feed. Staging deliberately does **not** de-duplicate — the grain
+was verified 1:1 on 2026-09-17 and `assert_tiktok_grain` watches it.
+
+### Not modelled
+
+Every `*_weekly_report` and `*_monthly_report` (derivable with `DATE_TRUNC`),
+the `ad_group_*` and `campaign_*` rollup reports, the 13 `ad_group_*` targeting
+tables (one-to-many, they fan rows out), and the four empty GMV Max / split-test
+tables. `definitions/sources/declarations.js` lists the reason for each.
 
 ---
 

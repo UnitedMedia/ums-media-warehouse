@@ -1,0 +1,34 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.tiktok_staging,
+  name: "stg_tiktok_ad_group",
+  tags: ["tiktok", "staging"],
+  description: "TikTok ad group entity. Carries the optimisation and bidding settings: optimize_goal, billing_event, bid_type, placement_type. 70 source columns reduced to the ones anyone reports on."
+}
+
+SELECT
+  CAST(id AS STRING)            AS adgroup_id,
+  CAST(advertiser_id AS STRING) AS advertiser_id,
+  CAST(campaign_id AS STRING)   AS campaign_id,
+  adgroup_name,
+  optimize_goal,
+  external_action,
+  billing_event,
+  bid_type,
+  bid                           AS adgroup_bid,
+  budget                        AS adgroup_budget,
+  budget_mode                   AS adgroup_budget_mode,
+  placement_type,
+  promotion_website_type,
+  audience_type,
+  automated_targeting,
+  targeting_expansion_enable,
+  gender                        AS targeted_gender,
+  operation_system              AS targeted_os,
+  schedule_type,
+  schedule_start_time,
+  schedule_end_time,
+  status                        AS adgroup_status,
+  opt_status                    AS adgroup_opt_status
+FROM ${ref({ schema: constants.DATASETS.tiktok, name: "ad_group" })}
+QUALIFY ROW_NUMBER() OVER (PARTITION BY id ORDER BY _weld_synced DESC) = 1

@@ -1,0 +1,57 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.tiktok_reporting,
+  name: "v_campaign_daily",
+  tags: ["tiktok", "reporting"],
+  description: "TikTok campaign x day. COMPLETE spend — use this for any TikTok total. v_daily is ~1.4% lower because TikTok cannot attribute every impression to a named ad.",
+  columns: {
+    spend: "The complete TikTok figure, in advertiser currency.",
+    reach: "NON-ADDITIVE. Set aggregation to MAX in Looker."
+  }
+}
+
+SELECT
+  f.date,
+  DATE_TRUNC(f.date, WEEK(MONDAY)) AS week,
+  DATE_TRUNC(f.date, MONTH)        AS month,
+
+  f.advertiser_id,
+  d.advertiser_name,
+  d.currency,
+  f.campaign_id,
+  d.campaign_name,
+  d.campaign_type,
+  d.objective,
+  d.objective_type,
+  d.campaign_budget,
+  d.campaign_status,
+
+  f.impressions,
+  f.clicks,
+  f.reach,
+  f.spend,
+  f.conversions,
+  f.results,
+  f.sales_leads,
+  f.purchases,
+  f.purchase_value,
+  f.likes,
+  f.comments,
+  f.shares,
+  f.follows,
+  f.profile_visits,
+  f.video_plays,
+  f.video_views_p100,
+  f.skan_conversions,
+
+  ${metrics.cpm("f.spend", "f.impressions")}                       AS cpm,
+  ${metrics.ctr("f.clicks", "f.impressions")}                      AS ctr,
+  ${metrics.cpc("f.spend", "f.clicks")}                            AS cpc,
+  ${metrics.frequency("f.impressions", "f.reach")}                 AS frequency,
+  ${metrics.completionRate("f.video_views_p100", "f.impressions")} AS completion_rate,
+  ${metrics.interactionRate("f.likes + f.comments + f.shares", "f.impressions")} AS engagement_rate,
+  ${metrics.cpa("f.spend", "f.conversions")}                       AS cost_per_conversion,
+  ${metrics.cpa("f.spend", "f.results")}                           AS cost_per_result,
+  ${metrics.roas("f.purchase_value", "f.spend")}                   AS purchase_roas
+FROM ${ref("fct_tiktok_campaign_daily")} f
+LEFT JOIN ${ref("dim_tiktok_campaign")} d USING (campaign_id)

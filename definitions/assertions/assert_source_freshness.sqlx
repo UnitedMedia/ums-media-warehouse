@@ -20,6 +20,10 @@ WITH latest AS (
   SELECT '${constants.CHANNEL.meta}', MAX(date)
   FROM ${ref("fct_meta_ad_daily")}
   WHERE ${constants.allPartitions()}
+
+  UNION ALL
+  SELECT '${constants.CHANNEL.tiktok}', MAX(date)
+  FROM ${ref("fct_tiktok_campaign_daily")}
 )
 SELECT
   channel,

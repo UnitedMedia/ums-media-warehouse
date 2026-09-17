@@ -9,7 +9,7 @@ const RAW_PROJECT = "ums-digital-core-automation";
 const DATASETS = {
   kebooladv: "kebooladv",         // CM360 + DV360 (Keboola)
   meta:      "facebook_ads_weld", // Meta (Weld)
-  tiktok:    "tiktok_ads",        // TikTok (Weld) — not modelled yet
+  tiktok:    "tiktok_ads",        // TikTok (Weld)
 };
 
 // Output datasets. Channel stacks keep the <channel>_<layer> pattern
@@ -36,6 +36,10 @@ const SCHEMAS = {
   meta_marts:      "meta_marts",
   meta_reporting:  "meta_reporting",
 
+  tiktok_staging:   "tiktok_staging",
+  tiktok_marts:     "tiktok_marts",
+  tiktok_reporting: "tiktok_reporting",
+
   core:            "core",      // cross-channel, channel-agnostic schema
   core_seeds:      "core_seeds",
   reporting:       "reporting", // cross-channel Looker Studio surface
@@ -46,6 +50,7 @@ const CHANNEL = {
   dv360: "DV360",
   cm360: "CM360",
   meta:  "Meta",
+  tiktok: "TikTok",
 };
 
 // Every partitioned fact in this project is PARTITION BY date. Some

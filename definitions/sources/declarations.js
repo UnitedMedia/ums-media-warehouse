@@ -65,6 +65,40 @@ const META_TABLES = [
   "demographics_region",                       // no ad_id
 ];
 
+// ---------------------------------------------------------------------
+// tiktok_ads — Weld sync for TikTok
+//
+// Weld lands 41 tables. TikTok publishes the SAME money at every level of
+// the hierarchy (ad -> ad group -> campaign) AND at every time grain
+// (hourly / daily / weekly / monthly) AND per breakdown — 21 report
+// tables carrying identical metrics. Only the finest grain of each is
+// declared; the rest are derivable and staging any of them would create
+// a second source of truth for one number.
+//
+// NOTE: `ad` and `campaign` are also the names of Meta tables in
+// facebook_ads_weld. Every reference to either is dataset-qualified, as
+// the README requires. A bare ref() would not compile.
+// ---------------------------------------------------------------------
+const TIKTOK_TABLES = [
+  // entities — keyed on `id`, not <entity>_id
+  "advertiser",            // the ONLY table carrying currency
+  "campaign",
+  "ad_group",
+  "ad",
+
+  // facts
+  "campaign_daily_report", // COMPLETE spend — the source of truth
+  "ad_daily_report",       // the detail. ~98.6% of spend; TikTok cannot
+                           // attribute the rest to a named ad.
+  "ad_hourly_report",      // dayparting
+
+  // breakdowns — each a different slice of the SAME spend
+  "ad_age_gender_report",
+  "ad_country_report",
+  "ad_language_report",
+  "campaign_platform_report", // platform exists only at campaign level
+];
+
 KEBOOLA_TABLES.forEach(name => {
   declare({
     database: constants.RAW_PROJECT,
@@ -81,6 +115,26 @@ META_TABLES.forEach(name => {
   });
 });
 
-// TikTok is next. When it lands, add a TIKTOK_TABLES block against
-// constants.DATASETS.tiktok and a definitions/staging/tiktok/ folder.
-// Nothing else in this repo needs to change.
+TIKTOK_TABLES.forEach(name => {
+  declare({
+    database: constants.RAW_PROJECT,
+    schema: constants.DATASETS.tiktok,
+    name: name,
+  });
+});
+
+// Deliberately NOT declared, and why:
+//   * every *_weekly_report and *_monthly_report — DATE_TRUNC on the
+//     daily fact gives the same numbers
+//   * ad_group_* and campaign_* hourly/daily reports — rollups of
+//     ad_daily_report; campaign_daily_report is declared only because it
+//     is COMPLETE where the ad report is not
+//   * campaign_age_gender / country / language reports — the ad-level
+//     versions rolled up
+//   * the 13 ad_group_* targeting tables (audience, interest, location,
+//     placement...) — one-to-many attribute lists. Joining one to a fact
+//     fans rows out. Revisit if someone asks for targeting analysis.
+//   * ad_group_split_test and the three gmv_max_* tables — 0 rows,
+//     untouched since 2026-09-02. GMV Max is TikTok Shop, a different
+//     product with `cost` instead of `spend`; it gets its own stack if
+//     it ever fills.

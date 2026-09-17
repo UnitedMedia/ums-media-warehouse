@@ -1,0 +1,67 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.tiktok_staging,
+  name: "stg_tiktok_breakdown",
+  tags: ["tiktok", "staging"],
+  description: "TikTok's four breakdowns normalised to one shape. These are four different cuts of the SAME spend — never union any of them with each other or with the ad fact.",
+  columns: {
+    ad_id: "NULL for the platform breakdown, which TikTok only publishes at campaign level.",
+    campaign_id: "NULL for the three ad-level breakdowns. Pick it up from dim_tiktok_ad instead.",
+    breakdown_1: "age, country_code, language or platform depending on breakdown_type",
+    breakdown_2: "gender, and only for the age_gender breakdown"
+  }
+}
+
+SELECT
+  'age_gender'                                AS breakdown_type,
+  ${metrics.parseTiktokDate("stat_time_day")} AS date,
+  CAST(advertiser_id AS STRING)               AS advertiser_id,
+  CAST(NULL AS STRING)                        AS campaign_id,
+  CAST(ad_id AS STRING)                       AS ad_id,
+  age                                         AS breakdown_1,
+  gender                                      AS breakdown_2,
+  impressions,
+  clicks,
+  spend,
+  conversion,
+  result
+FROM ${ref({ schema: constants.DATASETS.tiktok, name: "ad_age_gender_report" })}
+
+UNION ALL
+SELECT
+  'country',
+  ${metrics.parseTiktokDate("stat_time_day")},
+  CAST(advertiser_id AS STRING),
+  CAST(NULL AS STRING),
+  CAST(ad_id AS STRING),
+  country_code,
+  CAST(NULL AS STRING),
+  impressions, clicks, spend, conversion, result
+FROM ${ref({ schema: constants.DATASETS.tiktok, name: "ad_country_report" })}
+
+UNION ALL
+SELECT
+  'language',
+  ${metrics.parseTiktokDate("stat_time_day")},
+  CAST(advertiser_id AS STRING),
+  CAST(NULL AS STRING),
+  CAST(ad_id AS STRING),
+  language,
+  CAST(NULL AS STRING),
+  impressions, clicks, spend, conversion, result
+FROM ${ref({ schema: constants.DATASETS.tiktok, name: "ad_language_report" })}
+
+-- Platform is the odd one out: TikTok publishes it at CAMPAIGN level
+-- only, so these rows have a campaign_id and no ad_id. That is a real
+-- limitation of the feed, not a modelling choice.
+UNION ALL
+SELECT
+  'platform',
+  ${metrics.parseTiktokDate("stat_time_day")},
+  CAST(advertiser_id AS STRING),
+  CAST(campaign_id AS STRING),
+  CAST(NULL AS STRING),
+  platform,
+  CAST(NULL AS STRING),
+  impressions, clicks, spend, conversion, result
+FROM ${ref({ schema: constants.DATASETS.tiktok, name: "campaign_platform_report" })}

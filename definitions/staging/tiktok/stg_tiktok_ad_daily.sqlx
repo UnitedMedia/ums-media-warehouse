@@ -1,0 +1,61 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.tiktok_staging,
+  name: "stg_tiktok_ad_daily",
+  tags: ["tiktok", "staging"],
+  description: "TikTok ad x day. The detail layer — covers ~98.6% of spend, because TikTok cannot attribute every impression to a named ad. Compare ads with it; total money from stg_tiktok_campaign_daily instead.",
+  columns: {
+    advertiser_id: "The only ID in the source besides ad_id. campaign_id and adgroup_id come from dim_tiktok_ad, not from here.",
+    reach: "NON-ADDITIVE at any grain above ad x day.",
+    complete_payment: "TikTok Shop checkout completion. Present at ad level only, not on the campaign report."
+  }
+}
+
+SELECT
+  ${metrics.parseTiktokDate("stat_time_day")} AS date,
+  CAST(advertiser_id AS STRING)               AS advertiser_id,
+  CAST(ad_id AS STRING)                       AS ad_id,
+
+  impressions,
+  clicks,
+  reach,
+  spend,
+  conversion,
+  result,
+  secondary_goal_result,
+  sales_lead,
+  total_sales_lead,
+  total_sales_lead_value,
+  total_purchase,
+  total_purchase_value,
+  complete_payment,
+  likes,
+  comments,
+  shares,
+  follows,
+  profile_visits,
+  video_play_actions,
+  video_views_p25,
+  video_views_p50,
+  video_views_p75,
+  video_views_p100,
+  video_watched_2s,
+  video_watched_6s,
+
+  skan_conversion,
+  skan_sales_lead,
+  skan_total_sales_lead,
+  skan_total_sales_lead_value,
+
+  real_time_conversion AS src_real_time_conversion,
+  real_time_result     AS src_real_time_result,
+
+  cpc                  AS src_cpc,
+  cpm                  AS src_cpm,
+  ctr                  AS src_ctr,
+  conversion_rate      AS src_conversion_rate,
+  result_rate          AS src_result_rate,
+  cost_per_conversion  AS src_cost_per_conversion,
+  cost_per_result      AS src_cost_per_result,
+  average_video_play   AS src_average_video_play
+FROM ${ref({ schema: constants.DATASETS.tiktok, name: "ad_daily_report" })}

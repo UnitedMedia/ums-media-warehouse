@@ -19,7 +19,7 @@ config {
     conversions: "Each channel's OWN headline conversion count. These are NOT like for like — read conversions_definition on the same row before adding or comparing them.",
     conversions_definition: "What produced the conversions figure on this row. Exists so nobody has to remember which channel means what.",
     interactions: "NULL for CM360, which does not measure it. NULL means not measured; 0 would mean measured as zero.",
-    complete_views: "DV360 only. CM360 video_views and Meta views_3s are different measurements, not complete views, so they are NULL rather than silently equated."
+    complete_views: "DV360 and TikTok only. DV360 gives Complete_Views_Video, TikTok gives video_views_p100 — both mean the video played to the end. CM360 video_views and Meta views_3s do NOT, so they stay NULL rather than being silently equated."
   }
 }
 
@@ -155,12 +155,39 @@ meta AS (
   LEFT JOIN meta_results      r USING (date, campaign_id)
 ),
 
+-- TikTok reads the CAMPAIGN fact, not the ad fact. The ad-level report
+-- covers only ~98.6% of spend; the campaign report is complete, and this
+-- union is at campaign grain anyway. Currency comes from the advertiser
+-- entity via dim_tiktok_campaign, since no TikTok report table has one.
+tiktok AS (
+  SELECT
+    f.date,
+    '${constants.CHANNEL.tiktok}'             AS channel,
+    ANY_VALUE(d.advertiser_name)              AS advertiser_raw_name,
+    ANY_VALUE(f.advertiser_id)                AS advertiser_id,
+    ANY_VALUE(d.campaign_name)                AS campaign_name,
+    f.campaign_id                             AS campaign_id,
+    ANY_VALUE(d.currency)                     AS currency,
+    CAST(SUM(f.impressions)  AS INT64)        AS impressions,
+    CAST(SUM(f.clicks)       AS INT64)        AS clicks,
+    CAST(SUM(f.likes + f.comments + f.shares) AS INT64) AS interactions,
+    CAST(SUM(f.video_views_p100) AS INT64)    AS complete_views,
+    CAST(SUM(f.conversions)  AS FLOAT64)      AS conversions,
+    'TikTok conversion (pixel/app events, not Results)' AS conversions_definition,
+    CAST(SUM(f.spend)        AS FLOAT64)      AS spend
+  FROM ${ref("fct_tiktok_campaign_daily")} f
+  LEFT JOIN ${ref("dim_tiktok_campaign")} d USING (campaign_id)
+  GROUP BY f.date, f.campaign_id
+),
+
 unioned AS (
   SELECT * FROM dv360
   UNION ALL
   SELECT * FROM cm360
   UNION ALL
   SELECT * FROM meta
+  UNION ALL
+  SELECT * FROM tiktok
 )
 
 SELECT

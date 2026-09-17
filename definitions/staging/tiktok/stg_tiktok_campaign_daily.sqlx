@@ -1,0 +1,70 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.tiktok_staging,
+  name: "stg_tiktok_campaign_daily",
+  tags: ["tiktok", "staging"],
+  description: "TikTok campaign x day. COMPLETE spend — this is the source of truth for TikTok money. Verified 2026-09-17: 191,949.54 here against 189,210.58 in ad_daily_report, so ~1.4% of spend cannot be attributed to a named ad.",
+  columns: {
+    reach: "NON-ADDITIVE. Deduplicated by TikTok at campaign x day. Never SUM above this grain.",
+    result: "TikTok's Results metric — counts whatever the campaign optimised for, per campaign.objective_type. Not comparable between campaigns with different objectives.",
+    src_cpm: "TikTok's own stored CPM. Audit only — correct solely at the grain TikTok computed it. The reporting layer recomputes it."
+  }
+}
+
+-- No QUALIFY. Verified 2026-09-17: rows = distinct (day, ad) exactly, so
+-- Weld is not re-syncing here the way it does for Meta. An arbitrary
+-- tiebreak on a clean table silently deletes real rows, so instead
+-- assert_tiktok_grain watches for duplicates appearing.
+
+SELECT
+  ${metrics.parseTiktokDate("stat_time_day")} AS date,
+  CAST(advertiser_id AS STRING)               AS advertiser_id,
+  CAST(campaign_id AS STRING)                 AS campaign_id,
+
+  -- additive
+  impressions,
+  clicks,
+  reach,
+  spend,
+  conversion,
+  result,
+  secondary_goal_result,
+  sales_lead,
+  total_sales_lead,
+  total_sales_lead_value,
+  total_purchase,
+  total_purchase_value,
+  likes,
+  comments,
+  shares,
+  follows,
+  profile_visits,
+  video_play_actions,
+  video_views_p25,
+  video_views_p50,
+  video_views_p75,
+  video_views_p100,
+  video_watched_2s,
+  video_watched_6s,
+
+  -- iOS SKAdNetwork: a separate, privacy-limited attribution path.
+  -- NOT comparable with conversion and never added to it.
+  skan_conversion,
+  skan_sales_lead,
+  skan_total_sales_lead,
+  skan_total_sales_lead_value,
+
+  -- TikTok's fast-updating estimates. They revise. Audit only.
+  real_time_conversion AS src_real_time_conversion,
+  real_time_result     AS src_real_time_result,
+
+  -- stored ratios, audit only — the reporting layer recomputes all of these
+  cpc                  AS src_cpc,
+  cpm                  AS src_cpm,
+  ctr                  AS src_ctr,
+  conversion_rate      AS src_conversion_rate,
+  result_rate          AS src_result_rate,
+  cost_per_conversion  AS src_cost_per_conversion,
+  cost_per_result      AS src_cost_per_result,
+  average_video_play   AS src_average_video_play
+FROM ${ref({ schema: constants.DATASETS.tiktok, name: "campaign_daily_report" })}

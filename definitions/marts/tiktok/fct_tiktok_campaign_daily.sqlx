@@ -1,0 +1,54 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.tiktok_marts,
+  name: "fct_tiktok_campaign_daily",
+  tags: ["tiktok", "marts"],
+  description: "TikTok campaign x day. THE SOURCE OF TRUTH FOR TIKTOK SPEND — complete, where the ad-level fact is not. This is what core.fct_ad_performance_daily reads.",
+  bigquery: {
+    partitionBy: "date",
+    clusterBy: ["advertiser_id", "campaign_id"]
+  },
+  assertions: {
+    uniqueKey: ["date", "campaign_id"],
+    nonNull: ["date", "campaign_id"]
+  },
+  columns: {
+    reach: "NON-ADDITIVE. Deduplicated by TikTok at campaign x day; a month's reach is not the sum of its days.",
+    skan_conversion: "iOS SKAdNetwork. A separate, privacy-limited attribution path — never add it to conversion."
+  }
+}
+
+SELECT
+  date,
+  advertiser_id,
+  campaign_id,
+  SUM(impressions)                 AS impressions,
+  SUM(clicks)                      AS clicks,
+  SUM(reach)                       AS reach,
+  SUM(spend)                       AS spend,
+  SUM(conversion)                  AS conversions,
+  SUM(result)                      AS results,
+  SUM(secondary_goal_result)       AS secondary_goal_results,
+  SUM(sales_lead)                  AS sales_leads,
+  SUM(total_sales_lead)            AS total_sales_leads,
+  SUM(total_sales_lead_value)      AS total_sales_lead_value,
+  SUM(total_purchase)              AS purchases,
+  SUM(total_purchase_value)        AS purchase_value,
+  SUM(likes)                       AS likes,
+  SUM(comments)                    AS comments,
+  SUM(shares)                      AS shares,
+  SUM(follows)                     AS follows,
+  SUM(profile_visits)              AS profile_visits,
+  SUM(video_play_actions)          AS video_plays,
+  SUM(video_views_p25)             AS video_views_p25,
+  SUM(video_views_p50)             AS video_views_p50,
+  SUM(video_views_p75)             AS video_views_p75,
+  SUM(video_views_p100)            AS video_views_p100,
+  SUM(video_watched_2s)            AS video_watched_2s,
+  SUM(video_watched_6s)            AS video_watched_6s,
+  SUM(skan_conversion)             AS skan_conversions,
+  SUM(skan_total_sales_lead)       AS skan_total_sales_leads,
+  SUM(skan_total_sales_lead_value) AS skan_total_sales_lead_value
+FROM ${ref("stg_tiktok_campaign_daily")}
+WHERE date IS NOT NULL
+GROUP BY 1, 2, 3

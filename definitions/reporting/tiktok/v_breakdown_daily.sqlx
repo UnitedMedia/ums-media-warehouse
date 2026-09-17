@@ -1,0 +1,37 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.tiktok_reporting,
+  name: "v_breakdown_daily",
+  tags: ["tiktok", "reporting"],
+  description: "TikTok breakdowns for Looker Studio: age/gender, country, language and platform. ALWAYS filter to exactly one breakdown_type — all four cover the same spend, so a chart without that filter reports four times the real figure.",
+  columns: {
+    ad_id: "NULL for the platform breakdown, which TikTok publishes at campaign level only.",
+    campaign_id: "Comes from the breakdown itself for platform, and from dim_tiktok_ad for the other three."
+  }
+}
+
+SELECT
+  b.date,
+  DATE_TRUNC(b.date, WEEK(MONDAY)) AS week,
+  DATE_TRUNC(b.date, MONTH)        AS month,
+  b.breakdown_type,
+  b.breakdown_1,
+  b.breakdown_2,
+  b.advertiser_id,
+  COALESCE(b.campaign_id, d.campaign_id) AS campaign_id,
+  d.campaign_name,
+  d.objective_type,
+  b.ad_id,
+  d.ad_name,
+  d.currency,
+  b.impressions,
+  b.clicks,
+  b.spend,
+  b.conversions,
+  b.results,
+  ${metrics.cpm("b.spend", "b.impressions")}  AS cpm,
+  ${metrics.ctr("b.clicks", "b.impressions")} AS ctr,
+  ${metrics.cpc("b.spend", "b.clicks")}       AS cpc,
+  ${metrics.cpa("b.spend", "b.conversions")}  AS cost_per_conversion
+FROM ${ref("fct_tiktok_breakdown_daily")} b
+LEFT JOIN ${ref("dim_tiktok_ad")} d ON b.ad_id = d.ad_id

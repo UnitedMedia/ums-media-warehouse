@@ -1,0 +1,33 @@
+config {
+  type: "assertion",
+  tags: ["tiktok", "monitoring"],
+  description: "TikTok staging deliberately does NOT de-duplicate: verified 2026-09-17, the Weld sync delivers exactly one row per grain. This watches that assumption. If it fires, Weld has started re-syncing and staging needs the QUALIFY that Meta uses."
+}
+
+-- An arbitrary tiebreak on a clean table silently deletes real rows, so
+-- the de-duplication is not added pre-emptively. This is what tells you
+-- the day it becomes necessary.
+
+WITH campaign_grain AS (
+  SELECT
+    'stg_tiktok_campaign_daily' AS model,
+    CAST(date AS STRING)        AS date,
+    campaign_id                 AS key_id,
+    COUNT(*)                    AS rows_at_grain
+  FROM ${ref("stg_tiktok_campaign_daily")}
+  GROUP BY 1, 2, 3
+  HAVING COUNT(*) > 1
+),
+ad_grain AS (
+  SELECT
+    'stg_tiktok_ad_daily',
+    CAST(date AS STRING),
+    ad_id,
+    COUNT(*)
+  FROM ${ref("stg_tiktok_ad_daily")}
+  GROUP BY 1, 2, 3
+  HAVING COUNT(*) > 1
+)
+SELECT * FROM campaign_grain
+UNION ALL
+SELECT * FROM ad_grain

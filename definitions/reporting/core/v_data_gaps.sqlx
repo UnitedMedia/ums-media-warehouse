@@ -119,6 +119,31 @@ WITH gaps AS (
 
   UNION ALL
 
+  -- TikTok: spend the ad-level report cannot attribute to a named ad
+  SELECT
+    '${constants.CHANNEL.tiktok}',
+    'tiktok_spend_without_ad',
+    CAST(NULL AS STRING),
+    'Campaign-level spend with no matching ad-level rows. TikTok cannot attribute every impression to a named ad, so ad-level charts understate by this much.',
+    1,
+    CAST((SELECT SUM(spend) FROM ${ref("fct_tiktok_campaign_daily")})
+       - (SELECT SUM(spend) FROM ${ref("fct_tiktok_ad_daily")}) AS FLOAT64)
+
+  UNION ALL
+
+  -- TikTok: breakdown rows TikTok publishes only at campaign level
+  SELECT
+    '${constants.CHANNEL.tiktok}',
+    'tiktok_breakdown_without_ad_id',
+    breakdown_type,
+    'TikTok publishes this breakdown at campaign level only, so the rows carry no ad_id and cannot be joined to dim_tiktok_ad.',
+    COUNTIF(ad_id IS NULL),
+    CAST(SUM(IF(ad_id IS NULL, spend, 0)) AS FLOAT64)
+  FROM ${ref("fct_tiktok_breakdown_daily")}
+  GROUP BY breakdown_type
+
+  UNION ALL
+
   -- Core: clients with no canonical name — this is what splits one
   -- client into three in every cross-channel report
   SELECT

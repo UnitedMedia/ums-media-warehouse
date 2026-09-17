@@ -1,0 +1,23 @@
+config {
+  type: "assertion",
+  tags: ["tiktok", "monitoring"],
+  description: "TikTok's ad-level report covers about 98.6% of campaign-level spend, because TikTok cannot attribute every impression to a named ad. Fails below the configured floor, which would mean a NEW gap rather than the known behaviour."
+}
+
+-- The same shape as assert_dv360_creative_coverage. The campaign report
+-- is complete; the ad report is the detail. If the detail drifts away
+-- from the total, every ad-level TikTok chart starts understating.
+
+WITH complete AS (
+  SELECT SUM(spend) AS spend FROM ${ref("fct_tiktok_campaign_daily")}
+),
+detail AS (
+  SELECT SUM(spend) AS spend FROM ${ref("fct_tiktok_ad_daily")}
+)
+SELECT
+  c.spend AS campaign_spend,
+  d.spend AS ad_spend,
+  SAFE_DIVIDE(d.spend, c.spend) AS coverage
+FROM complete c
+CROSS JOIN detail d
+WHERE SAFE_DIVIDE(d.spend, c.spend) < ${dataform.projectConfig.vars.tiktokAdCoverageFloor}

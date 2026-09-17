@@ -1,0 +1,37 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.tiktok_marts,
+  name: "dim_tiktok_campaign",
+  tags: ["tiktok", "marts"],
+  description: "One row per TikTok campaign, with its advertiser and currency attached. The campaign fact carries only IDs, so this is where money gets a currency.",
+  bigquery: {
+    clusterBy: ["campaign_id", "advertiser_id"]
+  },
+  assertions: {
+    uniqueKey: ["campaign_id"],
+    nonNull: ["campaign_id"]
+  },
+  columns: {
+    objective_type: "What the campaign optimised for. This is what the `result` metric counts, so two campaigns with different objectives have incomparable results."
+  }
+}
+
+SELECT
+  c.campaign_id,
+  c.campaign_name,
+  c.campaign_type,
+  c.objective,
+  c.objective_type,
+  c.campaign_budget,
+  c.campaign_budget_mode,
+  c.budget_optimize_on,
+  c.campaign_status,
+  c.campaign_opt_status,
+  c.campaign_created_date,
+  c.advertiser_id,
+  a.advertiser_name,
+  a.currency,
+  a.country AS advertiser_country,
+  a.timezone
+FROM ${ref("stg_tiktok_campaign")} c
+LEFT JOIN ${ref("stg_tiktok_advertiser")} a USING (advertiser_id)

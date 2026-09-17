@@ -71,8 +71,21 @@ function parseCm360Date(col) {
   )`;
 }
 
+// TikTok delivers stat_time_day / stat_time_hour as STRING shaped
+// 'YYYY-MM-DD HH:MM:SS'. Taking the first 10 characters is deliberate:
+// it works whether or not the time part is present, and needs no regex,
+// so there are no backslashes to be eaten by .sqlx compilation.
+function parseTiktokDate(col) {
+  return `SAFE.PARSE_DATE('%Y-%m-%d', SUBSTR(${col}, 1, 10))`;
+}
+
+// Characters 12-13 of 'YYYY-MM-DD HH:MM:SS' are the hour, 00-23.
+function parseTiktokHour(col) {
+  return `SAFE_CAST(SUBSTR(${col}, 12, 2) AS INT64)`;
+}
+
 module.exports = {
   cpm, ctr, interactionRate, completionRate, viewRate, cpa, cpc,
   viewableRate, frequency, roas,
-  parseSlashDate, parseCm360Date,
+  parseSlashDate, parseCm360Date, parseTiktokDate, parseTiktokHour,
 };

@@ -1,8 +1,8 @@
 # ums-media-warehouse
 
 Dataform project for the UMS advertising warehouse in `ums-digital-core-automation`.
-One repo for every paid channel: DV360, CM360 and Meta are modelled here today,
-TikTok and Google Ads next.
+One repo for every paid channel: DV360, CM360, Meta and TikTok are modelled
+here today, Google Ads next.
 
 Everything in `definitions/` supersedes the hand-run scripts in `all_scripts/`.
 Those are kept as the record of what was deployed before; nothing reads them.
@@ -139,8 +139,8 @@ dataform run --tags seeds        # reference data only
 dataform run --tags monitoring   # assertions without rebuilding anything
 ```
 
-Tags in use: `dv360`, `cm360`, `meta`, `core` · `staging`, `seeds`, `marts`,
-`reporting` · `monitoring`, `freshness`, `docs`.
+Tags in use: `dv360`, `cm360`, `meta`, `tiktok`, `core` · `staging`, `seeds`,
+`marts`, `reporting` · `monitoring`, `freshness`, `docs`.
 
 Dependency order is derived from `ref()`, so a full run needs no orchestration
 beyond `dataform run`.
@@ -161,6 +161,8 @@ number is wrong:
 | `assert_meta_results_coverage` | spend exists under an optimization goal with no Results definition |
 | `assert_meta_ad_daily_grain` | duplicate or null-keyed rows at Meta's base grain |
 | `assert_staging_date_parsing` | a channel's date or hour string stopped parsing |
+| `assert_tiktok_ad_coverage` | TikTok ad-level spend drops below the known ~98.6% of campaign-level |
+| `assert_tiktok_grain` | TikTok started delivering duplicate rows, so staging now needs de-duplication |
 
 Thresholds live in `workflow_settings.yaml`, not in the SQL.
 
@@ -257,6 +259,35 @@ either asserted on or surfaced in `v_data_gaps`.
   real spend, which is why that one *is* an assertion.
 - Three of the five breakdowns have no `ad_id`, so those rows cannot be labelled
   below account level. Sized in `v_data_gaps`.
+
+**TikTok**
+
+- **The only channel that is actually live.** Data through today, updating daily,
+  46 days of history from 2026-08-03. Meta is current too; DV360 and CM360 are
+  not.
+- Weld lands 41 tables and **21 of them carry identical metrics** — the same
+  money at every hierarchy level, every time grain and every breakdown. Eleven
+  are declared; the rest are derivable and would each become a second source of
+  truth. The reasons are listed in `declarations.js`.
+- **The ad-level report covers ~98.6% of spend.** Verified 2026-09-17:
+  191,949.54 at campaign level against 189,210.58 at ad level. So there are two
+  facts — `fct_tiktok_campaign_daily` is complete and is what `core` reads;
+  `fct_tiktok_ad_daily` is the detail. Same split as DV360's creative gap, just
+  smaller.
+- **`currency` exists only on the `advertiser` entity.** No report table has one,
+  so spend is unlabelled until `dim_tiktok_campaign` or `dim_tiktok_ad` is joined.
+- `ad_daily_report` carries only `advertiser_id` and `ad_id` — campaign and ad
+  group come from `dim_tiktok_ad`.
+- **21 stored ratios** (`cpc`, `cpm`, `ctr`, `cost_per_*`, `*_rate`) are kept as
+  `src_*` for audit only and recomputed in reporting, as everywhere else.
+- `real_time_*` columns are TikTok's fast-updating estimates and they revise.
+  Audit only.
+- `skan_*` is iOS SKAdNetwork — a separate, privacy-limited attribution path.
+  Never added to `conversion`.
+- **Staging deliberately does NOT de-duplicate.** Verified 2026-09-17: rows equal
+  distinct grain exactly. `assert_tiktok_grain` watches that assumption instead.
+- `platform` is published at campaign level only, so those breakdown rows carry
+  no `ad_id`.
 
 **Cross-channel**
 

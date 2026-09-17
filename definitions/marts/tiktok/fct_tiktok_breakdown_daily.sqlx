@@ -1,0 +1,31 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.tiktok_marts,
+  name: "fct_tiktok_breakdown_daily",
+  tags: ["tiktok", "marts"],
+  description: "TikTok breakdowns at date x slice. Four different cuts of the SAME spend already in fct_tiktok_ad_daily. Union any two and spend is counted twice.",
+  bigquery: {
+    partitionBy: "date",
+    clusterBy: ["breakdown_type", "advertiser_id", "ad_id"]
+  },
+  assertions: {
+    nonNull: ["date", "breakdown_type"]
+  }
+}
+
+SELECT
+  date,
+  breakdown_type,
+  advertiser_id,
+  campaign_id,
+  ad_id,
+  breakdown_1,
+  breakdown_2,
+  SUM(impressions) AS impressions,
+  SUM(clicks)      AS clicks,
+  SUM(spend)       AS spend,
+  SUM(conversion)  AS conversions,
+  SUM(result)      AS results
+FROM ${ref("stg_tiktok_breakdown")}
+WHERE date IS NOT NULL
+GROUP BY 1, 2, 3, 4, 5, 6, 7

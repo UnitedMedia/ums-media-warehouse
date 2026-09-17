@@ -27,6 +27,14 @@ WITH checks AS (
   UNION ALL
   SELECT 'stg_meta_ad_insight.date', COUNTIF(date IS NULL), COUNT(*)
   FROM ${ref("stg_meta_ad_insight")}
+
+  UNION ALL
+  SELECT 'stg_tiktok_campaign_daily.date', COUNTIF(date IS NULL), COUNT(*)
+  FROM ${ref("stg_tiktok_campaign_daily")}
+
+  UNION ALL
+  SELECT 'stg_tiktok_ad_hourly.hour', COUNTIF(hour IS NULL), COUNT(*)
+  FROM ${ref("stg_tiktok_ad_hourly")}
 )
 SELECT
   check_name,

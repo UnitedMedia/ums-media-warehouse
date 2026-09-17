@@ -1,0 +1,32 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.tiktok_reporting,
+  name: "v_hourly",
+  tags: ["tiktok", "reporting"],
+  description: "TikTok dayparting: ad x hour. Its own chart and its own Looker data source — the same spend as v_daily at a finer grain, so never blend the two."
+}
+
+SELECT
+  f.date,
+  f.hour,
+  d.advertiser_name,
+  d.campaign_id,
+  d.campaign_name,
+  d.adgroup_name,
+  d.ad_id,
+  d.ad_name,
+  d.currency,
+  f.impressions,
+  f.clicks,
+  f.reach,
+  f.spend,
+  f.conversions,
+  f.results,
+  f.video_plays,
+  f.video_views_p100,
+  ${metrics.cpm("f.spend", "f.impressions")}                       AS cpm,
+  ${metrics.ctr("f.clicks", "f.impressions")}                      AS ctr,
+  ${metrics.cpc("f.spend", "f.clicks")}                            AS cpc,
+  ${metrics.completionRate("f.video_views_p100", "f.impressions")} AS completion_rate
+FROM ${ref("fct_tiktok_ad_hourly")} f
+LEFT JOIN ${ref("dim_tiktok_ad")} d USING (ad_id)

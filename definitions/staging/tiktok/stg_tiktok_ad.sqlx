@@ -1,0 +1,30 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.tiktok_staging,
+  name: "stg_tiktok_ad",
+  tags: ["tiktok", "staging"],
+  description: "TikTok ad entity. This is where the hierarchy lives — ad_daily_report carries only advertiser_id and ad_id, so campaign_id and adgroup_id can only come from here."
+}
+
+SELECT
+  CAST(id AS STRING)            AS ad_id,
+  CAST(advertiser_id AS STRING) AS advertiser_id,
+  CAST(campaign_id AS STRING)   AS campaign_id,
+  CAST(ad_group_id AS STRING)   AS adgroup_id,
+  ad_name,
+  ad_format,
+  ad_text,
+  call_to_action,
+  display_name,
+  landing_page_url,
+  CAST(video_id AS STRING)      AS video_id,
+  CAST(identity_id AS STRING)   AS identity_id,
+  identity_type,
+  CAST(page_id AS STRING)       AS page_id,
+  profile_image,
+  is_aco,
+  status                        AS ad_status,
+  opt_status                    AS ad_opt_status,
+  DATE(create_time)             AS ad_created_date
+FROM ${ref({ schema: constants.DATASETS.tiktok, name: "ad" })}
+QUALIFY ROW_NUMBER() OVER (PARTITION BY id ORDER BY _weld_synced DESC) = 1

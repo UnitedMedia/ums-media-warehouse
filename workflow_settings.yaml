@@ -22,6 +22,10 @@ vars:
   # Below this floor it is a new gap, not the known behaviour.
   dv360CreativeCoverageFloor: "0.70"
 
+  # TikTok's ad-level report normally sits near 0.986 of campaign-level
+  # spend — TikTok cannot attribute every impression to a named ad.
+  tiktokAdCoverageFloor: "0.95"
+
   # Allowed relative divergence between two reports of the same
   # delivery, e.g. CM360 hourly vs the standard campaign report.
   reconciliationTolerance: "0.01"

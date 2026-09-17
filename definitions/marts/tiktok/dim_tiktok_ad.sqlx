@@ -1,0 +1,60 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.tiktok_marts,
+  name: "dim_tiktok_ad",
+  tags: ["tiktok", "marts"],
+  description: "One row per TikTok ad, flattened across advertiser, campaign, ad group and creative. No dates and no metrics, so it cannot double-count. This is the only place the hierarchy exists — ad_daily_report carries just advertiser_id and ad_id.",
+  bigquery: {
+    clusterBy: ["advertiser_id", "campaign_id", "ad_id"]
+  },
+  assertions: {
+    uniqueKey: ["ad_id"],
+    nonNull: ["ad_id"]
+  }
+}
+
+SELECT
+  a.ad_id,
+  a.advertiser_id,
+  a.campaign_id,
+  a.adgroup_id,
+
+  adv.advertiser_name,
+  adv.currency,
+  adv.timezone,
+
+  c.campaign_name,
+  c.objective,
+  c.objective_type,
+  c.campaign_budget,
+  c.campaign_status,
+
+  g.adgroup_name,
+  g.optimize_goal,
+  g.external_action,
+  g.billing_event,
+  g.bid_type,
+  g.adgroup_budget,
+  g.placement_type,
+  g.audience_type,
+  g.automated_targeting,
+  g.schedule_start_time,
+  g.schedule_end_time,
+  g.adgroup_status,
+
+  a.ad_name,
+  a.ad_format,
+  a.ad_text,
+  a.call_to_action,
+  a.display_name,
+  a.landing_page_url,
+  a.video_id,
+  a.identity_type,
+  a.profile_image,
+  a.is_aco,
+  a.ad_status,
+  a.ad_created_date
+FROM ${ref("stg_tiktok_ad")} a
+LEFT JOIN ${ref("stg_tiktok_ad_group")}   g   USING (adgroup_id)
+LEFT JOIN ${ref("stg_tiktok_campaign")}   c   USING (campaign_id)
+LEFT JOIN ${ref("stg_tiktok_advertiser")} adv USING (advertiser_id)
