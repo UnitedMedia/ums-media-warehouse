@@ -54,7 +54,13 @@ SELECT
   a.is_aco,
   a.ad_status,
   a.ad_created_date
+-- Explicit ON, not USING. stg_tiktok_ad_group carries campaign_id and
+-- advertiser_id as well as adgroup_id, and USING merges ONLY the column
+-- it names — so after the ad_group join those two exist twice on the
+-- left side and a second USING on either is ambiguous. Anchoring every
+-- join to `a` also makes the ad table the single source of the
+-- hierarchy, which is what this dimension is for.
 FROM ${ref("stg_tiktok_ad")} a
-LEFT JOIN ${ref("stg_tiktok_ad_group")}   g   USING (adgroup_id)
-LEFT JOIN ${ref("stg_tiktok_campaign")}   c   USING (campaign_id)
-LEFT JOIN ${ref("stg_tiktok_advertiser")} adv USING (advertiser_id)
+LEFT JOIN ${ref("stg_tiktok_ad_group")}   g   ON g.adgroup_id      = a.adgroup_id
+LEFT JOIN ${ref("stg_tiktok_campaign")}   c   ON c.campaign_id     = a.campaign_id
+LEFT JOIN ${ref("stg_tiktok_advertiser")} adv ON adv.advertiser_id = a.advertiser_id

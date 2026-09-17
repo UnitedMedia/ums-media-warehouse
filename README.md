@@ -323,6 +323,12 @@ either asserted on or surfaced in `v_data_gaps`.
   exists rather than an inline `CREATE SCHEMA`.
 - Every statement in a `type: "operations"` block ends with a semicolon, and
   multiple statements are separated by `---` on its own line.
+- **`USING` merges only the column it names.** Chain two joins where the second
+  table also carries an earlier join key and that key exists twice on the left
+  side — `Column x in USING clause is ambiguous`. `dim_tiktok_ad` hit this
+  because `stg_tiktok_ad_group` carries `campaign_id` and `advertiser_id` as
+  well as `adgroup_id`. Where a dimension fans out from one spine table, use
+  explicit `ON` and anchor every join to that spine.
 
 ---
 
