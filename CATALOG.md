@@ -43,6 +43,7 @@ correct no matter how Looker rolls it up; a ratio stored in a table does not.
 | TikTok by age, gender, country, language, platform | `tiktok_reporting.v_breakdown_daily` |
 | All three channels in one chart | `reporting.v_ad_performance_daily` |
 | What is broken or unmapped right now | `reporting.v_data_gaps` |
+| How fresh each channel is | `reporting.v_source_freshness` |
 | How a metric is defined | `dv360_reporting.v_metric_catalog`, `cm360_reporting.v_metric_catalog` |
 | Whether we can split by some dimension | `dv360_reporting.v_dimension_coverage` |
 

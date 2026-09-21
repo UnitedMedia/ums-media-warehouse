@@ -1,0 +1,40 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.reporting,
+  name: "v_source_freshness",
+  tags: ["monitoring", "reporting", "docs"],
+  description: "How recent each channel's data is, always visible. assert_source_freshness only returns the channels that are STALE; this one lists every channel whether healthy or not, so 'is Meta still live?' is one query rather than an inference from an empty result.",
+  columns: {
+    latest_data_date: "The most recent date present in that channel's backbone fact. NOT the same as when the extraction last ran — a pipe can run daily and deliver nothing new.",
+    days_stale: "Days between latest_data_date and today.",
+    is_stale: "TRUE once days_stale passes freshnessThresholdDays. These are exactly the rows assert_source_freshness returns."
+  }
+}
+
+WITH latest AS (
+  SELECT '${constants.CHANNEL.dv360}' AS channel, MAX(date) AS latest_data_date
+  FROM ${ref("fct_dv360_daily")}
+
+  UNION ALL
+  SELECT '${constants.CHANNEL.cm360}', MAX(date)
+  FROM ${ref("fct_cm360_placement_daily")}
+
+  UNION ALL
+  SELECT '${constants.CHANNEL.meta}', MAX(date)
+  FROM ${ref("fct_meta_ad_daily")}
+  WHERE ${constants.allPartitions()}
+
+  UNION ALL
+  SELECT '${constants.CHANNEL.tiktok}', MAX(date)
+  FROM ${ref("fct_tiktok_campaign_daily")}
+)
+SELECT
+  channel,
+  latest_data_date,
+  DATE_DIFF(CURRENT_DATE(), latest_data_date, DAY) AS days_stale,
+  DATE_DIFF(CURRENT_DATE(), latest_data_date, DAY)
+    > ${dataform.projectConfig.vars.freshnessThresholdDays}        AS is_stale,
+  ${dataform.projectConfig.vars.freshnessThresholdDays}            AS threshold_days,
+  CURRENT_DATE()                                                   AS as_of
+FROM latest
+ORDER BY days_stale DESC
