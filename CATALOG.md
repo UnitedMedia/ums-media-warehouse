@@ -98,6 +98,15 @@ sides come out wrong.
 CM360 has no currency column at all. Break out or filter by currency before
 summing across advertisers.
 
+**`clicks` in the cross-channel view means clicks to the destination.**
+DV360, CM360 and TikTok count only those. Meta's own `clicks` field also
+counts likes, comments, profile taps and photo expands, so
+`reporting.v_ad_performance_daily` takes Meta's `inline_link_clicks` instead —
+the comparable number, and the one `meta_reporting.v_ad_daily` already uses for
+its CTR and CPC. If you want Meta's all-interaction click count, it is the
+`clicks` column in `meta_reporting.v_ad_daily`, and it does not belong in a
+cross-channel chart.
+
 **Conversions mean different things per channel.** DV360 counts
 `Total_Conversions`, CM360 counts Floodlight totals at campaign level, Meta
 counts "Results" resolved from each ad set's optimization goal. The

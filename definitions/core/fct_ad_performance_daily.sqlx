@@ -18,6 +18,7 @@ config {
     currency: "NULL for CM360: the Keboola report carries no currency column. Do not add CM360 spend to another channel's without first deciding what currency you are in.",
     conversions: "Each channel's OWN headline conversion count. These are NOT like for like — read conversions_definition on the same row before adding or comparing them.",
     conversions_definition: "What produced the conversions figure on this row. Exists so nobody has to remember which channel means what.",
+    clicks: "Clicks to the destination, on every channel. DV360, CM360 and TikTok count only those natively; for Meta this is inline_link_clicks, NOT its `clicks` field, which also counts likes, comments and profile taps and would overstate Meta against the rest.",
     interactions: "NULL for CM360, which does not measure it. NULL means not measured; 0 would mean measured as zero.",
     complete_views: "DV360 and TikTok only. DV360 gives Complete_Views_Video, TikTok gives video_views_p100 — both mean the video played to the end. CM360 video_views and Meta views_3s do NOT, so they stay NULL rather than being silently equated."
   }
@@ -103,7 +104,12 @@ meta_delivery AS (
     f.campaign_id                     AS campaign_id,
     f.currency                        AS currency,
     CAST(SUM(f.impressions) AS INT64)   AS impressions,
-    CAST(SUM(f.clicks)      AS INT64)   AS clicks,
+    -- link_clicks, NOT clicks. Meta's `clicks` counts every interaction
+    -- with the ad — likes, comments, profile taps, photo expands — so it
+    -- runs far above the other three channels, which all count only
+    -- clicks to the destination. inline_link_clicks is the comparable
+    -- number, and it is already what v_ad_daily's own CTR and CPC use.
+    CAST(SUM(f.link_clicks) AS INT64)   AS clicks,
     CAST(SUM(f.spend)       AS FLOAT64) AS spend
   FROM ${ref("fct_meta_ad_daily")} f
   LEFT JOIN ${ref("dim_meta_ad")} d USING (ad_id)
