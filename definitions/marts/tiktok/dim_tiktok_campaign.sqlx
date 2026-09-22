@@ -3,22 +3,42 @@ config {
   schema: constants.SCHEMAS.tiktok_marts,
   name: "dim_tiktok_campaign",
   tags: ["tiktok", "marts"],
-  description: "One row per TikTok campaign, with its advertiser and currency attached. The campaign fact carries only IDs, so this is where money gets a currency.",
+  description: "One row per TikTok campaign that has delivered, with its advertiser and currency attached. Driven by DELIVERY, not by the campaign entity table — TikTok reports spend for campaigns the entity sync never returns, and those must not lose their advertiser or currency.",
   bigquery: {
     clusterBy: ["campaign_id", "advertiser_id"]
   },
   assertions: {
     uniqueKey: ["campaign_id"],
-    nonNull: ["campaign_id"]
+    nonNull: ["campaign_id", "advertiser_id"]
   },
   columns: {
-    objective_type: "What the campaign optimised for. This is what the `result` metric counts, so two campaigns with different objectives have incomparable results."
+    is_name_missing: "TRUE where the campaign delivered spend but has no row in tiktok_ads.campaign, so the name falls back to campaign_<id>. Sized in reporting.v_data_gaps.",
+    currency: "From the ADVERTISER entity, resolved on the advertiser_id carried by the fact — not through the campaign record. Verified 2026-09-22: 33 campaign-days worth 4,000 EUR had a live advertiser but no campaign entity row, and routing currency through the campaign lost it.",
+    objective_type: "What the campaign optimised for. This is what `results` counts, so campaigns with different objectives have incomparable results. NULL where the entity row is missing."
   }
 }
 
+-- The driving table is delivery, not the entity list. Building this from
+-- stg_tiktok_campaign would silently drop every campaign the entity sync
+-- missed, and the LEFT JOIN in core would then null out advertiser name,
+-- campaign name AND currency together. Same pattern as dim_cm360_campaign.
+--
+-- advertiser_id is COALESCEd: prefer the entity's value, fall back to the
+-- one on the fact. That is what keeps currency alive when the campaign
+-- record is absent.
+
+WITH delivered AS (
+  SELECT
+    campaign_id,
+    ANY_VALUE(advertiser_id) AS advertiser_id
+  FROM ${ref("stg_tiktok_campaign_daily")}
+  WHERE campaign_id IS NOT NULL
+  GROUP BY campaign_id
+)
 SELECT
-  c.campaign_id,
-  c.campaign_name,
+  d.campaign_id,
+  COALESCE(c.campaign_name, CONCAT('campaign_', d.campaign_id)) AS campaign_name,
+  (c.campaign_id IS NULL)                                       AS is_name_missing,
   c.campaign_type,
   c.objective,
   c.objective_type,
@@ -28,10 +48,12 @@ SELECT
   c.campaign_status,
   c.campaign_opt_status,
   c.campaign_created_date,
-  c.advertiser_id,
+  COALESCE(c.advertiser_id, d.advertiser_id)                    AS advertiser_id,
   a.advertiser_name,
   a.currency,
-  a.country AS advertiser_country,
+  a.country  AS advertiser_country,
   a.timezone
-FROM ${ref("stg_tiktok_campaign")} c
-LEFT JOIN ${ref("stg_tiktok_advertiser")} a USING (advertiser_id)
+FROM delivered d
+LEFT JOIN ${ref("stg_tiktok_campaign")}   c ON c.campaign_id   = d.campaign_id
+LEFT JOIN ${ref("stg_tiktok_advertiser")} a
+  ON a.advertiser_id = COALESCE(c.advertiser_id, d.advertiser_id)

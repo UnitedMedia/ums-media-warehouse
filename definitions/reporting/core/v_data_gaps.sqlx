@@ -144,6 +144,20 @@ WITH gaps AS (
 
   UNION ALL
 
+  -- TikTok: campaigns that spent money but have no entity record
+  SELECT
+    '${constants.CHANNEL.tiktok}',
+    'tiktok_campaign_missing_from_entity',
+    campaign_id,
+    'Delivered spend but absent from tiktok_ads.campaign, so it has no name, objective or budget. Name falls back to campaign_<id>; advertiser and currency are resolved from the fact instead, so money is never unlabelled.',
+    COUNT(*),
+    CAST(NULL AS FLOAT64)
+  FROM ${ref("dim_tiktok_campaign")}
+  WHERE is_name_missing
+  GROUP BY campaign_id
+
+  UNION ALL
+
   -- Core: clients with no canonical name — this is what splits one
   -- client into three in every cross-channel report
   SELECT
