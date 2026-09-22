@@ -27,7 +27,7 @@ SELECT
   c.clicks,
   c.interactions,
   c.complete_views,
-  c.conversions,
+  cast(c.conversions as INT64) as conversions,
   c.conversions_definition,
   c.spend,
   ${metrics.cpm("c.spend", "c.impressions")}                     AS cpm,
