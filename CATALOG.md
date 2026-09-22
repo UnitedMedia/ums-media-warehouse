@@ -46,6 +46,7 @@ correct no matter how Looker rolls it up; a ratio stored in a table does not.
 | How fresh each channel is | `reporting.v_source_freshness` |
 | How a metric is defined | `dv360_reporting.v_metric_catalog`, `cm360_reporting.v_metric_catalog` |
 | Whether we can split by some dimension | `dv360_reporting.v_dimension_coverage` |
+| Which upstream tables the pipeline depends on | ["Source tables the pipeline needs"](#source-tables-the-pipeline-needs) |
 
 ### Where the money is
 
@@ -395,6 +396,103 @@ BigQuery console.
 | `dv360_seeds.seed_line_item_flight` | the media plan | `flight_start_date` / `flight_end_date` are NULL; reporting falls back to first/last active date, which is delivery, not booking |
 | `cm360_seeds.seed_site` | CM360 UI → Admin → Sites | sites show as `site_<id>` |
 | `core_seeds.seed_client_name_map` | the client list | cross-channel reporting groups each client under three different spellings |
+
+---
+
+## Source tables the pipeline needs
+
+`definitions/sources/declarations.js` is the complete list of external
+dependencies. **If a table is not in that file, nothing in this project reads
+it.** A model physically cannot: `ref()` would not resolve and compilation
+fails.
+
+**37 declared, 36 required.** Remove any of the 36 upstream and the run breaks.
+
+### `kebooladv` — Keboola → DV360 and CM360
+
+12 declared, 11 required.
+
+| Source table | Read by | Note |
+|---|---|---|
+| `cm360_hourly` | `stg_cm360_hourly` | CM360 backbone — every CM360 dimension. |
+| `cm360_reach` | `stg_cm360_reach` | Non-additive reach, and the only table with advertiserId and advertiser name on the same row. |
+| `cm360_standard_table` | `stg_cm360_campaign_daily` | Only source of CM360 total_conversions. |
+| `fct_dv360_creative_daily` | `stg_dv360_creative` |  |
+| `fct_dv360_floodlight_daily` | `stg_dv360_floodlight` | **EMPTY — 0 rows.** Staged with no mart behind it, so an empty table never reaches a dashboard. Still required: drop it and the run breaks. |
+| `fct_dv360_geo_daily` | `stg_dv360_geo` | Country only, ~61 rows/month. |
+| `fct_dv360_inventory_daily` | `stg_dv360_inventory` | Holds ONE day of data. |
+| `fct_dv360_lineitem_daily_v5` | `stg_dv360_lineitem` | DV360 backbone. The only source with Partner, Campaign, Invalid_Clicks, TrueView and USD spend. |
+| `fct_dv360_placement_daily` | `stg_dv360_placement` |  |
+| `fct_dv360_reach_daily` | `stg_dv360_reach` |  |
+| `fct_dv360_timeofday_daily` | `stg_dv360_timeofday` |  |
+| `fct_dv360_youtube_daily` | — | **Not read.** Declared so the graph records the decision — it duplicates TrueView views the backbone already has. |
+
+### `facebook_ads_weld` — Weld → Meta
+
+14 declared, 14 required.
+
+| Source table | Read by | Note |
+|---|---|---|
+| `account` | `stg_meta_account` |  |
+| `ad` | `stg_meta_ad` | Meta and TikTok each have one, and they are unrelated tables. |
+| `ad_roas_insight` | `assert_meta_spend_reconciliation`, `stg_meta_ad_insight` | Meta backbone — ad x day metrics. |
+| `ad_roas_insight_action_values` | `stg_meta_ad_action` | Money value per Meta conversion. |
+| `ad_roas_insight_actions` | `assert_meta_alias_leak`, `stg_meta_ad_action` | Meta conversions, long format. |
+| `ad_set` | `stg_meta_ad_set` |  |
+| `campaign` | `stg_meta_campaign` | Meta and TikTok each have one, and they are unrelated tables. |
+| `creative` | `stg_meta_creative` |  |
+| `custom_conversion` | `stg_meta_custom_conversion` | Resolves `offsite_conversion.custom.<id>` into readable names. |
+| `demographics_age_and_gender` | `stg_meta_breakdown` |  |
+| `demographics_country_ad` | `stg_meta_breakdown` |  |
+| `demographics_delivery_platform_ad` | `stg_meta_breakdown` |  |
+| `demographics_delivery_platform_and_device` | `stg_meta_breakdown` |  |
+| `demographics_region` | `stg_meta_breakdown` |  |
+
+### `tiktok_ads` — Weld → TikTok
+
+11 declared, 11 required.
+
+| Source table | Read by | Note |
+|---|---|---|
+| `ad` | `stg_tiktok_ad` | Meta and TikTok each have one, and they are unrelated tables. |
+| `ad_age_gender_report` | `stg_tiktok_breakdown` |  |
+| `ad_country_report` | `stg_tiktok_breakdown` |  |
+| `ad_daily_report` | `stg_tiktok_ad_daily` | TikTok ad detail, ~98.6% of spend. |
+| `ad_group` | `stg_tiktok_ad_group` |  |
+| `ad_hourly_report` | `stg_tiktok_ad_hourly` |  |
+| `ad_language_report` | `stg_tiktok_breakdown` |  |
+| `advertiser` | `stg_tiktok_advertiser` | The ONLY TikTok table carrying `currency`. |
+| `campaign` | `stg_tiktok_campaign` | Meta and TikTok each have one, and they are unrelated tables. |
+| `campaign_daily_report` | `stg_tiktok_campaign_daily` | TikTok **complete** spend. What `core` reads. |
+| `campaign_platform_report` | `stg_tiktok_breakdown` |  |
+
+### What is deliberately excluded
+
+The sources deliver far more than this, and the reason for each exclusion is
+written into `declarations.js`:
+
+- **Meta** — Weld lands ~137 tables; 14 are used.
+- **TikTok** — Weld lands 41; 11 are used. Twenty-one of them carry *identical*
+  metrics: the same money at every hierarchy level, every time grain and every
+  breakdown. Weekly and monthly are `DATE_TRUNC` on daily; the ad-group and
+  campaign reports are rollups of the ad report; the 13 `ad_group_*` targeting
+  tables are one-to-many and would fan rows out; four tables are empty.
+- **DV360** — `fct_dv360_youtube_daily` is declared but not read. It carries
+  TrueView views at a grain the backbone already covers, and staging it would
+  create a second source of truth for one metric.
+
+### `ad` and `campaign` exist twice
+
+`facebook_ads_weld.ad` and `tiktok_ads.ad` are unrelated tables that share a
+name, and the same goes for `campaign`. This only works because **every source
+reference names its dataset**:
+
+```sqlx
+FROM ${ref({ schema: constants.DATASETS.tiktok, name: "ad" })}
+```
+
+A bare `ref("ad")` fails compilation rather than guessing. See the README for
+the full rule.
 
 ---
 
