@@ -1,0 +1,38 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.tiktok_reporting,
+  name: "v_platform_daily",
+  tags: ["tiktok", "reporting"],
+  description: "TikTok by platform. A focused cut of v_breakdown_daily. TikTok publishes this at CAMPAIGN level only, so there is no ad detail and it cannot be crossed with age or gender.",
+  columns: {
+    platform: "TikTok's platform dimension. Run SELECT DISTINCT to see what it actually contains for your accounts — it is the closest thing in the feed to a device split, but TikTok syncs no device-level stats report."
+  }
+}
+
+SELECT
+  b.date,
+  DATE_TRUNC(b.date, WEEK(MONDAY)) AS week,
+  DATE_TRUNC(b.date, MONTH)        AS month,
+
+  b.advertiser_id,
+  d.advertiser_name,
+  d.currency,
+  b.campaign_id,
+  d.campaign_name,
+  d.objective_type,
+
+  b.breakdown_1 AS platform,
+
+  b.impressions,
+  b.clicks,
+  b.spend,
+  b.conversions,
+  b.results,
+
+  ${metrics.cpm("b.spend", "b.impressions")}  AS cpm,
+  ${metrics.ctr("b.clicks", "b.impressions")} AS ctr,
+  ${metrics.cpc("b.spend", "b.clicks")}       AS cpc,
+  ${metrics.cpa("b.spend", "b.conversions")}  AS cost_per_conversion
+FROM ${ref("fct_tiktok_breakdown_daily")} b
+LEFT JOIN ${ref("dim_tiktok_campaign")} d ON b.campaign_id = d.campaign_id
+WHERE b.breakdown_type = 'platform'

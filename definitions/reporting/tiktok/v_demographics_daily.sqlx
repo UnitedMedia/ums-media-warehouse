@@ -1,0 +1,53 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.tiktok_reporting,
+  name: "v_demographics_daily",
+  tags: ["tiktok", "reporting"],
+  description: "TikTok by age and gender, with campaign labels. A focused cut of v_breakdown_daily with age and gender as named columns instead of breakdown_1 / breakdown_2, so a dashboard can group on them directly.",
+  columns: {
+    age: "TikTok's own bucket: 13-17, 18-24, 25-34, 35-44, 45-54, 55+.",
+    gender: "MALE, FEMALE, or a TikTok 'unknown' value where it could not be determined.",
+    spend: "Advertiser currency. This is the AD-level report, so it carries ~98.6% of campaign spend — see v_campaign_daily for the complete figure.",
+    reach: "NOT AVAILABLE. TikTok's demographic report carries no reach, and neither do likes, comments, follows or video views. They exist only at ad and campaign level, uncrossed with demographics."
+  }
+}
+
+-- Six of the twelve columns usually asked for. The missing six — device
+-- platform, reach, video views, paid likes, paid comments, paid follows —
+-- are not in TikTok's demographic report at all. Device is a separate
+-- breakdown that cannot be crossed with age and gender, and the
+-- engagement metrics exist only at ad and campaign grain. Both are Weld
+-- sync questions, not modelling ones.
+
+SELECT
+  b.date,
+  DATE_TRUNC(b.date, WEEK(MONDAY)) AS week,
+  DATE_TRUNC(b.date, MONTH)        AS month,
+
+  b.advertiser_id,
+  d.advertiser_name,
+  d.currency,
+  d.campaign_id,
+  d.campaign_name,
+  d.objective,
+  d.objective_type,
+  b.ad_id,
+  d.ad_name,
+
+  b.breakdown_1 AS age,
+  b.breakdown_2 AS gender,
+
+  b.impressions,
+  b.clicks,
+  b.spend,
+  b.conversions,
+  b.results,
+
+  ${metrics.cpm("b.spend", "b.impressions")}  AS cpm,
+  ${metrics.ctr("b.clicks", "b.impressions")} AS ctr,
+  ${metrics.cpc("b.spend", "b.clicks")}       AS cpc,
+  ${metrics.cpa("b.spend", "b.conversions")}  AS cost_per_conversion,
+  ${metrics.cpa("b.spend", "b.results")}      AS cost_per_result
+FROM ${ref("fct_tiktok_breakdown_daily")} b
+LEFT JOIN ${ref("dim_tiktok_ad")} d ON b.ad_id = d.ad_id
+WHERE b.breakdown_type = 'age_gender'
