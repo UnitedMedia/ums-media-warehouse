@@ -6,7 +6,7 @@ config {
   description: "Meta delivery at date x account x age x gender. Account grain is as fine as it gets — Meta's demographics feed carries no ad_id or campaign_id, so this can never be labelled with a campaign.",
   bigquery: {
     partitionBy: "date",
-    clusterBy: ["account_id", "breakdown_1", "breakdown_2"]
+    clusterBy: ["account_id", "age", "gender"]
   },
   assertions: {
     uniqueKey: ["date", "account_id", "age", "gender"],
