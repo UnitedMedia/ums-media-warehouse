@@ -1,0 +1,39 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.meta_marts,
+  name: "fct_meta_demographic_daily",
+  tags: ["meta", "marts"],
+  description: "Meta delivery at date x account x age x gender. Account grain is as fine as it gets — Meta's demographics feed carries no ad_id or campaign_id, so this can never be labelled with a campaign.",
+  bigquery: {
+    partitionBy: "date",
+    clusterBy: ["account_id", "breakdown_1", "breakdown_2"]
+  },
+  assertions: {
+    uniqueKey: ["date", "account_id", "age", "gender"],
+    nonNull: ["date", "account_id"]
+  },
+  columns: {
+    reach: "NON-ADDITIVE. Deduplicated by Meta at THIS grain — a month's reach is not the sum of its days, and the sum across age buckets is not the account's reach either.",
+    age: "Meta's own bucket: 13-17, 18-24, 25-34, 35-44, 45-54, 55-64, 65+, unknown.",
+    link_clicks: "Clicks through to the destination. `clicks` counts every interaction and reads much higher."
+  }
+}
+
+-- No requirePartitionFilter here. The other Meta marts carry it because
+-- they are large; this one is a few thousand rows and the filter would
+-- only make every downstream query more awkward for no saving.
+
+SELECT
+  date,
+  account_id,
+  breakdown_1      AS age,
+  breakdown_2      AS gender,
+  SUM(impressions) AS impressions,
+  SUM(clicks)      AS clicks,
+  SUM(link_clicks) AS link_clicks,
+  SUM(reach)       AS reach,
+  SUM(spend)       AS spend
+FROM ${ref("stg_meta_breakdown")}
+WHERE breakdown_type = 'age_gender'
+  AND date IS NOT NULL
+GROUP BY 1, 2, 3, 4

@@ -1,0 +1,65 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.meta_reporting,
+  name: "v_demographics_daily",
+  tags: ["meta", "reporting"],
+  description: "Meta by age and gender, with conversions. ACCOUNT grain — Meta's demographics feed carries no ad_id or campaign_id, so campaign name and objective are not available here and cannot be added by modelling.",
+  columns: {
+    reach: "NON-ADDITIVE at every level. Set aggregation to MAX in Looker. Summing across age buckets does not give the account's reach either — Meta de-duplicates within each bucket.",
+    n_post_engagement: "Post Engagements.",
+    n_leads: "Leads. Meta's `lead` action, which is the on-Facebook lead form submission.",
+    n_views_3s: "3-second video views. THIS IS NOT THRUPLAY — Weld does not sync video_thruplay_watched_actions, confirmed 2026-09-23. The only video action in the feed is `video_view`.",
+    frequency: "impressions / reach within the age x gender bucket."
+  }
+}
+
+-- The PIVOT list is the same one v_ad_daily uses, generated from
+-- includes/meta_actions.js, so `leads` and `post_engagement` mean exactly
+-- what they mean at ad level. Metrics Meta does not report at this grain
+-- simply come back NULL rather than silently reading zero.
+
+WITH wide_actions AS (
+  SELECT * FROM (
+    SELECT date, account_id, age, gender, metric_name, action_count
+    FROM ${ref("fct_meta_demographic_action_daily")}
+  )
+  PIVOT (
+    SUM(action_count) AS n
+    FOR metric_name IN (${meta_actions.pivotColumnList()})
+  )
+)
+SELECT
+  f.date,
+  DATE_TRUNC(f.date, WEEK(MONDAY)) AS week,
+  DATE_TRUNC(f.date, MONTH)        AS month,
+
+  f.account_id,
+  acc.account_name,
+  acc.account_currency             AS currency,
+
+  f.age,
+  f.gender,
+
+  f.spend,
+  f.impressions,
+  f.clicks,
+  f.link_clicks,
+  f.reach,
+
+  ${metrics.frequency("f.impressions", "f.reach")}   AS frequency,
+  ${metrics.cpm("f.spend", "f.impressions")}         AS cpm,
+  ${metrics.ctr("f.link_clicks", "f.impressions")}   AS ctr,
+  ${metrics.cpc("f.spend", "f.link_clicks")}         AS cpc,
+
+  w.* EXCEPT (date, account_id, age, gender),
+
+  ${metrics.cpa("f.spend", "w.n_leads")}             AS cost_per_lead,
+  ${metrics.cpa("f.spend", "w.n_post_engagement")}   AS cost_per_post_engagement,
+  ${metrics.cpa("f.spend", "w.n_views_3s")}          AS cost_per_3s_view
+FROM ${ref("fct_meta_demographic_daily")} f
+LEFT JOIN ${ref("stg_meta_account")} acc ON acc.account_id = f.account_id
+LEFT JOIN wide_actions w
+  ON  w.date       = f.date
+  AND w.account_id = f.account_id
+  AND w.age        = f.age
+  AND w.gender     = f.gender

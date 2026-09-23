@@ -1,0 +1,54 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.meta_marts,
+  name: "fct_meta_demographic_action_daily",
+  tags: ["meta", "marts"],
+  description: "Meta conversions at date x account x age x gender x metric. LONG, not wide — a new conversion event adds rows, never columns. Aliases are dropped through the same seed whitelist the ad-level fact uses, so purchases are never counted seven times.",
+  bigquery: {
+    partitionBy: "date",
+    clusterBy: ["account_id", "metric_name"]
+  },
+  columns: {
+    metric_name: "Resolved through meta_seeds.seed_action_type — the same mapping as fct_meta_ad_action_daily, so `leads` means the same thing in both.",
+    metric_group: "'unmapped' means the action type fell through every rule. Listed in reporting.v_data_gaps."
+  }
+}
+
+-- Deliberately no custom-conversion resolution. The ad-level fact joins
+-- stg_meta_custom_conversion to turn offsite_conversion.custom.<id> into
+-- a readable name; that lookup is not account-scoped here and adding it
+-- would be guessing. Custom conversions therefore keep their raw name at
+-- this grain, which is honest rather than tidy.
+
+WITH resolved AS (
+  SELECT
+    s.date,
+    s.account_id,
+    s.age,
+    s.gender,
+    s.action_type                     AS raw_action_type,
+    COALESCE(seed.metric_name, s.action_type)        AS metric_name,
+    COALESCE(seed.metric_group, 'unmapped')          AS metric_group,
+    COALESCE(seed.is_canonical, TRUE)                AS is_canonical,
+    s.action_count,
+    s.action_28d_click,
+    s.action_28d_view
+  FROM ${ref("stg_meta_demographic_action")} s
+  LEFT JOIN ${ref("seed_action_type")} seed
+    ON s.action_type = seed.raw_action_type
+)
+SELECT
+  date,
+  account_id,
+  age,
+  gender,
+  metric_name,
+  metric_group,
+  raw_action_type,
+  SUM(action_count)    AS action_count,
+  SUM(action_28d_click) AS action_28d_click,
+  SUM(action_28d_view)  AS action_28d_view
+FROM resolved
+WHERE is_canonical
+  AND date IS NOT NULL
+GROUP BY 1, 2, 3, 4, 5, 6, 7

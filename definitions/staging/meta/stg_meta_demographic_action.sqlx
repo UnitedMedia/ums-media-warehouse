@@ -1,0 +1,30 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.meta_staging,
+  name: "stg_meta_demographic_action",
+  tags: ["meta", "staging"],
+  description: "Meta conversions at date x account x age x gender. The only source of post engagements, leads and every other action at demographic grain — the ad-level action table cannot be broken down this way.",
+  columns: {
+    account_id: "The finest ID available. This table has NO ad_id and NO campaign_id, so nothing here can be attributed below account level.",
+    action_count: "Meta's default attribution window.",
+    action_28d_click: "28-day click-through attribution, as delivered. Kept for anyone who needs to match a Meta UI export set to that window.",
+    action_28d_view: "28-day view-through attribution."
+  }
+}
+
+SELECT
+  DATE(date)                  AS date,
+  CAST(account_id AS STRING)  AS account_id,
+  account_name,
+  account_currency            AS currency,
+  age,
+  gender,
+  action_type,
+  CAST(value AS NUMERIC)                AS action_count,
+  CAST(twenty_eight_d_click AS NUMERIC) AS action_28d_click,
+  CAST(twenty_eight_d_view  AS NUMERIC) AS action_28d_view
+FROM ${ref({ schema: constants.DATASETS.meta, name: "demographics_age_and_gender_actions" })}
+QUALIFY ROW_NUMBER() OVER (
+  PARTITION BY DATE(date), CAST(account_id AS STRING), age, gender, action_type
+  ORDER BY _weld_synced DESC
+) = 1

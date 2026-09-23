@@ -59,6 +59,10 @@ const META_TABLES = [
   // breakdowns — each a different slice of the SAME spend.
   // Never union these with the ad-level fact.
   "demographics_age_and_gender",             // no ad_id
+  "demographics_age_and_gender_actions",     // conversions at age x gender.
+                                             // The ONLY way to get post
+                                             // engagements and leads at this
+                                             // grain. Also has no ad_id.
   "demographics_country_ad",
   "demographics_delivery_platform_ad",
   "demographics_delivery_platform_and_device", // no ad_id

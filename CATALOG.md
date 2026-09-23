@@ -36,11 +36,14 @@ correct no matter how Looker rolls it up; a ratio stored in a table does not.
 | CM360 by hour | `cm360_reporting.v_hourly` |
 | CM360 conversions or reach | `cm360_reporting.v_campaign_daily` |
 | Meta spend, conversions, ROAS, cost per anything | `meta_reporting.v_ad_daily` |
-| Meta by age, gender, country, platform, device | `meta_reporting.v_breakdown_daily` |
+| Meta by age and gender, with conversions | `meta_reporting.v_demographics_daily` |
+| Meta by country, platform, device | `meta_reporting.v_breakdown_daily` |
 | TikTok spend — the complete total | `tiktok_reporting.v_campaign_daily` |
 | TikTok by ad, creative, video performance | `tiktok_reporting.v_daily` |
 | TikTok by hour | `tiktok_reporting.v_hourly` |
-| TikTok by age, gender, country, language, platform | `tiktok_reporting.v_breakdown_daily` |
+| TikTok by age and gender | `tiktok_reporting.v_demographics_daily` |
+| TikTok by device platform | `tiktok_reporting.v_platform_daily` |
+| TikTok by country, language, or all breakdowns at once | `tiktok_reporting.v_breakdown_daily` |
 | Google Ads spend, conversions, ROAS | `gads_reporting.v_daily` |
 | Google Ads by device and network | `gads_reporting.v_device_daily` |
 | All five channels in one chart | `reporting.v_ad_performance_daily` |
@@ -236,7 +239,8 @@ Source: Weld → `facebook_ads_weld`. Weld lands about 137 tables; 14 are used.
 | View | Grain | Use it for |
 |---|---|---|
 | **`v_ad_daily`** | ad × day | **The main one, and it is wide.** Spend, impressions, clicks, link clicks, reach, frequency, CPM, CPC, CTR — plus every conversion metric as its own column, plus cost-per and ROAS for the common ones. Carries account, campaign, ad set and creative attributes including headline, primary text, CTA and thumbnail. |
-| `v_breakdown_daily` | breakdown slice × day | Age, gender, country, publisher platform, device. |
+| **`v_demographics_daily`** | account × age × gender × day | Spend, impressions, clicks, reach **and conversions** — post engagements, leads, the lot. Account grain: Meta's demographics feed has no campaign or ad key, so campaign name cannot be added. |
+| `v_breakdown_daily` | breakdown slice × day | Age, gender, country, publisher platform, device — the raw five, in one shape. |
 
 **How the conversion columns work.** Meta reports conversions as a long list of
 action types. `v_ad_daily` pivots 33 of them into columns:
@@ -298,7 +302,9 @@ every hierarchy level, every time grain and every breakdown. Eleven are used.
 | **`v_campaign_daily`** | campaign × day | **Any TikTok total.** Complete spend. Impressions, clicks, reach, conversions, results, purchases, video and engagement metrics, plus CPM/CTR/CPC/frequency/completion rate/ROAS. |
 | **`v_daily`** | ad × day | **The detail.** Everything above plus ad name, format, text, CTA, landing page and the full video quartile curve. Covers ~98.6% of spend. |
 | `v_hourly` | ad × hour | Dayparting. Its own data source — same money as `v_daily`. |
-| `v_breakdown_daily` | slice × day | Age/gender, country, language, platform. |
+| **`v_demographics_daily`** | ad × age × gender × day | Age and gender as named columns, with campaign labels. No reach or engagement — TikTok's demographic report carries neither. |
+| `v_platform_daily` | campaign × platform × day | **Device platform**: IPHONE, IPAD, ANDROID, WAP, UNKNOWN. Campaign level only, so it cannot be crossed with age or gender. |
+| `v_breakdown_daily` | slice × day | All four breakdowns in one shape. |
 
 **Caveats that matter:**
 
@@ -391,6 +397,23 @@ Google Ads is the only source in this project that soft-deletes rows, and
 without the filter deleted rows keep contributing spend forever.
 
 Money arrives as `cost_micros`; `metrics.micros()` converts it.
+
+### What these demographic views cannot give you, and why
+
+Both channels stop short of the usual request, and neither gap is fixable here:
+
+| Wanted | Meta | TikTok |
+|---|---|---|
+| Campaign name / objective | **no** — the demographics feed has no `ad_id` or `campaign_id` | yes |
+| Reach | yes | **no** — not in the demographic report |
+| Video views | 3-second only, **not ThruPlay** | **no** at this grain |
+| Post engagements / likes, comments, follows | yes | **no** at this grain |
+| Device crossed with age and gender | no | no — separate breakdown |
+
+Both are Weld sync scope questions. Meta's API does support `breakdowns=age,gender`
+on the ad-level insights endpoint, and `video_thruplay_watched_actions` is a
+standard action type — neither is synced. Confirmed 2026-09-23: the only video
+action in the feed is `video_view`, 417,210 of them.
 
 ---
 
