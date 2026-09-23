@@ -1,0 +1,26 @@
+config {
+  type: "assertion",
+  tags: ["gads", "monitoring"],
+  description: "Device and network are DISJOINT slices in Google Ads, so fct_gads_campaign_device_daily must sum exactly to fct_gads_campaign_daily. Every other breakdown in this project behaves the opposite way and carries the full spend, so this is the one place that identity is worth proving on every run."
+}
+
+WITH rolled AS (
+  SELECT date, campaign_id, SUM(spend) AS spend, SUM(impressions) AS impressions
+  FROM ${ref("fct_gads_campaign_device_daily")}
+  GROUP BY 1, 2
+),
+total AS (
+  SELECT date, campaign_id, spend, impressions
+  FROM ${ref("fct_gads_campaign_daily")}
+)
+SELECT
+  COALESCE(r.date, t.date)               AS date,
+  COALESCE(r.campaign_id, t.campaign_id) AS campaign_id,
+  t.spend                                AS campaign_spend,
+  r.spend                                AS device_rollup_spend,
+  ROUND(COALESCE(t.spend, 0) - COALESCE(r.spend, 0), 6) AS spend_diff,
+  COALESCE(t.impressions, 0) - COALESCE(r.impressions, 0) AS impression_diff
+FROM rolled r
+FULL JOIN total t USING (date, campaign_id)
+WHERE ABS(COALESCE(t.spend, 0) - COALESCE(r.spend, 0)) > 0.000001
+   OR COALESCE(t.impressions, 0) <> COALESCE(r.impressions, 0)

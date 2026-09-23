@@ -1,0 +1,57 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.gads_reporting,
+  name: "v_daily",
+  tags: ["gads", "reporting"],
+  description: "Primary Google Ads Looker Studio source. Campaign x day with account, channel type, real booked flight dates and every calculated metric. COMPLETE spend, including Performance Max.",
+  columns: {
+    spend: "Account currency — break out by currency before summing across accounts.",
+    conversions: "Fractional. Google splits an attributed conversion across touchpoints.",
+    viewable_rate: "Against MEASURABLE impressions, which is Google's own definition — unlike CM360, where the denominator is missing and the rate reads low.",
+    is_test_account: "TRUE means this is not real money. Filter it out of anything client-facing."
+  }
+}
+
+SELECT
+  f.date,
+  DATE_TRUNC(f.date, WEEK(MONDAY)) AS week,
+  DATE_TRUNC(f.date, MONTH)        AS month,
+
+  f.account_id,
+  d.account_name,
+  d.currency,
+  d.is_manager,
+  d.is_test_account,
+  f.campaign_id,
+  d.campaign_name,
+  d.is_entity_missing,
+  d.advertising_channel_type,
+  d.advertising_channel_sub_type,
+  d.campaign_status,
+  d.serving_status,
+  d.experiment_type,
+  d.flight_start_date,
+  d.flight_end_date,
+
+  f.impressions,
+  f.clicks,
+  f.interactions,
+  f.video_views,
+  f.conversions,
+  f.conversions_value,
+  f.view_through_conversions,
+  f.spend,
+  f.active_view_impressions,
+  f.active_view_measurable_impressions,
+
+  ${metrics.cpm("f.spend", "f.impressions")}                  AS cpm,
+  ${metrics.ctr("f.clicks", "f.impressions")}                 AS ctr,
+  ${metrics.cpc("f.spend", "f.clicks")}                       AS cpc,
+  ${metrics.interactionRate("f.interactions", "f.impressions")} AS interaction_rate,
+  ${metrics.viewRate("f.video_views", "f.impressions")}       AS video_view_rate,
+  ${metrics.viewableRate("f.active_view_impressions", "f.active_view_measurable_impressions")} AS viewable_rate,
+  ${metrics.cpa("f.spend", "f.conversions")}                  AS cpa,
+  ${metrics.ctr("f.conversions", "f.clicks")}                 AS conversion_rate,
+  ${metrics.roas("f.conversions_value", "f.spend")}           AS roas
+FROM ${ref("fct_gads_campaign_daily")} f
+LEFT JOIN ${ref("dim_gads_campaign")} d USING (campaign_id)

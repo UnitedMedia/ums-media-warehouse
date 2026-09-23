@@ -99,6 +99,29 @@ const TIKTOK_TABLES = [
   "campaign_platform_report", // platform exists only at campaign level
 ];
 
+// ---------------------------------------------------------------------
+// google_ads — Weld sync for Google Ads
+//
+// PHASE 1: campaign level only, which is what the cross-channel view
+// needs. Ad groups and ads come next, keywords and search terms after.
+//
+// Two things are specific to this source:
+//   * rows are SOFT DELETED. Every stats table carries _weld_deleted_at
+//     and staging must filter `_weld_deleted_at IS NULL`. No other source
+//     in this project does this — checked 2026-09-23, the column exists
+//     in 14 google_ads tables and in none of facebook_ads_weld or
+//     tiktok_ads.
+//   * `account` and `campaign` are ALSO Meta and TikTok table names.
+//     Three datasets, one name. Every ref is dataset-qualified.
+// ---------------------------------------------------------------------
+const GOOGLE_ADS_TABLES = [
+  "account",         // the only source of currency_code, and of the
+                     // manager / test_account flags
+  "campaign",        // carries REAL booked start_date and end_date
+  "campaign_stats",  // COMPLETE spend. Performance Max exists at this
+                     // level and nowhere below it.
+];
+
 KEBOOLA_TABLES.forEach(name => {
   declare({
     database: constants.RAW_PROJECT,
@@ -119,6 +142,14 @@ TIKTOK_TABLES.forEach(name => {
   declare({
     database: constants.RAW_PROJECT,
     schema: constants.DATASETS.tiktok,
+    name: name,
+  });
+});
+
+GOOGLE_ADS_TABLES.forEach(name => {
+  declare({
+    database: constants.RAW_PROJECT,
+    schema: constants.DATASETS.gads,
     name: name,
   });
 });

@@ -27,6 +27,10 @@ WITH latest AS (
   UNION ALL
   SELECT '${constants.CHANNEL.tiktok}', MAX(date)
   FROM ${ref("fct_tiktok_campaign_daily")}
+
+  UNION ALL
+  SELECT '${constants.CHANNEL.gads}', MAX(date)
+  FROM ${ref("fct_gads_campaign_daily")}
 )
 SELECT
   channel,

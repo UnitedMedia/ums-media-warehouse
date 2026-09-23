@@ -1,0 +1,55 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.gads_staging,
+  name: "stg_gads_campaign_daily",
+  tags: ["gads", "staging"],
+  description: "Google Ads campaign x day x device x network. COMPLETE spend — Performance Max reports here and at no lower level, so anything built up from ad groups silently drops about a fifth of the money.",
+  columns: {
+    spend: "cost_micros converted out of micros. The account's own currency; join stg_gads_account for which one.",
+    conversions: "FLOAT64, and fractional on purpose — Google splits an attributed conversion across touchpoints.",
+    device: "Part of the grain: MOBILE, DESKTOP, TABLET, CONNECTED_TV, OTHER.",
+    ad_network_type: "Part of the grain: SEARCH, SEARCH_PARTNERS, CONTENT, YOUTUBE_SEARCH, YOUTUBE_WATCH, MIXED.",
+    campaign_name: "Carried on the fact itself, which is unusual and useful — a campaign missing from the entity table still has a name."
+  }
+}
+
+-- _weld_deleted_at IS NULL is NOT optional. Weld soft-deletes rows here;
+-- without the filter, deleted rows keep contributing spend forever. This
+-- is the only source in the project that behaves this way.
+--
+-- Grain verified 2026-09-23: one row per date x campaign x device x
+-- ad_network_type, zero duplicates. No QUALIFY, so nothing is silently
+-- discarded; assert_gads_grain watches it instead.
+
+SELECT
+  DATE(date)                        AS date,
+  CAST(account_id AS STRING)        AS account_id,
+  account_descriptive_name          AS account_name,
+  CAST(campaign_id AS STRING)       AS campaign_id,
+  campaign_name,
+  device,
+  ad_network_type,
+
+  impressions,
+  clicks,
+  interactions,
+  video_views,
+  conversions,
+  conversions_value,
+  view_through_conversions,
+  ${metrics.micros("cost_micros")}  AS spend,
+
+  -- viewability, Google's Active View
+  active_view_impressions,
+  active_view_measurable_impressions,
+  ${metrics.micros("active_view_measurable_cost_micros")} AS active_view_measurable_spend,
+
+  -- stored ratios, audit only. The reporting layer recomputes both.
+  active_view_measurability         AS src_active_view_measurability,
+  active_view_viewability           AS src_active_view_viewability,
+
+  -- describes WHAT the interactions column counted for this campaign
+  -- type; not a reporting dimension, and not part of the grain.
+  interaction_event_types           AS src_interaction_event_types
+FROM ${ref({ schema: constants.DATASETS.gads, name: "campaign_stats" })}
+WHERE _weld_deleted_at IS NULL

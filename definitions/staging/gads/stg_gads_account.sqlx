@@ -1,0 +1,30 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.gads_staging,
+  name: "stg_gads_account",
+  tags: ["gads", "staging"],
+  description: "Google Ads account entity. The only source of currency_code, and of the two flags that decide whether an account's spend is real: manager and test_account.",
+  columns: {
+    currency_code: "The account's billing currency. No stats table carries it, so all Google Ads money is unlabelled until this is joined.",
+    is_manager: "TRUE for an MCC. Manager accounts hold no spend of their own.",
+    is_test_account: "TRUE for a Google Ads test account. Its spend is not real money. Flagged, not filtered — reporting.v_data_gaps reports any that carry spend."
+  }
+}
+
+-- No de-duplication. Verified 2026-09-23: 147 rows, 147 distinct ids.
+-- assert_gads_grain watches that assumption rather than a QUALIFY
+-- silently discarding rows if it ever stops holding.
+--
+-- This table has no _weld_deleted_at column; only the stats tables do.
+
+SELECT
+  CAST(id AS STRING)  AS account_id,
+  descriptive_name    AS account_name,
+  currency_code,
+  time_zone,
+  status              AS account_status,
+  manager             AS is_manager,
+  test_account        AS is_test_account,
+  auto_tagging_enabled,
+  optimization_score  AS account_optimization_score
+FROM ${ref({ schema: constants.DATASETS.gads, name: "account" })}

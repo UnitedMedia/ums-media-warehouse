@@ -1,0 +1,42 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.gads_marts,
+  name: "fct_gads_campaign_device_daily",
+  tags: ["gads", "marts"],
+  description: "Google Ads campaign x day x device x network — the source grain, kept intact. UNLIKE the Meta and TikTok breakdowns, device and network are disjoint slices: summing this table DOES equal fct_gads_campaign_daily exactly.",
+  bigquery: {
+    partitionBy: "date",
+    clusterBy: ["account_id", "campaign_id", "device"]
+  },
+  assertions: {
+    uniqueKey: ["date", "campaign_id", "device", "ad_network_type"],
+    nonNull: ["date", "campaign_id"]
+  }
+}
+
+-- Worth being explicit, because every other breakdown in this project
+-- behaves the opposite way: Meta's five demographic cuts and TikTok's
+-- four each carry the FULL spend, so summing across them multiplies it.
+-- Here a row belongs to exactly one device and one network, so the two
+-- tables reconcile to the cent. assert_gads_device_reconciliation proves
+-- it on every run.
+
+SELECT
+  date,
+  account_id,
+  campaign_id,
+  device,
+  ad_network_type,
+  SUM(impressions)                        AS impressions,
+  SUM(clicks)                             AS clicks,
+  SUM(interactions)                       AS interactions,
+  SUM(video_views)                        AS video_views,
+  SUM(conversions)                        AS conversions,
+  SUM(conversions_value)                  AS conversions_value,
+  SUM(view_through_conversions)           AS view_through_conversions,
+  SUM(spend)                              AS spend,
+  SUM(active_view_impressions)            AS active_view_impressions,
+  SUM(active_view_measurable_impressions) AS active_view_measurable_impressions
+FROM ${ref("stg_gads_campaign_daily")}
+WHERE date IS NOT NULL
+GROUP BY 1, 2, 3, 4, 5

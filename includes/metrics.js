@@ -71,6 +71,12 @@ function parseCm360Date(col) {
   )`;
 }
 
+// Google Ads reports money in micros — millionths of the account
+// currency. cost_micros = 1234560 means 1.23456 units.
+function micros(col) {
+  return `SAFE_DIVIDE(${col}, 1000000)`;
+}
+
 // TikTok delivers stat_time_day / stat_time_hour as STRING shaped
 // 'YYYY-MM-DD HH:MM:SS'. Taking the first 10 characters is deliberate:
 // it works whether or not the time part is present, and needs no regex,
@@ -88,4 +94,5 @@ module.exports = {
   cpm, ctr, interactionRate, completionRate, viewRate, cpa, cpc,
   viewableRate, frequency, roas,
   parseSlashDate, parseCm360Date, parseTiktokDate, parseTiktokHour,
+  micros,
 };

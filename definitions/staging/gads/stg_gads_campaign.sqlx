@@ -1,0 +1,33 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.gads_staging,
+  name: "stg_gads_campaign",
+  tags: ["gads", "staging"],
+  description: "Google Ads campaign entity. Unlike every other channel in this project, it carries REAL booked flight dates — start_date and end_date as set in the platform, not inferred from delivery.",
+  columns: {
+    flight_start_date: "The BOOKED start date, from the platform. DV360 has no equivalent, which is why dv360_seeds.seed_line_item_flight has to be typed in by hand.",
+    advertising_channel_type: "SEARCH, PERFORMANCE_MAX, VIDEO, DEMAND_GEN, MULTI_CHANNEL, DISPLAY, SHOPPING. PERFORMANCE_MAX reports at campaign level only — it has no ad groups at all.",
+    experiment_type: "Non-BASE values are drafts and experiments. Their spend is real and is reported alongside the base campaign, so check this before comparing a campaign to itself over time."
+  }
+}
+
+-- No de-duplication. Verified 2026-09-23: 22,825 rows, 22,825 distinct ids.
+-- This table has no _weld_deleted_at column.
+
+SELECT
+  CAST(id AS STRING)         AS campaign_id,
+  CAST(account_id AS STRING) AS account_id,
+  name                       AS campaign_name,
+  advertising_channel_type,
+  advertising_channel_sub_type,
+  status                     AS campaign_status,
+  serving_status,
+  experiment_type,
+  payment_mode,
+  ad_serving_optimization_status,
+  video_brand_safety_suitability,
+  optimization_score         AS campaign_optimization_score,
+  DATE(start_date)           AS flight_start_date,
+  DATE(end_date)             AS flight_end_date,
+  CAST(base_campaign_id AS STRING) AS base_campaign_id
+FROM ${ref({ schema: constants.DATASETS.gads, name: "campaign" })}

@@ -158,6 +158,37 @@ WITH gaps AS (
 
   UNION ALL
 
+  -- Google Ads: campaigns that spent money but have no entity record
+  SELECT
+    '${constants.CHANNEL.gads}',
+    'gads_campaign_missing_from_entity',
+    campaign_id,
+    'Delivered spend but absent from google_ads.campaign, so channel type, status and booked flight dates are unknown. The name still resolves because campaign_stats carries it.',
+    COUNT(*),
+    CAST(NULL AS FLOAT64)
+  FROM ${ref("dim_gads_campaign")}
+  WHERE is_entity_missing
+  GROUP BY campaign_id
+
+  UNION ALL
+
+  -- Google Ads: test accounts carrying spend. Not real money, and
+  -- excluded from core — but if this returns rows, someone is looking at
+  -- them in gads_reporting without realising.
+  SELECT
+    '${constants.CHANNEL.gads}',
+    'gads_test_account_with_spend',
+    d.account_id,
+    'Flagged as a Google Ads test account but carries spend. Excluded from core.fct_ad_performance_daily; still visible in gads_reporting behind is_test_account.',
+    COUNT(*),
+    CAST(SUM(f.spend) AS FLOAT64)
+  FROM ${ref("fct_gads_campaign_daily")} f
+  JOIN ${ref("dim_gads_campaign")} d USING (campaign_id)
+  WHERE d.is_test_account
+  GROUP BY d.account_id
+
+  UNION ALL
+
   -- Core: clients with no canonical name — this is what splits one
   -- client into three in every cross-channel report
   SELECT

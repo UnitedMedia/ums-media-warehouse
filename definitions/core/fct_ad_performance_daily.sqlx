@@ -186,6 +186,40 @@ tiktok AS (
   GROUP BY f.date, f.campaign_id
 ),
 
+-- Google Ads reads campaign_stats, and it has to: Performance Max
+-- reports at campaign level and at NO level below it, roughly a fifth of
+-- spend. Anything built up from ad groups silently drops all of it.
+--
+-- Test accounts are excluded here and only here. Their spend is not real
+-- money and this is the client-facing surface; gads_reporting still
+-- exposes them behind is_test_account, and v_data_gaps counts any that
+-- carry spend.
+gads AS (
+  SELECT
+    f.date,
+    '${constants.CHANNEL.gads}'               AS channel,
+    ANY_VALUE(d.account_name)                 AS advertiser_raw_name,
+    ANY_VALUE(f.account_id)                   AS advertiser_id,
+    ANY_VALUE(d.campaign_name)                AS campaign_name,
+    f.campaign_id                             AS campaign_id,
+    ANY_VALUE(d.currency)                     AS currency,
+    CAST(SUM(f.impressions)  AS INT64)        AS impressions,
+    CAST(SUM(f.clicks)       AS INT64)        AS clicks,
+    CAST(SUM(f.interactions) AS INT64)        AS interactions,
+    -- Google gives video_views, which counts a view, not a completed
+    -- play. Not the same measurement as DV360 Complete_Views_Video or
+    -- TikTok video_views_p100, so it stays NULL rather than being
+    -- silently equated with them.
+    CAST(NULL AS INT64)                       AS complete_views,
+    CAST(SUM(f.conversions)  AS FLOAT64)      AS conversions,
+    'Google Ads conversions (attributed, fractional; excludes view-through)' AS conversions_definition,
+    CAST(SUM(f.spend)        AS FLOAT64)      AS spend
+  FROM ${ref("fct_gads_campaign_daily")} f
+  LEFT JOIN ${ref("dim_gads_campaign")} d USING (campaign_id)
+  WHERE COALESCE(d.is_test_account, FALSE) = FALSE
+  GROUP BY f.date, f.campaign_id
+),
+
 unioned AS (
   SELECT * FROM dv360
   UNION ALL
@@ -194,6 +228,8 @@ unioned AS (
   SELECT * FROM meta
   UNION ALL
   SELECT * FROM tiktok
+  UNION ALL
+  SELECT * FROM gads
 )
 
 SELECT

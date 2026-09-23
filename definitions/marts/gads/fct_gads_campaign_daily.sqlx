@@ -1,0 +1,44 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.gads_marts,
+  name: "fct_gads_campaign_daily",
+  tags: ["gads", "marts"],
+  description: "Google Ads campaign x day. THE SOURCE OF TRUTH FOR GOOGLE ADS SPEND, and what core.fct_ad_performance_daily reads. Performance Max reports at this level and nowhere below it, so any figure built up from ad groups is missing roughly a fifth of the money.",
+  bigquery: {
+    partitionBy: "date",
+    clusterBy: ["account_id", "campaign_id"]
+  },
+  assertions: {
+    uniqueKey: ["date", "campaign_id"],
+    nonNull: ["date", "campaign_id"]
+  },
+  columns: {
+    conversions: "Fractional by design — Google splits attributed conversions across touchpoints.",
+    view_through_conversions: "A separate path from `conversions`. Never add the two.",
+    active_view_measurable_impressions: "The denominator for a real viewability rate. Google's own active_view_viewability is a stored ratio and is kept only as src_* in staging."
+  }
+}
+
+-- Full rebuild, like every other mart here. Weld rewrites a rolling
+-- 31-day window (constants.WELD_LOOKBACK_DAYS), which is the number an
+-- incremental version would have to reload — relevant at ad and keyword
+-- level in a later phase, not at campaign level where the volume is small.
+
+SELECT
+  date,
+  account_id,
+  campaign_id,
+  SUM(impressions)                        AS impressions,
+  SUM(clicks)                             AS clicks,
+  SUM(interactions)                       AS interactions,
+  SUM(video_views)                        AS video_views,
+  SUM(conversions)                        AS conversions,
+  SUM(conversions_value)                  AS conversions_value,
+  SUM(view_through_conversions)           AS view_through_conversions,
+  SUM(spend)                              AS spend,
+  SUM(active_view_impressions)            AS active_view_impressions,
+  SUM(active_view_measurable_impressions) AS active_view_measurable_impressions,
+  SUM(active_view_measurable_spend)       AS active_view_measurable_spend
+FROM ${ref("stg_gads_campaign_daily")}
+WHERE date IS NOT NULL
+GROUP BY 1, 2, 3

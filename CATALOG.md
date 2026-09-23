@@ -41,7 +41,9 @@ correct no matter how Looker rolls it up; a ratio stored in a table does not.
 | TikTok by ad, creative, video performance | `tiktok_reporting.v_daily` |
 | TikTok by hour | `tiktok_reporting.v_hourly` |
 | TikTok by age, gender, country, language, platform | `tiktok_reporting.v_breakdown_daily` |
-| All three channels in one chart | `reporting.v_ad_performance_daily` |
+| Google Ads spend, conversions, ROAS | `gads_reporting.v_daily` |
+| Google Ads by device and network | `gads_reporting.v_device_daily` |
+| All five channels in one chart | `reporting.v_ad_performance_daily` |
 | What is broken or unmapped right now | `reporting.v_data_gaps` |
 | How fresh each channel is | `reporting.v_source_freshness` |
 | How a metric is defined | `dv360_reporting.v_metric_catalog`, `cm360_reporting.v_metric_catalog` |
@@ -58,6 +60,7 @@ correct no matter how Looker rolls it up; a ratio stored in a table does not.
 | Meta | `spend` | `meta_reporting.v_ad_daily` | Account currency |
 | TikTok | `spend` | `tiktok_reporting.v_campaign_daily` | **Complete.** Advertiser currency |
 | TikTok | `spend` | `tiktok_reporting.v_daily` | Ad level — only ~98.6% of the above |
+| Google Ads | `spend` | `gads_reporting.v_daily` | **Complete**, incl. Performance Max. Account currency, from `cost_micros` |
 
 ### Where the impressions are
 
@@ -71,7 +74,7 @@ within it but must never add two breakdowns together.
 
 ## Read this before you total anything
 
-**TikTok and Meta are live; DV360 and CM360 are not.**
+**TikTok, Meta and Google Ads are live; DV360 and CM360 are not.**
 TikTok runs through today and updates daily, 46 days of history from 3 August.
 Meta is current. The other two stopped in August — see below.
 
@@ -340,6 +343,57 @@ tables. `definitions/sources/declarations.js` lists the reason for each.
 
 ---
 
+## Google Ads
+
+Source: Weld → `google_ads`. **Phase 1 is campaign level.** Ad groups, ads,
+keywords and search terms follow.
+
+### Reporting views — `gads_reporting`
+
+| View | Grain | Use it for |
+|---|---|---|
+| **`v_daily`** | campaign × day | **The main one.** Complete spend including Performance Max, plus impressions, clicks, interactions, video views, conversions, conversion value, view-through conversions and Active View — with CPM, CTR, CPC, CPA, conversion rate, viewable rate and ROAS. |
+| `v_device_daily` | campaign × device × network × day | Device and network split. |
+
+**Caveats that matter:**
+
+- **Performance Max is campaign level only.** It has no ad groups at all — about
+  a fifth of spend. Any Google Ads figure built up from ad groups (phase 2)
+  silently omits it, so those views will carry a warning.
+- **`conversions` is fractional.** Google splits an attributed conversion across
+  touchpoints, so 0.34 conversions is a normal value, not a bug.
+- **`view_through_conversions` is a separate path.** Never add it to
+  `conversions`.
+- **Unlike Meta and TikTok breakdowns, `v_device_daily` IS additive.** Device and
+  network are disjoint slices, so summing it equals `v_daily` to the cent.
+  `assert_gads_device_reconciliation` proves that on every run.
+- **`is_test_account`** marks accounts whose spend is not real money. They are
+  excluded from `core` but still visible here — filter them out of anything
+  client-facing.
+- `viewable_rate` divides by **measurable** impressions, which is Google's own
+  definition. It is therefore comparable with the Google Ads UI, unlike CM360's.
+
+### Marts — `gads_marts`
+
+| Table | Grain | Notes |
+|---|---|---|
+| `fct_gads_campaign_daily` | campaign × day | **Source of truth for Google Ads spend.** What `core` reads. |
+| `fct_gads_campaign_device_daily` | campaign × device × network × day | The source grain, kept intact. Reconciles exactly to the above. |
+| `dim_gads_campaign` | campaign | Campaign, account, currency and **real booked flight dates**. Driven by delivery, not by the entity list. |
+
+Google Ads is the **only** channel that provides real booked `flight_start_date`
+and `flight_end_date` from the platform. DV360 needs them typed in by hand.
+
+### Staging — `gads_staging`
+
+Three views. Every one over a stats table filters `_weld_deleted_at IS NULL` —
+Google Ads is the only source in this project that soft-deletes rows, and
+without the filter deleted rows keep contributing spend forever.
+
+Money arrives as `cost_micros`; `metrics.micros()` converts it.
+
+---
+
 ## Cross-channel
 
 | Object | Grain | Use it for |
@@ -406,7 +460,7 @@ dependencies. **If a table is not in that file, nothing in this project reads
 it.** A model physically cannot: `ref()` would not resolve and compilation
 fails.
 
-**37 declared, 36 required.** Remove any of the 36 upstream and the run breaks.
+**40 declared, 39 required.** Remove any of those upstream and the run breaks.
 
 ### `kebooladv` — Keboola → DV360 and CM360
 
@@ -418,7 +472,7 @@ fails.
 | `cm360_reach` | `stg_cm360_reach` | Non-additive reach, and the only table with advertiserId and advertiser name on the same row. |
 | `cm360_standard_table` | `stg_cm360_campaign_daily` | Only source of CM360 total_conversions. |
 | `fct_dv360_creative_daily` | `stg_dv360_creative` |  |
-| `fct_dv360_floodlight_daily` | `stg_dv360_floodlight` | **EMPTY — 0 rows.** Staged with no mart behind it, so an empty table never reaches a dashboard. Still required: drop it and the run breaks. |
+| `fct_dv360_floodlight_daily` | `stg_dv360_floodlight` | **EMPTY — 0 rows.** Staged with no mart behind it. Still required: drop it and the run breaks. |
 | `fct_dv360_geo_daily` | `stg_dv360_geo` | Country only, ~61 rows/month. |
 | `fct_dv360_inventory_daily` | `stg_dv360_inventory` | Holds ONE day of data. |
 | `fct_dv360_lineitem_daily_v5` | `stg_dv360_lineitem` | DV360 backbone. The only source with Partner, Campaign, Invalid_Clicks, TrueView and USD spend. |
@@ -433,13 +487,13 @@ fails.
 
 | Source table | Read by | Note |
 |---|---|---|
-| `account` | `stg_meta_account` |  |
+| `account` | `stg_meta_account` | Meta and Google Ads each have one. For Google Ads it is the only source of `currency_code` and of the manager / test_account flags. |
 | `ad` | `stg_meta_ad` | Meta and TikTok each have one, and they are unrelated tables. |
 | `ad_roas_insight` | `assert_meta_spend_reconciliation`, `stg_meta_ad_insight` | Meta backbone — ad x day metrics. |
 | `ad_roas_insight_action_values` | `stg_meta_ad_action` | Money value per Meta conversion. |
 | `ad_roas_insight_actions` | `assert_meta_alias_leak`, `stg_meta_ad_action` | Meta conversions, long format. |
 | `ad_set` | `stg_meta_ad_set` |  |
-| `campaign` | `stg_meta_campaign` | Meta and TikTok each have one, and they are unrelated tables. |
+| `campaign` | `stg_meta_campaign` | Meta, TikTok and Google Ads each have one — three unrelated tables sharing a name. Google Ads' carries REAL booked flight dates. |
 | `creative` | `stg_meta_creative` |  |
 | `custom_conversion` | `stg_meta_custom_conversion` | Resolves `offsite_conversion.custom.<id>` into readable names. |
 | `demographics_age_and_gender` | `stg_meta_breakdown` |  |
@@ -462,37 +516,48 @@ fails.
 | `ad_hourly_report` | `stg_tiktok_ad_hourly` |  |
 | `ad_language_report` | `stg_tiktok_breakdown` |  |
 | `advertiser` | `stg_tiktok_advertiser` | The ONLY TikTok table carrying `currency`. |
-| `campaign` | `stg_tiktok_campaign` | Meta and TikTok each have one, and they are unrelated tables. |
+| `campaign` | `stg_tiktok_campaign` | Meta, TikTok and Google Ads each have one — three unrelated tables sharing a name. Google Ads' carries REAL booked flight dates. |
 | `campaign_daily_report` | `stg_tiktok_campaign_daily` | TikTok **complete** spend. What `core` reads. |
 | `campaign_platform_report` | `stg_tiktok_breakdown` |  |
 
+### `google_ads` — Weld → Google Ads (Phase 1: campaign level)
+
+3 declared, 3 required.
+
+| Source table | Read by | Note |
+|---|---|---|
+| `account` | `stg_gads_account` | Meta and Google Ads each have one. For Google Ads it is the only source of `currency_code` and of the manager / test_account flags. |
+| `campaign` | `stg_gads_campaign` | Meta, TikTok and Google Ads each have one — three unrelated tables sharing a name. Google Ads' carries REAL booked flight dates. |
+| `campaign_stats` | `stg_gads_campaign_daily` | Google Ads **complete** spend. Performance Max reports here and at no level below — about a fifth of spend. Soft-deleted rows must be filtered with `_weld_deleted_at IS NULL`. |
+
 ### What is deliberately excluded
 
-The sources deliver far more than this, and the reason for each exclusion is
-written into `declarations.js`:
-
 - **Meta** — Weld lands ~137 tables; 14 are used.
-- **TikTok** — Weld lands 41; 11 are used. Twenty-one of them carry *identical*
-  metrics: the same money at every hierarchy level, every time grain and every
-  breakdown. Weekly and monthly are `DATE_TRUNC` on daily; the ad-group and
-  campaign reports are rollups of the ad report; the 13 `ad_group_*` targeting
-  tables are one-to-many and would fan rows out; four tables are empty.
-- **DV360** — `fct_dv360_youtube_daily` is declared but not read. It carries
-  TrueView views at a grain the backbone already covers, and staging it would
-  create a second source of truth for one metric.
+- **TikTok** — Weld lands 41; 11 are used. Twenty-one carry *identical* metrics:
+  the same money at every hierarchy level, time grain and breakdown.
+- **Google Ads** — Phase 1 is campaign level only. Ad groups, ads, keywords and
+  search terms follow in phases 2 and 3.
+- **DV360** — `fct_dv360_youtube_daily` is declared but not read; it duplicates
+  a metric the backbone already carries.
 
-### `ad` and `campaign` exist twice
+### `account`, `campaign` and `ad` each exist more than once
 
-`facebook_ads_weld.ad` and `tiktok_ads.ad` are unrelated tables that share a
-name, and the same goes for `campaign`. This only works because **every source
-reference names its dataset**:
+`facebook_ads_weld.campaign`, `tiktok_ads.campaign` and `google_ads.campaign`
+are three unrelated tables sharing a name; `account` and `ad` are shared twice
+over. This only works because **every source reference names its dataset**:
 
 ```sqlx
-FROM ${ref({ schema: constants.DATASETS.tiktok, name: "ad" })}
+FROM ${ref({ schema: constants.DATASETS.gads, name: "campaign" })}
 ```
 
-A bare `ref("ad")` fails compilation rather than guessing. See the README for
-the full rule.
+A bare `ref("campaign")` fails compilation rather than guessing.
+
+### Google Ads soft-deletes rows
+
+`google_ads` is the only source that does. Fourteen of its tables carry
+`_weld_deleted_at`, and **every staging view over them must filter
+`_weld_deleted_at IS NULL`** or deleted rows keep contributing spend forever.
+Checked 2026-09-23: neither `facebook_ads_weld` nor `tiktok_ads` has the column.
 
 ---
 

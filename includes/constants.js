@@ -10,6 +10,7 @@ const DATASETS = {
   kebooladv: "kebooladv",         // CM360 + DV360 (Keboola)
   meta:      "facebook_ads_weld", // Meta (Weld)
   tiktok:    "tiktok_ads",        // TikTok (Weld)
+  gads:      "google_ads",        // Google Ads (Weld)
 };
 
 // Output datasets. Channel stacks keep the <channel>_<layer> pattern
@@ -40,6 +41,10 @@ const SCHEMAS = {
   tiktok_marts:     "tiktok_marts",
   tiktok_reporting: "tiktok_reporting",
 
+  gads_staging:     "gads_staging",
+  gads_marts:       "gads_marts",
+  gads_reporting:   "gads_reporting",
+
   core:            "core",      // cross-channel, channel-agnostic schema
   core_seeds:      "core_seeds",
   reporting:       "reporting", // cross-channel Looker Studio surface
@@ -51,6 +56,7 @@ const CHANNEL = {
   cm360: "CM360",
   meta:  "Meta",
   tiktok: "TikTok",
+  gads:   "Google Ads",
 };
 
 // Every partitioned fact in this project is PARTITION BY date. Some
@@ -84,6 +90,20 @@ function schemaOf(selfTarget) {
   return `${parts[0]}.${parts[1]}\``;
 }
 
+// Weld rewrites a rolling window of past days rather than only appending
+// yesterday, because Google keeps attributing conversions for weeks after
+// the click. Measured on google_ads.campaign_stats, 2026-09-23: every day
+// from 23 August to 23 September was re-synced that morning, and each
+// earlier day was last touched exactly 31 days after it happened. So the
+// window is 31 days; 35 is that plus a margin.
+//
+// Nothing uses this yet — every mart is a full rebuild. It is defined now
+// because the moment an incremental model appears (ad, keyword or search
+// term level, where the volume will force it) this is the number it must
+// reload, and getting it wrong means late conversions never arrive.
+const WELD_LOOKBACK_DAYS = 35;
+
 module.exports = {
   RAW_PROJECT, DATASETS, SCHEMAS, CHANNEL, allPartitions, schemaOf,
+  WELD_LOOKBACK_DAYS,
 };

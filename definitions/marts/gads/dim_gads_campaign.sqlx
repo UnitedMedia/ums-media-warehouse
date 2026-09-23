@@ -1,0 +1,55 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.gads_marts,
+  name: "dim_gads_campaign",
+  tags: ["gads", "marts"],
+  description: "One row per Google Ads campaign that has delivered, with its account, currency and real booked flight dates. Driven by DELIVERY, not by the entity table — the same lesson as dim_tiktok_campaign, where building from the entity list nulled out currency for campaigns the entity sync had missed.",
+  bigquery: {
+    clusterBy: ["account_id", "campaign_id"]
+  },
+  assertions: {
+    uniqueKey: ["campaign_id"],
+    nonNull: ["campaign_id", "account_id"]
+  },
+  columns: {
+    campaign_name: "From the entity table, falling back to the name carried on the fact itself. Google Ads puts campaign_name on campaign_stats, so unlike TikTok a missing entity row never costs us the name.",
+    flight_start_date: "REAL booked dates from the platform, not inferred from delivery. Google Ads is the only channel here that provides them.",
+    is_entity_missing: "TRUE where the campaign delivered spend but has no row in google_ads.campaign, so channel type, status and flight dates are unknown.",
+    advertising_channel_type: "PERFORMANCE_MAX campaigns exist at campaign level only — they have no ad groups, and they are about a fifth of spend."
+  }
+}
+
+WITH delivered AS (
+  SELECT
+    campaign_id,
+    ANY_VALUE(account_id)     AS account_id,
+    ANY_VALUE(campaign_name)  AS campaign_name_from_fact,
+    ANY_VALUE(account_name)   AS account_name_from_fact
+  FROM ${ref("stg_gads_campaign_daily")}
+  WHERE campaign_id IS NOT NULL
+  GROUP BY campaign_id
+)
+SELECT
+  d.campaign_id,
+  COALESCE(c.campaign_name, d.campaign_name_from_fact,
+           CONCAT('campaign_', d.campaign_id))        AS campaign_name,
+  (c.campaign_id IS NULL)                             AS is_entity_missing,
+  c.advertising_channel_type,
+  c.advertising_channel_sub_type,
+  c.campaign_status,
+  c.serving_status,
+  c.experiment_type,
+  c.flight_start_date,
+  c.flight_end_date,
+  c.campaign_optimization_score,
+  COALESCE(c.account_id, d.account_id)                AS account_id,
+  COALESCE(a.account_name, d.account_name_from_fact)  AS account_name,
+  a.currency_code                                     AS currency,
+  a.time_zone,
+  a.account_status,
+  COALESCE(a.is_manager, FALSE)                       AS is_manager,
+  COALESCE(a.is_test_account, FALSE)                  AS is_test_account
+FROM delivered d
+LEFT JOIN ${ref("stg_gads_campaign")} c ON c.campaign_id = d.campaign_id
+LEFT JOIN ${ref("stg_gads_account")}  a
+  ON a.account_id = COALESCE(c.account_id, d.account_id)

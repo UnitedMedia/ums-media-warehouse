@@ -1,8 +1,8 @@
 # ums-media-warehouse
 
 Dataform project for the UMS advertising warehouse in `ums-digital-core-automation`.
-One repo for every paid channel: DV360, CM360, Meta and TikTok are modelled
-here today, Google Ads next.
+One repo for every paid channel: DV360, CM360, Meta, TikTok and Google Ads are
+modelled here today.
 
 Everything in `definitions/` supersedes the hand-run scripts in `all_scripts/`.
 Those are kept as the record of what was deployed before; nothing reads them.
@@ -139,8 +139,8 @@ dataform run --tags seeds        # reference data only
 dataform run --tags monitoring   # assertions without rebuilding anything
 ```
 
-Tags in use: `dv360`, `cm360`, `meta`, `tiktok`, `core` · `staging`, `seeds`,
-`marts`, `reporting` · `monitoring`, `freshness`, `docs`.
+Tags in use: `dv360`, `cm360`, `meta`, `tiktok`, `gads`, `core` · `staging`,
+`seeds`, `marts`, `reporting` · `monitoring`, `freshness`, `docs`.
 
 Dependency order is derived from `ref()`, so a full run needs no orchestration
 beyond `dataform run`.
@@ -163,6 +163,8 @@ number is wrong:
 | `assert_staging_date_parsing` | a channel's date or hour string stopped parsing |
 | `assert_tiktok_ad_coverage` | TikTok ad-level spend drops below the known ~98.6% of campaign-level |
 | `assert_tiktok_grain` | TikTok started delivering duplicate rows, so staging now needs de-duplication |
+| `assert_gads_grain` | Google Ads entity or stats grain stopped holding |
+| `assert_gads_device_reconciliation` | the device split stopped summing to the campaign total |
 
 Thresholds live in `workflow_settings.yaml`, not in the SQL.
 
@@ -288,6 +290,28 @@ either asserted on or surfaced in `v_data_gaps`.
   distinct grain exactly. `assert_tiktok_grain` watches that assumption instead.
 - `platform` is published at campaign level only, so those breakdown rows carry
   no `ad_id`.
+
+**Google Ads**
+
+- **Live**, and the only source that **soft-deletes rows.** Fourteen `google_ads`
+  tables carry `_weld_deleted_at`; every staging view over them filters
+  `_weld_deleted_at IS NULL`. Checked 2026-09-23: no other source has the column.
+- **Performance Max reports at campaign level and nowhere below** — 1.17M of
+  5.0M spend over 30 days, roughly a fifth. `core` therefore reads
+  `campaign_stats`, and any later ad-group model is incomplete by construction.
+- **Weld rewrites a rolling 31-day window**, because Google keeps attributing
+  conversions for weeks. Measured 2026-09-23: every day back to 23 August was
+  re-synced that morning, and each earlier day was last touched exactly 31 days
+  after it happened. `constants.WELD_LOOKBACK_DAYS = 35` records it. Nothing uses
+  it yet — every mart is a full rebuild — but it is the number an incremental
+  model must reload once ad or keyword volume forces one.
+- **An ad is identified by `ad_group_id + ad_id`**, never `ad_id` alone: 10,800
+  ad IDs appear in more than one ad group. Relevant in phase 2.
+- Entities are one row per id, so staging does not de-duplicate.
+  `assert_gads_grain` watches that.
+- History starts 2026-06-21.
+- Weld finishes syncing between 00:15 and 02:15 UTC, so the 06:00 Bucharest
+  schedule (03:00 UTC) always picks up a complete sync.
 
 **Cross-channel**
 

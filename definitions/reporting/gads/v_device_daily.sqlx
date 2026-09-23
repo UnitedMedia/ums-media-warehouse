@@ -1,0 +1,43 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.gads_reporting,
+  name: "v_device_daily",
+  tags: ["gads", "reporting"],
+  description: "Google Ads by device and network. Unlike the Meta and TikTok breakdown views, this one IS additive back to the total — a row belongs to exactly one device and one network, so summing it equals v_daily to the cent.",
+  columns: {
+    device: "MOBILE, DESKTOP, TABLET, CONNECTED_TV, OTHER.",
+    ad_network_type: "SEARCH, SEARCH_PARTNERS, CONTENT, YOUTUBE_SEARCH, YOUTUBE_WATCH, MIXED."
+  }
+}
+
+SELECT
+  f.date,
+  DATE_TRUNC(f.date, WEEK(MONDAY)) AS week,
+  DATE_TRUNC(f.date, MONTH)        AS month,
+
+  f.account_id,
+  d.account_name,
+  d.currency,
+  d.is_test_account,
+  f.campaign_id,
+  d.campaign_name,
+  d.advertising_channel_type,
+  f.device,
+  f.ad_network_type,
+
+  f.impressions,
+  f.clicks,
+  f.interactions,
+  f.video_views,
+  f.conversions,
+  f.conversions_value,
+  f.view_through_conversions,
+  f.spend,
+
+  ${metrics.cpm("f.spend", "f.impressions")}                  AS cpm,
+  ${metrics.ctr("f.clicks", "f.impressions")}                 AS ctr,
+  ${metrics.cpc("f.spend", "f.clicks")}                       AS cpc,
+  ${metrics.cpa("f.spend", "f.conversions")}                  AS cpa,
+  ${metrics.roas("f.conversions_value", "f.spend")}           AS roas
+FROM ${ref("fct_gads_campaign_device_daily")} f
+LEFT JOIN ${ref("dim_gads_campaign")} d USING (campaign_id)
