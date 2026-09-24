@@ -165,10 +165,20 @@ number is wrong:
 | `assert_tiktok_grain` | TikTok started delivering duplicate rows, so staging now needs de-duplication |
 | `assert_gads_grain` | Google Ads entity or stats grain stopped holding |
 | `assert_gads_device_reconciliation` | the device split stopped summing to the campaign total |
-| `assert_gads_account_reconciliation` | an account reports more spend than the sum of its campaigns |
 | `assert_gads_ad_group_coverage` | a non-PMax campaign's ad groups stopped accounting for its spend |
 
 Thresholds live in `workflow_settings.yaml`, not in the SQL.
+
+**One check was demoted from an assertion to a data gap**, and the reason is
+worth keeping. Comparing a Google Ads account's total against the sum of its
+campaigns went through four thresholds — absolute, relative, excluding today,
+then per account rather than per day — and every version was red on data that
+turned out to be correct. Google restates cost for weeks, Weld re-syncs a
+rolling 31-day window, and the two source tables are synced minutes apart, so
+they will always disagree slightly. No threshold separated that from a real gap.
+It now reports in `reporting.v_data_gaps` as `gads_account_spend_above_campaigns`,
+where it is visible without turning the workflow red. If a check cannot be made
+to go green on good data, it is the wrong check.
 
 Two tables carry `requirePartitionFilter` and therefore have **no** `assertions`
 block in their config: `fct_meta_ad_daily` and `fct_cm360_placement_hourly`.

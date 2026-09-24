@@ -218,6 +218,41 @@ WITH gaps AS (
 
   UNION ALL
 
+  -- Google Ads: spend an account reports that its campaigns do not
+  -- account for.
+  --
+  -- This was an assertion and is deliberately no longer one. Google
+  -- restates cost for weeks, Weld re-syncs a rolling 31-day window, and
+  -- account_stats and campaign_stats are synced minutes apart — so the
+  -- two will always disagree slightly and no threshold separated that
+  -- noise from a real gap without either firing constantly or being so
+  -- loose it would miss anything worth catching. It reports here instead.
+  --
+  -- What to look for: one account with a persistent, material share is
+  -- worth chasing. A long tail of tiny percentages is restatement lag.
+  SELECT
+    '${constants.CHANNEL.gads}',
+    'gads_account_spend_above_campaigns',
+    a.account_id,
+    'This account reports more spend than the sum of its campaigns. Small percentages are Google restating cost between two separately-synced tables. A persistent material share means campaign-level Google figures are low.',
+    1,
+    CAST(a.spend - COALESCE(c.spend, 0) AS FLOAT64)
+  FROM (
+    SELECT account_id, SUM(spend) AS spend
+    FROM ${ref("fct_gads_account_daily")}
+    WHERE date < CURRENT_DATE()
+    GROUP BY 1
+  ) a
+  LEFT JOIN (
+    SELECT account_id, SUM(spend) AS spend
+    FROM ${ref("fct_gads_campaign_daily")}
+    WHERE date < CURRENT_DATE()
+    GROUP BY 1
+  ) c USING (account_id)
+  WHERE a.spend - COALESCE(c.spend, 0) > 1
+
+  UNION ALL
+
   -- Core: clients with no canonical name — this is what splits one
   -- client into three in every cross-channel report
   SELECT
