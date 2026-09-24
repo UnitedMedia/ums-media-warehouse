@@ -1,24 +1,52 @@
 config {
   type: "assertion",
   tags: ["gads", "monitoring"],
-  description: "The sum of a Google Ads account's campaigns must equal the account's own total. If the account reports more, there is spend no campaign claims — and every campaign-level figure, including the cross-channel view, is quietly low."
+  description: "The sum of a Google Ads account's campaigns must equal the account's own total. If the account reports materially more, there is spend no campaign claims — and every campaign-level figure, including the cross-channel view, is quietly low."
 }
 
+-- The threshold is RELATIVE, not absolute, and that is the point.
+--
+-- account_stats and campaign_stats both sum cost_micros at their own
+-- grain (date x device x network) before converting out of micros, so
+-- the two totals drift by fractions of a cent on arithmetic alone. An
+-- absolute 0.01 tolerance fires on that drift across ~26,000 account-days
+-- and the assertion is then permanently red, which trains everyone to
+-- ignore it.
+--
+-- A percentage cannot be produced by rounding. Anything above the floor
+-- is spend that genuinely has no campaign attached.
+--
+-- The small absolute guard stops a tiny account — a few cents of spend in
+-- a day — tripping the percentage test on a rounding difference.
+
 WITH by_campaign AS (
-  SELECT date, account_id, SUM(spend) AS spend, SUM(impressions) AS impressions
+  SELECT date, account_id, SUM(spend) AS spend
   FROM ${ref("fct_gads_campaign_daily")}
   GROUP BY 1, 2
 ),
 by_account AS (
-  SELECT date, account_id, spend, impressions
+  SELECT date, account_id, spend
   FROM ${ref("fct_gads_account_daily")}
+),
+joined AS (
+  SELECT
+    COALESCE(c.date, a.date)             AS date,
+    COALESCE(c.account_id, a.account_id) AS account_id,
+    COALESCE(a.spend, 0)                 AS account_spend,
+    COALESCE(c.spend, 0)                 AS campaign_rollup_spend
+  FROM by_campaign c
+  FULL JOIN by_account a USING (date, account_id)
 )
 SELECT
-  COALESCE(c.date, a.date)             AS date,
-  COALESCE(c.account_id, a.account_id) AS account_id,
-  a.spend                              AS account_spend,
-  c.spend                              AS campaign_rollup_spend,
-  ROUND(COALESCE(a.spend, 0) - COALESCE(c.spend, 0), 4) AS spend_diff
-FROM by_campaign c
-FULL JOIN by_account a USING (date, account_id)
-WHERE ABS(COALESCE(a.spend, 0) - COALESCE(c.spend, 0)) > 0.01
+  date,
+  account_id,
+  account_spend,
+  campaign_rollup_spend,
+  ROUND(account_spend - campaign_rollup_spend, 4)                  AS spend_diff,
+  SAFE_DIVIDE(ABS(account_spend - campaign_rollup_spend),
+              NULLIF(account_spend, 0))                            AS relative_diff
+FROM joined
+WHERE ABS(account_spend - campaign_rollup_spend) > 1
+  AND SAFE_DIVIDE(ABS(account_spend - campaign_rollup_spend),
+                  NULLIF(account_spend, 0))
+      > ${dataform.projectConfig.vars.gadsAccountReconciliationTolerance}

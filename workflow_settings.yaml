@@ -26,6 +26,11 @@ vars:
   # spend — TikTok cannot attribute every impression to a named ad.
   tiktokAdCoverageFloor: "0.95"
 
+  # Google Ads account totals vs the sum of their campaigns. Relative,
+  # because both sides sum cost_micros at different grains and drift by
+  # fractions of a cent on arithmetic alone. 0.001 = 0.1%.
+  gadsAccountReconciliationTolerance: "0.001"
+
   # Outside Performance Max, Google Ads ad-group spend should account for
   # essentially all of a campaign's spend. PMax has no ad groups at all
   # and is excluded from that check.
