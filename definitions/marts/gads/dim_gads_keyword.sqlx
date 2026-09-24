@@ -1,0 +1,34 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.gads_marts,
+  name: "dim_gads_keyword",
+  tags: ["gads", "marts"],
+  description: "One row per Google Ads keyword, with the full Quality Score breakdown. A SNAPSHOT — the source carries no date, so this is today's Quality Score and there is no history of it.",
+  bigquery: {
+    clusterBy: ["account_id", "campaign_id", "adgroup_id"]
+  },
+  assertions: {
+    uniqueKey: ["adgroup_id", "criterion_id"],
+    nonNull: ["criterion_id", "adgroup_id"]
+  },
+  columns: {
+    quality_score: "1-10, assigned by Google. Directly affects what you pay per click. Nothing else in this warehouse carries a platform quality rating.",
+    has_quality_score: "FALSE where Google has not scored the keyword — usually too little traffic. Excluding these matters when averaging."
+  }
+}
+
+SELECT
+  criterion_id,
+  adgroup_id,
+  campaign_id,
+  account_id,
+  keyword_text,
+  keyword_match_type,
+  ad_group_status   AS adgroup_status,
+  ad_group_type     AS adgroup_type,
+  quality_score,
+  (quality_score IS NOT NULL) AS has_quality_score,
+  quality_expected_ctr,
+  quality_ad_relevance,
+  quality_landing_page
+FROM ${ref("stg_gads_keyword")}

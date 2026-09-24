@@ -1,0 +1,41 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.gads_marts,
+  name: "dim_gads_ad",
+  tags: ["gads", "marts"],
+  description: "One row per Google Ads ad, keyed on adgroup_id + ad_id. Carries type, status, URLs, ad strength and policy approval — everything the feed gives about an ad except its creative text, which Weld does not sync at all.",
+  bigquery: {
+    clusterBy: ["account_id", "campaign_id", "adgroup_id", "ad_id"]
+  },
+  assertions: {
+    uniqueKey: ["adgroup_id", "ad_id"],
+    nonNull: ["ad_id", "adgroup_id"]
+  },
+  columns: {
+    is_not_serving: "TRUE where the ad is DISAPPROVED or not ENABLED. The fastest explanation for an ad with zero delivery."
+  }
+}
+
+-- Keyed on the PAIR. ad_id alone is not unique: the same ad copied into
+-- several ad groups keeps its id, and 10,817 ids are in that position.
+
+SELECT
+  a.ad_id,
+  a.adgroup_id,
+  a.campaign_id,
+  a.account_id,
+  a.ad_name,
+  a.ad_type,
+  a.ad_status,
+  a.ad_strength,
+  a.added_by_google_ads,
+  a.device_preference,
+  a.display_url,
+  a.final_urls,
+  a.final_mobile_urls,
+  a.final_url_suffix,
+  a.tracking_url_template,
+  a.policy_approval_status,
+  a.policy_review_status,
+  (a.policy_approval_status = 'DISAPPROVED' OR a.ad_status != 'ENABLED') AS is_not_serving
+FROM ${ref("stg_gads_ad")} a

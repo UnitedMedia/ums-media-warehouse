@@ -1,0 +1,38 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.gads_staging,
+  name: "stg_gads_ad",
+  tags: ["gads", "staging"],
+  description: "Google Ads ad entity. Gives type, status, URLs, ad strength and policy approval. It does NOT give creative text — Weld syncs 23 columns and not one is a headline, description, image or card.",
+  columns: {
+    ad_id: "Unique only WITH adgroup_id. Verified 2026-09-23: 338,726 rows hold 327,909 distinct ids, because the same ad copied into several ad groups keeps its id.",
+    ad_strength: "Google's own assessment of the creative — EXCELLENT, GOOD, AVERAGE, POOR. Available here even though the underlying headlines and descriptions are not.",
+    policy_approval_status: "DISAPPROVED means the ad is not serving. Worth watching: nobody asked for this column and it explains more zero-delivery ads than anything else in the feed.",
+    added_by_google_ads: "TRUE for auto-generated ads. Their performance is not the account team's work."
+  }
+}
+
+SELECT
+  CAST(id AS STRING)           AS ad_id,
+  CAST(ad_group_id AS STRING)  AS adgroup_id,
+  CAST(campaign_id AS STRING)  AS campaign_id,
+  CAST(account_id AS STRING)   AS account_id,
+  name                         AS ad_name,
+  ad_type,
+  type                         AS ad_type_raw,
+  status                       AS ad_status,
+  ad_strength,
+  added_by_google_ads,
+  device_preference,
+  display_url,
+  final_urls,
+  final_mobile_urls,
+  final_app_urls,
+  final_url_suffix,
+  tracking_url_template,
+  url_collections,
+  action_items,
+  policy_summary_approval_status AS policy_approval_status,
+  policy_summary_review_status   AS policy_review_status,
+  system_managed_resource_source
+FROM ${ref({ schema: constants.DATASETS.gads, name: "ad" })}

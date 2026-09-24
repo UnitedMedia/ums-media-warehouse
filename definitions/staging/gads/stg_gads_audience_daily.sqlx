@@ -1,0 +1,33 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.gads_staging,
+  name: "stg_gads_audience_daily",
+  tags: ["gads", "staging"],
+  description: "Google Ads audience performance: ad group x criterion x day x device x network. The audience NAME is not in this table — only criterion_id. Resolving it needs user_list, user_interest or topic, none of which is declared yet.",
+  columns: {
+    criterion_id: "The audience segment, as an id. There is no name column anywhere in this table — see reporting.v_data_gaps."
+  }
+}
+
+SELECT
+  DATE(date)                        AS date,
+  CAST(account_id AS STRING)        AS account_id,
+  account_descriptive_name          AS account_name,
+  CAST(campaign_id AS STRING)       AS campaign_id,
+  CAST(ad_group_id AS STRING)       AS adgroup_id,
+  ad_group_name                     AS adgroup_name,
+  CAST(ad_group_criterion_id AS STRING) AS audience_criterion_id,
+  criterion_id                      AS criterion_resource,
+  device,
+  ad_network_type,
+  impressions,
+  clicks,
+  interactions,
+  conversions,
+  conversions_value,
+  view_through_conversions,
+  ${metrics.micros("cost_micros")}  AS spend,
+  active_view_impressions,
+  active_view_measurable_impressions
+FROM ${ref({ schema: constants.DATASETS.gads, name: "audience_stats" })}
+WHERE _weld_deleted_at IS NULL

@@ -136,6 +136,17 @@ const GOOGLE_ADS_TABLES = [
                      // target_impression_share_* columns are SETTINGS.
                      // Achieved impression share, and impression share
                      // lost to budget or rank, are not synced at all.
+
+  // PHASE 2b
+  "ad",              // ad type, status, URLs, ad_strength and policy
+                     // approval. NO creative text — Weld syncs 23 columns
+                     // and none of them is a headline or description.
+  "ad_group_criterion", // keywords and the FULL Quality Score: score,
+                     // expected CTR, ad relevance, landing page. Current
+                     // state, no date.
+  "audience_stats",  // audience performance, keyed on criterion_id. The
+                     // audience NAME is not in it — that needs user_list,
+                     // user_interest or topic, which are not declared yet.
 ];
 
 KEBOOLA_TABLES.forEach(name => {

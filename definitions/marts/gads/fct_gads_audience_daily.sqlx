@@ -1,0 +1,36 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.gads_marts,
+  name: "fct_gads_audience_daily",
+  tags: ["gads", "marts"],
+  description: "Google Ads audience performance at ad group x criterion x day. A breakdown of ad-group spend, so it carries the same Performance Max blind spot and must not be used to total money.",
+  bigquery: {
+    partitionBy: "date",
+    clusterBy: ["account_id", "campaign_id", "adgroup_id"]
+  },
+  assertions: {
+    uniqueKey: ["date", "adgroup_id", "audience_criterion_id"],
+    nonNull: ["date", "adgroup_id"]
+  },
+  columns: {
+    audience_criterion_id: "The segment id. There is NO name for it anywhere in the synced data — resolving it needs user_list, user_interest or topic, which Weld has but this project has not declared."
+  }
+}
+
+SELECT
+  date,
+  account_id,
+  campaign_id,
+  adgroup_id,
+  audience_criterion_id,
+  SUM(impressions)              AS impressions,
+  SUM(clicks)                   AS clicks,
+  SUM(interactions)             AS interactions,
+  SUM(conversions)              AS conversions,
+  SUM(conversions_value)        AS conversions_value,
+  SUM(view_through_conversions) AS view_through_conversions,
+  SUM(spend)                    AS spend,
+  SUM(active_view_impressions)  AS active_view_impressions
+FROM ${ref("stg_gads_audience_daily")}
+WHERE date IS NOT NULL
+GROUP BY 1, 2, 3, 4, 5

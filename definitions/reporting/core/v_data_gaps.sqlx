@@ -253,6 +253,46 @@ WITH gaps AS (
 
   UNION ALL
 
+  -- Google Ads: audience segments with no name anywhere in the feed
+  SELECT
+    '${constants.CHANNEL.gads}',
+    'gads_audience_without_name',
+    CAST(NULL AS STRING),
+    'audience_stats carries only a criterion id, so audience segments report as numbers. Names live in user_list, user_interest and topic, which Weld syncs but this project does not declare.',
+    COUNT(DISTINCT audience_criterion_id),
+    CAST(SUM(spend) AS FLOAT64)
+  FROM ${ref("fct_gads_audience_daily")}
+
+  UNION ALL
+
+  -- Google Ads: ads that are not serving
+  SELECT
+    '${constants.CHANNEL.gads}',
+    'gads_ad_not_serving',
+    policy_approval_status,
+    'Ads that are DISAPPROVED or not ENABLED. They cannot deliver, and this is usually the explanation for an ad group underspending its budget.',
+    COUNT(*),
+    CAST(NULL AS FLOAT64)
+  FROM ${ref("dim_gads_ad")}
+  WHERE is_not_serving
+  GROUP BY policy_approval_status
+
+  UNION ALL
+
+  -- Google Ads: keywords Google rates 4 or below
+  SELECT
+    '${constants.CHANNEL.gads}',
+    'gads_low_quality_keyword',
+    quality_landing_page,
+    'Keywords with a Quality Score of 4 or below, grouped by their landing page component. Low quality raises what you pay per click. Where the landing page component is BELOW_AVERAGE the fix is outside the media team.',
+    COUNT(*),
+    CAST(NULL AS FLOAT64)
+  FROM ${ref("dim_gads_keyword")}
+  WHERE quality_score IS NOT NULL AND quality_score <= 4
+  GROUP BY quality_landing_page
+
+  UNION ALL
+
   -- Core: clients with no canonical name — this is what splits one
   -- client into three in every cross-channel report
   SELECT

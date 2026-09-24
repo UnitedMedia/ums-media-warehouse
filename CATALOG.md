@@ -48,6 +48,8 @@ correct no matter how Looker rolls it up; a ratio stored in a table does not.
 | Google Ads by device and network | `gads_reporting.v_device_daily` |
 | Google Ads by ad group or ad | `gads_reporting.v_ad_group_daily`, `gads_reporting.v_ad_daily` |
 | **Budget vs actual spend, pacing** | `gads_reporting.v_pacing` |
+| **Keyword Quality Score** | `gads_reporting.v_keyword_quality` |
+| Google Ads by audience segment | `gads_reporting.v_audience_daily` |
 | All five channels in one chart | `reporting.v_ad_performance_daily` |
 | What is broken or unmapped right now | `reporting.v_data_gaps` |
 | How fresh each channel is | `reporting.v_source_freshness` |
@@ -364,7 +366,9 @@ keywords and search terms follow.
 | `v_device_daily` | campaign × device × network × day | Device and network split. |
 | **`v_pacing`** | campaign × day | **Booked budget against actual spend**, with Google's own recommended budget, target CPA/ROAS and real flight dates. Nothing else in this warehouse can do this. |
 | `v_ad_group_daily` | ad group × day | **Excludes Performance Max.** Compare ad groups; never total money. |
-| `v_ad_daily` | ad × day | Same PMax blind spot. The only Google view with `video_views`. |
+| `v_ad_daily` | ad × day | Same PMax blind spot. The only Google view with `video_views`. Also carries `ad_strength`, `policy_approval_status` and `is_not_serving`. |
+| **`v_keyword_quality`** | keyword | **Quality Score 1–10 and its three components.** A snapshot, not a history — the source carries no date. |
+| `v_audience_daily` | ad group × audience × day | Audience performance. **Segments have no name** — only a criterion id. |
 
 **Caveats that matter:**
 
@@ -393,6 +397,15 @@ keywords and search terms follow.
 - **Budgets can be shared.** Where `is_shared_budget` is TRUE, `budget_amount`
   belongs to a group of campaigns and campaign-level utilisation is meaningless.
   Group by `budget_id` instead, or filter them out. Listed in `v_data_gaps`.
+- **There is no creative text.** Weld's `ad` table is 23 columns and none is a
+  headline, description, image or card. `ad_strength`, `final_urls` and
+  `display_url` are all you get.
+- **No YouTube or video funnel.** The complete video inventory across all 35
+  tables is `video_views` in three stats tables. No quartiles, no TrueView, no
+  Earned Views/Likes/Shares/Subscribers, no video title.
+- **Audience segments have no name**, only a criterion id.
+- **Quality Score has no history** — `ad_group_criterion` carries no date, so
+  `v_keyword_quality` is today's snapshot and cannot be trended.
 - **Budget and bidding have no history** — those source tables carry no date, so
   `v_pacing` applies today's budget to past days. Read trends, not exact
   past-day variance.

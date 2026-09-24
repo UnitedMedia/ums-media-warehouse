@@ -1,0 +1,42 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.gads_reporting,
+  name: "v_keyword_quality",
+  tags: ["gads", "reporting"],
+  description: "Google Ads keywords with their Quality Score and its three components. A SNAPSHOT of today — the source has no date, so there is no history and no trend. Quality Score directly affects what you pay per click, and nothing else in this warehouse has a platform-assigned quality rating.",
+  columns: {
+    quality_score: "1-10. Below 5 is where CPC penalties bite.",
+    quality_expected_ctr: "Component 1. BELOW_AVERAGE means Google expects this keyword's ads to be clicked less than rivals'.",
+    quality_ad_relevance: "Component 2. BELOW_AVERAGE means the ad copy does not match the keyword — usually the cheapest of the three to fix.",
+    quality_landing_page: "Component 3. BELOW_AVERAGE is a site problem, not a media one, and needs someone outside the media team."
+  }
+}
+
+-- No spend here on purpose. Quality Score has no date, so joining it to a
+-- daily fact would attach today's score to every past day and invite
+-- exactly the wrong chart. Use this to find the keywords worth fixing,
+-- then look them up in the keyword performance fact when that lands.
+
+SELECT
+  k.account_id,
+  c.account_name,
+  c.currency,
+  k.campaign_id,
+  c.campaign_name,
+  c.advertising_channel_type,
+  k.adgroup_id,
+  g.adgroup_name,
+  k.adgroup_status,
+  k.adgroup_type,
+  k.criterion_id,
+  k.keyword_text,
+  k.keyword_match_type,
+  k.quality_score,
+  k.has_quality_score,
+  k.quality_expected_ctr,
+  k.quality_ad_relevance,
+  k.quality_landing_page,
+  (k.quality_score IS NOT NULL AND k.quality_score <= 4) AS is_low_quality
+FROM ${ref("dim_gads_keyword")} k
+LEFT JOIN ${ref("dim_gads_ad_group")} g USING (adgroup_id)
+LEFT JOIN ${ref("dim_gads_campaign")} c ON c.campaign_id = k.campaign_id

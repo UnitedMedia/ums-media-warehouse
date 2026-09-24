@@ -1,0 +1,29 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.gads_staging,
+  name: "stg_gads_keyword",
+  tags: ["gads", "staging"],
+  description: "Google Ads ad group criteria — the keywords, with the full Quality Score breakdown. CURRENT STATE: no date column, so Quality Score is a snapshot of today, never a history.",
+  columns: {
+    quality_score: "1-10. Google's assessment of keyword quality, and a direct input to what you pay per click. Nothing else in this warehouse has a platform-assigned quality rating.",
+    quality_expected_ctr: "BELOW_AVERAGE / AVERAGE / ABOVE_AVERAGE. One of the three components of quality_score.",
+    quality_ad_relevance: "Second component — how well the ad matches the keyword.",
+    quality_landing_page: "Third component — landing page experience. The one the media team usually cannot fix alone.",
+    criterion_id: "Unique only WITH adgroup_id."
+  }
+}
+
+SELECT
+  CAST(ad_group_criterion_criterion_id AS STRING) AS criterion_id,
+  CAST(ad_group_id AS STRING)                     AS adgroup_id,
+  CAST(campaign_id AS STRING)                     AS campaign_id,
+  CAST(account_id AS STRING)                      AS account_id,
+  ad_group_criterion_keyword_text                 AS keyword_text,
+  ad_group_criterion_keyword_match_type           AS keyword_match_type,
+  ad_group_status,
+  ad_group_type,
+  quality_info_score                              AS quality_score,
+  quality_info_search_predicted_ctr               AS quality_expected_ctr,
+  quality_info_creative_score                     AS quality_ad_relevance,
+  quality_info_post_click_score                   AS quality_landing_page
+FROM ${ref({ schema: constants.DATASETS.gads, name: "ad_group_criterion" })}

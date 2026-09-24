@@ -1,0 +1,43 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.gads_reporting,
+  name: "v_audience_daily",
+  tags: ["gads", "reporting"],
+  description: "Google Ads audience performance by ad group. THE AUDIENCE HAS NO NAME — the synced data gives only a criterion id, so segments read as numbers. Resolving them needs user_list, user_interest or topic, which Weld has but this project does not yet declare.",
+  columns: {
+    audience_criterion_id: "The segment, as an id. Reported in reporting.v_data_gaps until a name lookup is added.",
+    spend: "A breakdown of AD GROUP spend, so it carries the same Performance Max blind spot. Never total Google Ads money from here."
+  }
+}
+
+SELECT
+  f.date,
+  DATE_TRUNC(f.date, WEEK(MONDAY)) AS week,
+  DATE_TRUNC(f.date, MONTH)        AS month,
+
+  f.account_id,
+  c.account_name,
+  c.currency,
+  f.campaign_id,
+  c.campaign_name,
+  c.advertising_channel_type,
+  f.adgroup_id,
+  g.adgroup_name,
+  f.audience_criterion_id,
+
+  f.impressions,
+  f.clicks,
+  f.interactions,
+  f.conversions,
+  f.conversions_value,
+  f.view_through_conversions,
+  f.spend,
+
+  ${metrics.cpm("f.spend", "f.impressions")}        AS cpm,
+  ${metrics.ctr("f.clicks", "f.impressions")}       AS ctr,
+  ${metrics.cpc("f.spend", "f.clicks")}             AS cpc,
+  ${metrics.cpa("f.spend", "f.conversions")}        AS cpa,
+  ${metrics.roas("f.conversions_value", "f.spend")} AS roas
+FROM ${ref("fct_gads_audience_daily")} f
+LEFT JOIN ${ref("dim_gads_ad_group")} g USING (adgroup_id)
+LEFT JOIN ${ref("dim_gads_campaign")} c ON c.campaign_id = f.campaign_id
