@@ -1,0 +1,23 @@
+config {
+  type: "assertion",
+  tags: ["gads", "monitoring"],
+  description: "The budget and bidding-strategy tables must each give exactly one row per campaign, or the LEFT JOIN in dim_gads_campaign fans the dimension out. Budget is de-duplicated in staging because it genuinely carries several records per campaign; bidding is not, so this watches it."
+}
+
+WITH budget AS (
+  SELECT 'stg_gads_campaign_budget' AS model, campaign_id, COUNT(*) AS rows_at_grain
+  FROM ${ref("stg_gads_campaign_budget")}
+  WHERE campaign_id IS NOT NULL
+  GROUP BY 1, 2
+  HAVING COUNT(*) > 1
+),
+bidding AS (
+  SELECT 'stg_gads_campaign_bidding', campaign_id, COUNT(*)
+  FROM ${ref("stg_gads_campaign_bidding")}
+  WHERE campaign_id IS NOT NULL
+  GROUP BY 1, 2
+  HAVING COUNT(*) > 1
+)
+SELECT * FROM budget
+UNION ALL
+SELECT * FROM bidding

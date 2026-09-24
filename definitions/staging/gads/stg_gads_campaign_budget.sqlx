@@ -28,3 +28,17 @@ SELECT
   explicitly_shared                              AS is_shared_budget,
   reference_count                                AS campaigns_on_budget
 FROM ${ref({ schema: constants.DATASETS.gads, name: "campaign_budget" })}
+
+-- One row per campaign, and it has to be enforced here. Verified
+-- 2026-09-24: 23,667 budget rows against 22,848 campaigns, so a campaign
+-- can carry several budget records — an old REMOVED one alongside the
+-- live one. Without this, the LEFT JOIN in dim_gads_campaign fans the
+-- dimension out and its uniqueKey assertion fails, which is exactly what
+-- happened.
+--
+-- Preference: an ENABLED budget first, then the highest id, which is the
+-- most recently created.
+QUALIFY ROW_NUMBER() OVER (
+  PARTITION BY CAST(campaign_id AS STRING)
+  ORDER BY IF(status = 'ENABLED', 0, 1), id DESC
+) = 1
