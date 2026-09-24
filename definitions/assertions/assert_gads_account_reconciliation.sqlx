@@ -18,15 +18,24 @@ config {
 --
 -- The small absolute guard stops a tiny account — a few cents of spend in
 -- a day — tripping the percentage test on a rounding difference.
+--
+-- TODAY IS EXCLUDED. Weld syncs account_stats and campaign_stats at
+-- different times of the night, so for the partial current day one table
+-- simply holds more of today's spend than the other. Measured 2026-09-24:
+-- every mismatched row was today, account_stats running 34-46% ahead.
+-- That is capture time, not missing spend, and the same exclusion is in
+-- assert_gads_ad_group_coverage for the same reason.
 
 WITH by_campaign AS (
   SELECT date, account_id, SUM(spend) AS spend
   FROM ${ref("fct_gads_campaign_daily")}
+  WHERE date < CURRENT_DATE()
   GROUP BY 1, 2
 ),
 by_account AS (
   SELECT date, account_id, spend
   FROM ${ref("fct_gads_account_daily")}
+  WHERE date < CURRENT_DATE()
 ),
 joined AS (
   SELECT
