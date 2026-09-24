@@ -1,0 +1,36 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.gads_staging,
+  name: "stg_gads_ad_daily",
+  tags: ["gads", "staging"],
+  description: "Google Ads ad x day x device x network. The only Google stats table carrying video_views. Carries the full hierarchy on the fact itself — account, campaign, ad group and ad names all present.",
+  columns: {
+    ad_id: "An ad is identified by adgroup_id + ad_id, NEVER ad_id alone. Verified 2026-09-23: 338,726 ad rows hold only 327,909 distinct ids — the same ad copied into several ad groups keeps its id.",
+    video_views: "Present here and nowhere else in the Google feed."
+  }
+}
+
+SELECT
+  DATE(date)                        AS date,
+  CAST(account_id AS STRING)        AS account_id,
+  account_descriptive_name          AS account_name,
+  CAST(campaign_id AS STRING)       AS campaign_id,
+  campaign_name,
+  CAST(ad_group_id AS STRING)       AS adgroup_id,
+  ad_group_name                     AS adgroup_name,
+  CAST(ad_id AS STRING)             AS ad_id,
+  ad_name,
+  device,
+  ad_network_type,
+  impressions,
+  clicks,
+  interactions,
+  video_views,
+  conversions,
+  conversions_value,
+  view_through_conversions,
+  ${metrics.micros("cost_micros")}  AS spend,
+  active_view_impressions,
+  active_view_measurable_impressions
+FROM ${ref({ schema: constants.DATASETS.gads, name: "ad_stats" })}
+WHERE _weld_deleted_at IS NULL

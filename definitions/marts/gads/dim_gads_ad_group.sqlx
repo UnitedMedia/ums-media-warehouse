@@ -1,0 +1,42 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.gads_marts,
+  name: "dim_gads_ad_group",
+  tags: ["gads", "marts"],
+  description: "One row per Google Ads ad group that has delivered, with its campaign and account. Delivery-driven, so an ad group missing from the entity sync still reports — ad_group_stats carries campaign_id and both names on the fact itself.",
+  bigquery: {
+    clusterBy: ["account_id", "campaign_id", "adgroup_id"]
+  },
+  assertions: {
+    uniqueKey: ["adgroup_id"],
+    nonNull: ["adgroup_id", "campaign_id"]
+  },
+  columns: {
+    is_entity_missing: "TRUE where the ad group delivered but has no row in google_ads.ad_group, so its type, status and rotation mode are unknown. Names still resolve from the fact."
+  }
+}
+
+WITH delivered AS (
+  SELECT
+    adgroup_id,
+    ANY_VALUE(campaign_id)    AS campaign_id,
+    ANY_VALUE(account_id)     AS account_id,
+    ANY_VALUE(adgroup_name)   AS adgroup_name_from_fact,
+    ANY_VALUE(campaign_name)  AS campaign_name_from_fact
+  FROM ${ref("stg_gads_ad_group_daily")}
+  WHERE adgroup_id IS NOT NULL
+  GROUP BY adgroup_id
+)
+SELECT
+  d.adgroup_id,
+  COALESCE(g.adgroup_name, d.adgroup_name_from_fact,
+           CONCAT('adgroup_', d.adgroup_id))       AS adgroup_name,
+  (g.adgroup_id IS NULL)                           AS is_entity_missing,
+  g.adgroup_type,
+  g.adgroup_status,
+  g.ad_rotation_mode,
+  COALESCE(g.campaign_id, d.campaign_id)           AS campaign_id,
+  COALESCE(g.campaign_name, d.campaign_name_from_fact) AS campaign_name,
+  COALESCE(g.account_id, d.account_id)             AS account_id
+FROM delivered d
+LEFT JOIN ${ref("stg_gads_ad_group")} g ON g.adgroup_id = d.adgroup_id

@@ -1,0 +1,30 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.gads_staging,
+  name: "stg_gads_campaign_budget",
+  tags: ["gads", "staging"],
+  description: "Google Ads campaign budgets. CURRENT STATE — there is no date column, so this is what the budget is today, not what it was on any past day. Pacing built on it compares today's budget against historical spend.",
+  columns: {
+    budget_amount: "For a DAILY period this is the daily budget. Check budget_period before doing arithmetic with it.",
+    is_shared_budget: "TRUE when one budget is shared across several campaigns. Its amount then belongs to the group, NOT to this campaign — attributing it per campaign overstates every one of them.",
+    campaigns_on_budget: "How many campaigns draw on this budget. Anything above 1 makes campaign-level pacing ambiguous.",
+    recommended_budget_amount: "Google's own suggestion. Nothing else in this warehouse has a platform recommendation to compare against."
+  }
+}
+
+SELECT
+  CAST(id AS STRING)                             AS budget_id,
+  CAST(campaign_id AS STRING)                    AS campaign_id,
+  CAST(account_id AS STRING)                     AS account_id,
+  name                                           AS budget_name,
+  period                                         AS budget_period,
+  type                                           AS budget_type,
+  delivery_method                                AS budget_delivery_method,
+  status                                         AS budget_status,
+  ${metrics.micros("amount_micros")}             AS budget_amount,
+  ${metrics.micros("total_amount_micros")}       AS budget_total_amount,
+  ${metrics.micros("recommended_budget_amount_micros")} AS recommended_budget_amount,
+  has_recommended_budget,
+  explicitly_shared                              AS is_shared_budget,
+  reference_count                                AS campaigns_on_budget
+FROM ${ref({ schema: constants.DATASETS.gads, name: "campaign_budget" })}

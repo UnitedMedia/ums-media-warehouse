@@ -1,0 +1,35 @@
+config {
+  type: "assertion",
+  tags: ["gads", "monitoring"],
+  description: "Outside Performance Max, ad group spend should account for essentially all campaign spend. PMax is excluded because it has no ad groups by design. A gap anywhere else means the ad-group and ad views are understating more than the known PMax blind spot."
+}
+
+-- Today is excluded on both sides: ad_group_stats syncs about two hours
+-- after campaign_stats, so the current day always shows a harmless
+-- difference that is timing, not missing data.
+
+WITH campaign_level AS (
+  SELECT f.campaign_id, SUM(f.spend) AS spend
+  FROM ${ref("fct_gads_campaign_daily")} f
+  JOIN ${ref("dim_gads_campaign")} d USING (campaign_id)
+  WHERE d.advertising_channel_type != 'PERFORMANCE_MAX'
+    AND d.advertising_channel_type IS NOT NULL
+    AND f.date < CURRENT_DATE()
+  GROUP BY 1
+),
+ad_group_level AS (
+  SELECT campaign_id, SUM(spend) AS spend
+  FROM ${ref("fct_gads_ad_group_daily")}
+  WHERE date < CURRENT_DATE()
+  GROUP BY 1
+)
+SELECT
+  c.campaign_id,
+  c.spend                              AS campaign_spend,
+  COALESCE(g.spend, 0)                 AS ad_group_spend,
+  SAFE_DIVIDE(COALESCE(g.spend, 0), NULLIF(c.spend, 0)) AS coverage
+FROM campaign_level c
+LEFT JOIN ad_group_level g USING (campaign_id)
+WHERE c.spend > 1
+  AND SAFE_DIVIDE(COALESCE(g.spend, 0), NULLIF(c.spend, 0))
+      < ${dataform.projectConfig.vars.gadsAdGroupCoverageFloor}

@@ -124,6 +124,18 @@ const GOOGLE_ADS_TABLES = [
   "campaign",        // carries REAL booked start_date and end_date
   "campaign_stats",  // COMPLETE spend. Performance Max exists at this
                      // level and nowhere below it.
+
+  // PHASE 2
+  "account_stats",   // the true account total. Reconciled against
+                     // campaign_stats to catch spend no campaign claims.
+  "ad_group",
+  "ad_group_stats",
+  "ad_stats",        // the only stats table with video_views
+  "campaign_budget", // booked budget + Google's own recommendation
+  "campaign_bidding_strategy", // bid strategy and its targets. NOTE: its
+                     // target_impression_share_* columns are SETTINGS.
+                     // Achieved impression share, and impression share
+                     // lost to budget or rank, are not synced at all.
 ];
 
 KEBOOLA_TABLES.forEach(name => {

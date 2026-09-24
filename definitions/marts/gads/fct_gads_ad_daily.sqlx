@@ -1,0 +1,39 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.gads_marts,
+  name: "fct_gads_ad_daily",
+  tags: ["gads", "marts"],
+  description: "Google Ads ad x day. The only Google fact with video_views. Same Performance Max blind spot as the ad group fact — do not total money from it.",
+  bigquery: {
+    partitionBy: "date",
+    clusterBy: ["account_id", "campaign_id", "adgroup_id", "ad_id"]
+  },
+  assertions: {
+    uniqueKey: ["date", "adgroup_id", "ad_id"],
+    nonNull: ["date", "ad_id"]
+  },
+  columns: {
+    ad_id: "Unique only WITH adgroup_id. The same ad copied into several ad groups keeps its id, so the key here is adgroup_id + ad_id."
+  }
+}
+
+SELECT
+  date,
+  account_id,
+  campaign_id,
+  adgroup_id,
+  ad_id,
+  ANY_VALUE(ad_name)                      AS ad_name,
+  SUM(impressions)                        AS impressions,
+  SUM(clicks)                             AS clicks,
+  SUM(interactions)                       AS interactions,
+  SUM(video_views)                        AS video_views,
+  SUM(conversions)                        AS conversions,
+  SUM(conversions_value)                  AS conversions_value,
+  SUM(view_through_conversions)           AS view_through_conversions,
+  SUM(spend)                              AS spend,
+  SUM(active_view_impressions)            AS active_view_impressions,
+  SUM(active_view_measurable_impressions) AS active_view_measurable_impressions
+FROM ${ref("stg_gads_ad_daily")}
+WHERE date IS NOT NULL
+GROUP BY 1, 2, 3, 4, 5

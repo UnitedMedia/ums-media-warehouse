@@ -46,6 +46,8 @@ correct no matter how Looker rolls it up; a ratio stored in a table does not.
 | TikTok by country, language, or all breakdowns at once | `tiktok_reporting.v_breakdown_daily` |
 | Google Ads spend, conversions, ROAS | `gads_reporting.v_daily` |
 | Google Ads by device and network | `gads_reporting.v_device_daily` |
+| Google Ads by ad group or ad | `gads_reporting.v_ad_group_daily`, `gads_reporting.v_ad_daily` |
+| **Budget vs actual spend, pacing** | `gads_reporting.v_pacing` |
 | All five channels in one chart | `reporting.v_ad_performance_daily` |
 | What is broken or unmapped right now | `reporting.v_data_gaps` |
 | How fresh each channel is | `reporting.v_source_freshness` |
@@ -360,6 +362,9 @@ keywords and search terms follow.
 |---|---|---|
 | **`v_daily`** | campaign × day | **The main one.** Complete spend including Performance Max, plus impressions, clicks, interactions, video views, conversions, conversion value, view-through conversions and Active View — with CPM, CTR, CPC, CPA, conversion rate, viewable rate and ROAS. |
 | `v_device_daily` | campaign × device × network × day | Device and network split. |
+| **`v_pacing`** | campaign × day | **Booked budget against actual spend**, with Google's own recommended budget, target CPA/ROAS and real flight dates. Nothing else in this warehouse can do this. |
+| `v_ad_group_daily` | ad group × day | **Excludes Performance Max.** Compare ad groups; never total money. |
+| `v_ad_daily` | ad × day | Same PMax blind spot. The only Google view with `video_views`. |
 
 **Caveats that matter:**
 
@@ -378,6 +383,19 @@ keywords and search terms follow.
   client-facing.
 - `viewable_rate` divides by **measurable** impressions, which is Google's own
   definition. It is therefore comparable with the Google Ads UI, unlike CM360's.
+- **Achieved impression share is not available.** Confirmed 2026-09-24: the only
+  `impression_share` columns anywhere in `google_ads` are
+  `target_impression_share_*` on the bidding-strategy table, which are settings.
+  Impression share, and share lost to budget or rank, are not synced.
+- **`conversion_action` and `asset` are in zero tables.** No per-conversion-type
+  breakdown, and Performance Max has no asset detail — 20% of spend that cannot
+  be opened up at all.
+- **Budgets can be shared.** Where `is_shared_budget` is TRUE, `budget_amount`
+  belongs to a group of campaigns and campaign-level utilisation is meaningless.
+  Group by `budget_id` instead, or filter them out. Listed in `v_data_gaps`.
+- **Budget and bidding have no history** — those source tables carry no date, so
+  `v_pacing` applies today's budget to past days. Read trends, not exact
+  past-day variance.
 
 ### Marts — `gads_marts`
 
@@ -385,7 +403,11 @@ keywords and search terms follow.
 |---|---|---|
 | `fct_gads_campaign_daily` | campaign × day | **Source of truth for Google Ads spend.** What `core` reads. |
 | `fct_gads_campaign_device_daily` | campaign × device × network × day | The source grain, kept intact. Reconciles exactly to the above. |
-| `dim_gads_campaign` | campaign | Campaign, account, currency and **real booked flight dates**. Driven by delivery, not by the entity list. |
+| `fct_gads_ad_group_daily` | ad group × day | Excludes PMax by construction. |
+| `fct_gads_ad_daily` | ad × day | Key is **adgroup_id + ad_id**, never ad_id alone. Only Google fact with `video_views`. |
+| `fct_gads_account_daily` | account × day | Exists to reconcile against the campaign rollup. |
+| `dim_gads_campaign` | campaign | Campaign, account, currency, **real booked flight dates**, budget, recommended budget and bid strategy targets. Driven by delivery. |
+| `dim_gads_ad_group` | ad group | Delivery-driven; names resolve from the fact when the entity sync lags. |
 
 Google Ads is the **only** channel that provides real booked `flight_start_date`
 and `flight_end_date` from the platform. DV360 needs them typed in by hand.

@@ -1,0 +1,29 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.gads_staging,
+  name: "stg_gads_account_daily",
+  tags: ["gads", "staging"],
+  description: "Google Ads account x day x device x network. The account's own total, used to reconcile against the sum of its campaigns — if this is higher, there is spend no campaign claims.",
+  columns: {
+    spend: "The account total. assert_gads_account_reconciliation compares it with campaign_stats on every run."
+  }
+}
+
+SELECT
+  DATE(date)                        AS date,
+  CAST(account_id AS STRING)        AS account_id,
+  account_descriptive_name          AS account_name,
+  device,
+  ad_network_type,
+  impressions,
+  clicks,
+  interactions,
+  conversions,
+  conversions_value,
+  view_through_conversions,
+  ${metrics.micros("cost_micros")}  AS spend,
+  active_view_impressions,
+  active_view_measurable_impressions,
+  ${metrics.micros("active_view_measurable_cost_micros")} AS active_view_measurable_spend
+FROM ${ref({ schema: constants.DATASETS.gads, name: "account_stats" })}
+WHERE _weld_deleted_at IS NULL

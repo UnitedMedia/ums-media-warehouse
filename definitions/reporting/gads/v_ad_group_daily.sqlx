@@ -1,0 +1,45 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.gads_reporting,
+  name: "v_ad_group_daily",
+  tags: ["gads", "reporting"],
+  description: "Google Ads by ad group. DOES NOT INCLUDE PERFORMANCE MAX — PMax has no ad groups at all, and it is roughly a fifth of spend. Totals here will always read low against v_daily. Use it to compare ad groups, never to total money.",
+  columns: {
+    spend: "Ad-group-level spend only. For a complete Google Ads total use gads_reporting.v_daily."
+  }
+}
+
+SELECT
+  f.date,
+  DATE_TRUNC(f.date, WEEK(MONDAY)) AS week,
+  DATE_TRUNC(f.date, MONTH)        AS month,
+
+  f.account_id,
+  c.account_name,
+  c.currency,
+  c.is_test_account,
+  f.campaign_id,
+  c.campaign_name,
+  c.advertising_channel_type,
+  f.adgroup_id,
+  g.adgroup_name,
+  g.adgroup_type,
+  g.adgroup_status,
+
+  f.impressions,
+  f.clicks,
+  f.interactions,
+  f.conversions,
+  f.conversions_value,
+  f.view_through_conversions,
+  f.spend,
+
+  ${metrics.cpm("f.spend", "f.impressions")}         AS cpm,
+  ${metrics.ctr("f.clicks", "f.impressions")}        AS ctr,
+  ${metrics.cpc("f.spend", "f.clicks")}              AS cpc,
+  ${metrics.cpa("f.spend", "f.conversions")}         AS cpa,
+  ${metrics.ctr("f.conversions", "f.clicks")}        AS conversion_rate,
+  ${metrics.roas("f.conversions_value", "f.spend")}  AS roas
+FROM ${ref("fct_gads_ad_group_daily")} f
+LEFT JOIN ${ref("dim_gads_ad_group")} g USING (adgroup_id)
+LEFT JOIN ${ref("dim_gads_campaign")} c ON c.campaign_id = f.campaign_id

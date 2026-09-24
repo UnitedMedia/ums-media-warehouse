@@ -1,0 +1,33 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.gads_marts,
+  name: "fct_gads_ad_group_daily",
+  tags: ["gads", "marts"],
+  description: "Google Ads ad group x day. INCOMPLETE BY CONSTRUCTION: Performance Max reports at campaign level only, so ~20% of spend has no row here. Never total Google Ads money from this table — fct_gads_campaign_daily is the complete figure.",
+  bigquery: {
+    partitionBy: "date",
+    clusterBy: ["account_id", "campaign_id", "adgroup_id"]
+  },
+  assertions: {
+    uniqueKey: ["date", "adgroup_id"],
+    nonNull: ["date", "adgroup_id"]
+  }
+}
+
+SELECT
+  date,
+  account_id,
+  campaign_id,
+  adgroup_id,
+  SUM(impressions)                        AS impressions,
+  SUM(clicks)                             AS clicks,
+  SUM(interactions)                       AS interactions,
+  SUM(conversions)                        AS conversions,
+  SUM(conversions_value)                  AS conversions_value,
+  SUM(view_through_conversions)           AS view_through_conversions,
+  SUM(spend)                              AS spend,
+  SUM(active_view_impressions)            AS active_view_impressions,
+  SUM(active_view_measurable_impressions) AS active_view_measurable_impressions
+FROM ${ref("stg_gads_ad_group_daily")}
+WHERE date IS NOT NULL
+GROUP BY 1, 2, 3, 4

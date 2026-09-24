@@ -165,6 +165,8 @@ number is wrong:
 | `assert_tiktok_grain` | TikTok started delivering duplicate rows, so staging now needs de-duplication |
 | `assert_gads_grain` | Google Ads entity or stats grain stopped holding |
 | `assert_gads_device_reconciliation` | the device split stopped summing to the campaign total |
+| `assert_gads_account_reconciliation` | an account reports more spend than the sum of its campaigns |
+| `assert_gads_ad_group_coverage` | a non-PMax campaign's ad groups stopped accounting for its spend |
 
 Thresholds live in `workflow_settings.yaml`, not in the SQL.
 
@@ -309,6 +311,21 @@ either asserted on or surfaced in `v_data_gaps`.
   ad IDs appear in more than one ad group. Relevant in phase 2.
 - Entities are one row per id, so staging does not de-duplicate.
   `assert_gads_grain` watches that.
+- **Achieved impression share is NOT synced.** The only `impression_share`
+  columns in the entire dataset are `target_impression_share_*` on
+  `campaign_bidding_strategy`, which are bidding SETTINGS. Impression share, and
+  impression share lost to budget or rank, are Google's most distinctive metrics
+  and none of them is available. Weld ask.
+- **`conversion_action` and `asset` appear in zero tables**, so there is no
+  per-conversion-type breakdown and Performance Max cannot be opened up at all.
+- Google is the only channel that gives a booked **budget**, real **flight
+  dates** and Google's own **recommended budget** — `gads_reporting.v_pacing`
+  exists because of that and has no equivalent elsewhere.
+- Budgets can be **shared across campaigns**. Where `is_shared_budget` is TRUE,
+  `budget_amount` belongs to the group and campaign-level utilisation is
+  meaningless. Listed in `v_data_gaps`.
+- Budget and bidding tables have **no date column** — they are current state, so
+  pacing applies today's budget to historical spend.
 - History starts 2026-06-21.
 - Weld finishes syncing between 00:15 and 02:15 UTC, so the 06:00 Bucharest
   schedule (03:00 UTC) always picks up a complete sync.

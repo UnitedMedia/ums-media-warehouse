@@ -1,0 +1,34 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.gads_staging,
+  name: "stg_gads_campaign_bidding",
+  tags: ["gads", "staging"],
+  description: "Google Ads bidding strategy per campaign. CURRENT STATE — no date column. Tells you what the campaign is optimising for, which is the only way to judge whether its CPA or ROAS is on target.",
+  columns: {
+    target_impression_share_fraction: "A SETTING, not a result. Achieved impression share, and impression share lost to budget or rank, are NOT synced by Weld — this is the only impression-share column in the entire google_ads dataset and it is the target you asked for, not what you got.",
+    target_cpa: "The CPA the campaign is bidding towards. Compare against actual cpa in v_daily.",
+    target_roas: "The ROAS the campaign is bidding towards. Compare against actual roas in v_daily."
+  }
+}
+
+SELECT
+  CAST(campaign_id AS STRING)                  AS campaign_id,
+  CAST(account_id AS STRING)                   AS account_id,
+  bidding_strategy                             AS bidding_strategy,
+  bidding_strategy_type,
+  bidding_strategy_system_status,
+  ${metrics.micros("target_cpa_micros")}       AS target_cpa,
+  target_roas,
+  ${metrics.micros("maximize_conversions_target_cpa_micros")} AS maximize_conversions_target_cpa,
+  maximize_conversion_value_target_roas,
+  ${metrics.micros("target_cpa_cpc_bid_ceiling_micros")}  AS target_cpa_bid_ceiling,
+  ${metrics.micros("target_cpa_cpc_bid_floor_micros")}    AS target_cpa_bid_floor,
+  ${metrics.micros("target_roas_cpc_bid_ceiling_micros")} AS target_roas_bid_ceiling,
+  ${metrics.micros("target_roas_cpc_bid_floor_micros")}   AS target_roas_bid_floor,
+  ${metrics.micros("target_spend_cpc_bid_ceiling_micros")} AS target_spend_bid_ceiling,
+  target_impression_share_location,
+  ${metrics.micros("target_impression_share_location_fraction_micros")} AS target_impression_share_fraction,
+  ${metrics.micros("target_impression_share_cpc_bid_ceiling_micros")}   AS target_impression_share_bid_ceiling,
+  manual_cpc_enhanced_cpc_enabled,
+  percent_cpc_enhanced_cpc_enabled
+FROM ${ref({ schema: constants.DATASETS.gads, name: "campaign_bidding_strategy" })}

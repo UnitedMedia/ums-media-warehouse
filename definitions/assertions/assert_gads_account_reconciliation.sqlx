@@ -1,0 +1,24 @@
+config {
+  type: "assertion",
+  tags: ["gads", "monitoring"],
+  description: "The sum of a Google Ads account's campaigns must equal the account's own total. If the account reports more, there is spend no campaign claims — and every campaign-level figure, including the cross-channel view, is quietly low."
+}
+
+WITH by_campaign AS (
+  SELECT date, account_id, SUM(spend) AS spend, SUM(impressions) AS impressions
+  FROM ${ref("fct_gads_campaign_daily")}
+  GROUP BY 1, 2
+),
+by_account AS (
+  SELECT date, account_id, spend, impressions
+  FROM ${ref("fct_gads_account_daily")}
+)
+SELECT
+  COALESCE(c.date, a.date)             AS date,
+  COALESCE(c.account_id, a.account_id) AS account_id,
+  a.spend                              AS account_spend,
+  c.spend                              AS campaign_rollup_spend,
+  ROUND(COALESCE(a.spend, 0) - COALESCE(c.spend, 0), 4) AS spend_diff
+FROM by_campaign c
+FULL JOIN by_account a USING (date, account_id)
+WHERE ABS(COALESCE(a.spend, 0) - COALESCE(c.spend, 0)) > 0.01

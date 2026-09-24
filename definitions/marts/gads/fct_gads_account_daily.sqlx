@@ -1,0 +1,29 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.gads_marts,
+  name: "fct_gads_account_daily",
+  tags: ["gads", "marts"],
+  description: "Google Ads account x day. Exists to be reconciled against the sum of the account's campaigns — if this is higher, there is spend no campaign claims, which would make every campaign-level total quietly low.",
+  bigquery: {
+    partitionBy: "date",
+    clusterBy: ["account_id"]
+  },
+  assertions: {
+    uniqueKey: ["date", "account_id"],
+    nonNull: ["date", "account_id"]
+  }
+}
+
+SELECT
+  date,
+  account_id,
+  SUM(impressions)              AS impressions,
+  SUM(clicks)                   AS clicks,
+  SUM(interactions)             AS interactions,
+  SUM(conversions)              AS conversions,
+  SUM(conversions_value)        AS conversions_value,
+  SUM(view_through_conversions) AS view_through_conversions,
+  SUM(spend)                    AS spend
+FROM ${ref("stg_gads_account_daily")}
+WHERE date IS NOT NULL
+GROUP BY 1, 2

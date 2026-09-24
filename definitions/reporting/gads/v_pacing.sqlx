@@ -1,0 +1,61 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.gads_reporting,
+  name: "v_pacing",
+  tags: ["gads", "reporting"],
+  description: "Google Ads budget against actual spend, per campaign per day. Nothing else in this warehouse can do this — Google is the only channel that gives us a booked budget, real flight dates AND a platform recommendation. Everywhere else, pacing has to be inferred from when delivery started.",
+  columns: {
+    budget_amount: "The CURRENT budget. google_ads.campaign_budget has no history, so a budget changed yesterday is applied to every past day here. Read trends, not exact past-day variance.",
+    budget_utilisation: "spend / budget_amount for that day. Above 1 means the campaign outspent its daily budget, which Google allows within limits.",
+    is_shared_budget: "When TRUE, budget_amount belongs to a GROUP of campaigns, not this one. Utilisation is then meaningless — filter these out or group by budget_id.",
+    recommended_budget_amount: "Google's own suggestion. Compare with budget_amount to see where Google thinks you are leaving delivery on the table.",
+    target_cpa: "What the campaign bids towards. Next to actual cpa, this is the fastest read on whether a campaign is performing to plan.",
+    days_into_flight: "Days since flight_start_date. NULL where the campaign has no booked start date."
+  }
+}
+
+SELECT
+  f.date,
+  DATE_TRUNC(f.date, WEEK(MONDAY)) AS week,
+  DATE_TRUNC(f.date, MONTH)        AS month,
+
+  f.account_id,
+  d.account_name,
+  d.currency,
+  f.campaign_id,
+  d.campaign_name,
+  d.advertising_channel_type,
+  d.campaign_status,
+  d.flight_start_date,
+  d.flight_end_date,
+  DATE_DIFF(f.date, d.flight_start_date, DAY)  AS days_into_flight,
+  DATE_DIFF(d.flight_end_date, f.date, DAY)    AS days_left_in_flight,
+
+  d.budget_id,
+  d.budget_name,
+  d.budget_period,
+  d.budget_amount,
+  d.recommended_budget_amount,
+  d.is_shared_budget,
+  d.campaigns_on_budget,
+
+  d.bidding_strategy_type,
+  d.target_cpa,
+  d.target_roas,
+
+  f.spend,
+  f.impressions,
+  f.clicks,
+  f.conversions,
+  f.conversions_value,
+
+  SAFE_DIVIDE(f.spend, NULLIF(d.budget_amount, 0))                 AS budget_utilisation,
+  d.budget_amount - f.spend                                        AS budget_headroom,
+  SAFE_DIVIDE(d.recommended_budget_amount, NULLIF(d.budget_amount, 0)) AS recommended_vs_current,
+
+  ${metrics.cpa("f.spend", "f.conversions")}                       AS cpa,
+  ${metrics.roas("f.conversions_value", "f.spend")}                AS roas,
+  ${metrics.cpa("f.spend", "f.conversions")} - d.target_cpa        AS cpa_vs_target,
+  ${metrics.roas("f.conversions_value", "f.spend")} - d.target_roas AS roas_vs_target
+FROM ${ref("fct_gads_campaign_daily")} f
+LEFT JOIN ${ref("dim_gads_campaign")} d USING (campaign_id)

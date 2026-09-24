@@ -1,0 +1,32 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.gads_staging,
+  name: "stg_gads_ad_group_daily",
+  tags: ["gads", "staging"],
+  description: "Google Ads ad group x day x device x network. INCOMPLETE BY CONSTRUCTION — Performance Max reports at campaign level only, so roughly a fifth of spend has no row here at all.",
+  columns: {
+    campaign_id: "Carried on the fact itself, so ad group reporting never depends on the entity sync being complete."
+  }
+}
+
+SELECT
+  DATE(date)                        AS date,
+  CAST(account_id AS STRING)        AS account_id,
+  account_descriptive_name          AS account_name,
+  CAST(campaign_id AS STRING)       AS campaign_id,
+  campaign_name,
+  CAST(ad_group_id AS STRING)       AS adgroup_id,
+  ad_group_name                     AS adgroup_name,
+  device,
+  ad_network_type,
+  impressions,
+  clicks,
+  interactions,
+  conversions,
+  conversions_value,
+  view_through_conversions,
+  ${metrics.micros("cost_micros")}  AS spend,
+  active_view_impressions,
+  active_view_measurable_impressions
+FROM ${ref({ schema: constants.DATASETS.gads, name: "ad_group_stats" })}
+WHERE _weld_deleted_at IS NULL

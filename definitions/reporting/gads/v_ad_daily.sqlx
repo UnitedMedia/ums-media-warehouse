@@ -1,0 +1,47 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.gads_reporting,
+  name: "v_ad_daily",
+  tags: ["gads", "reporting"],
+  description: "Google Ads by ad. The only Google view with video_views. DOES NOT INCLUDE PERFORMANCE MAX, same as the ad group view — compare ads with it, never total money.",
+  columns: {
+    ad_id: "Unique only together with adgroup_id. The same ad copied into several ad groups keeps its id."
+  }
+}
+
+SELECT
+  f.date,
+  DATE_TRUNC(f.date, WEEK(MONDAY)) AS week,
+  DATE_TRUNC(f.date, MONTH)        AS month,
+
+  f.account_id,
+  c.account_name,
+  c.currency,
+  c.is_test_account,
+  f.campaign_id,
+  c.campaign_name,
+  c.advertising_channel_type,
+  f.adgroup_id,
+  g.adgroup_name,
+  g.adgroup_type,
+  f.ad_id,
+  f.ad_name,
+
+  f.impressions,
+  f.clicks,
+  f.interactions,
+  f.video_views,
+  f.conversions,
+  f.conversions_value,
+  f.view_through_conversions,
+  f.spend,
+
+  ${metrics.cpm("f.spend", "f.impressions")}         AS cpm,
+  ${metrics.ctr("f.clicks", "f.impressions")}        AS ctr,
+  ${metrics.cpc("f.spend", "f.clicks")}              AS cpc,
+  ${metrics.viewRate("f.video_views", "f.impressions")} AS video_view_rate,
+  ${metrics.cpa("f.spend", "f.conversions")}         AS cpa,
+  ${metrics.roas("f.conversions_value", "f.spend")}  AS roas
+FROM ${ref("fct_gads_ad_daily")} f
+LEFT JOIN ${ref("dim_gads_ad_group")} g USING (adgroup_id)
+LEFT JOIN ${ref("dim_gads_campaign")} c ON c.campaign_id = f.campaign_id

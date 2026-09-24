@@ -15,7 +15,11 @@ config {
     campaign_name: "From the entity table, falling back to the name carried on the fact itself. Google Ads puts campaign_name on campaign_stats, so unlike TikTok a missing entity row never costs us the name.",
     flight_start_date: "REAL booked dates from the platform, not inferred from delivery. Google Ads is the only channel here that provides them.",
     is_entity_missing: "TRUE where the campaign delivered spend but has no row in google_ads.campaign, so channel type, status and flight dates are unknown.",
-    advertising_channel_type: "PERFORMANCE_MAX campaigns exist at campaign level only — they have no ad groups, and they are about a fifth of spend."
+    advertising_channel_type: "PERFORMANCE_MAX campaigns exist at campaign level only — they have no ad groups, and they are about a fifth of spend.",
+    budget_amount: "CURRENT budget, not the budget on any past day — google_ads.campaign_budget has no date column. Check budget_period before doing arithmetic.",
+    is_shared_budget: "TRUE when the budget is shared across campaigns. Its amount then belongs to the group, not this campaign, and campaign-level pacing is meaningless.",
+    target_cpa: "What the campaign is bidding towards. Compare with the actual cpa in v_daily — that comparison is the point of carrying it.",
+    target_impression_share_fraction: "A SETTING. Achieved impression share is NOT synced by Weld, so there is nothing to compare it against."
   }
 }
 
@@ -48,8 +52,27 @@ SELECT
   a.time_zone,
   a.account_status,
   COALESCE(a.is_manager, FALSE)                       AS is_manager,
-  COALESCE(a.is_test_account, FALSE)                  AS is_test_account
+  COALESCE(a.is_test_account, FALSE)                  AS is_test_account,
+
+  -- budget and bidding are CURRENT STATE, joined in here so a campaign
+  -- has one row carrying what it is trying to do as well as what it did
+  b.budget_id,
+  b.budget_name,
+  b.budget_period,
+  b.budget_amount,
+  b.budget_total_amount,
+  b.recommended_budget_amount,
+  COALESCE(b.is_shared_budget, FALSE)                 AS is_shared_budget,
+  b.campaigns_on_budget,
+  bid.bidding_strategy_type,
+  bid.bidding_strategy_system_status,
+  bid.target_cpa,
+  bid.target_roas,
+  bid.target_impression_share_location,
+  bid.target_impression_share_fraction
 FROM delivered d
 LEFT JOIN ${ref("stg_gads_campaign")} c ON c.campaign_id = d.campaign_id
 LEFT JOIN ${ref("stg_gads_account")}  a
   ON a.account_id = COALESCE(c.account_id, d.account_id)
+LEFT JOIN ${ref("stg_gads_campaign_budget")}  b   ON b.campaign_id   = d.campaign_id
+LEFT JOIN ${ref("stg_gads_campaign_bidding")} bid ON bid.campaign_id = d.campaign_id

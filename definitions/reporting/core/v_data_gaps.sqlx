@@ -189,6 +189,35 @@ WITH gaps AS (
 
   UNION ALL
 
+  -- Google Ads: Performance Max spend with no ad group or ad detail
+  SELECT
+    '${constants.CHANNEL.gads}',
+    'gads_pmax_no_lower_detail',
+    CAST(NULL AS STRING),
+    'Performance Max reports at campaign level only. This spend has no ad group, ad, keyword or asset breakdown anywhere in the feed — Weld syncs no asset or asset_group table, so PMax cannot be opened up at all.',
+    COUNT(DISTINCT f.campaign_id),
+    CAST(SUM(f.spend) AS FLOAT64)
+  FROM ${ref("fct_gads_campaign_daily")} f
+  JOIN ${ref("dim_gads_campaign")} d USING (campaign_id)
+  WHERE d.advertising_channel_type = 'PERFORMANCE_MAX'
+
+  UNION ALL
+
+  -- Google Ads: campaigns on a shared budget, where campaign-level
+  -- pacing cannot be computed
+  SELECT
+    '${constants.CHANNEL.gads}',
+    'gads_shared_budget',
+    budget_id,
+    'This budget is shared across several campaigns, so budget_amount belongs to the group. Campaign-level budget utilisation in v_pacing is meaningless for these — group by budget_id instead.',
+    COUNT(*),
+    CAST(NULL AS FLOAT64)
+  FROM ${ref("dim_gads_campaign")}
+  WHERE is_shared_budget
+  GROUP BY budget_id
+
+  UNION ALL
+
   -- Core: clients with no canonical name — this is what splits one
   -- client into three in every cross-channel report
   SELECT
