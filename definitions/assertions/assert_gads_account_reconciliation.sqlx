@@ -1,59 +1,52 @@
 config {
   type: "assertion",
   tags: ["gads", "monitoring"],
-  description: "The sum of a Google Ads account's campaigns must equal the account's own total. If the account reports materially more, there is spend no campaign claims — and every campaign-level figure, including the cross-channel view, is quietly low."
+  description: "Each Google Ads account's campaigns must account for its spend. Compared per ACCOUNT across all complete days, not per account-day: the question is whether the campaign layer is missing money, and that is a property of an account over time."
 }
 
--- The threshold is RELATIVE, not absolute, and that is the point.
+-- Why per account and not per account-day.
 --
--- account_stats and campaign_stats both sum cost_micros at their own
--- grain (date x device x network) before converting out of micros, so
--- the two totals drift by fractions of a cent on arithmetic alone. An
--- absolute 0.01 tolerance fires on that drift across ~26,000 account-days
--- and the assertion is then permanently red, which trains everyone to
--- ignore it.
+-- Measured 2026-09-24: the per-day version left exactly one row — one
+-- account, one day, 0.27%, with the CAMPAIGN side 2.97 higher than the
+-- account side. Google restates cost for weeks (invalid-click credits),
+-- Weld re-syncs a rolling 31-day window, and account_stats and
+-- campaign_stats are synced minutes apart. A single day will therefore
+-- disagree slightly and it means nothing.
 --
--- A percentage cannot be produced by rounding. Anything above the floor
--- is spend that genuinely has no campaign attached.
+-- What would matter is an account whose campaigns systematically fail to
+-- account for its spend. Summing the whole window per account tests that
+-- directly and cannot be tripped by one day's restatement lag.
 --
--- The small absolute guard stops a tiny account — a few cents of spend in
--- a day — tripping the percentage test on a rounding difference.
---
--- TODAY IS EXCLUDED. Weld syncs account_stats and campaign_stats at
--- different times of the night, so for the partial current day one table
--- simply holds more of today's spend than the other. Measured 2026-09-24:
--- every mismatched row was today, account_stats running 34-46% ahead.
--- That is capture time, not missing spend, and the same exclusion is in
--- assert_gads_ad_group_coverage for the same reason.
+-- Today is excluded on both sides: the two tables sync at different times
+-- of the night, so a partial day is always inconsistent between them.
 
 WITH by_campaign AS (
-  SELECT date, account_id, SUM(spend) AS spend
+  SELECT account_id, SUM(spend) AS spend
   FROM ${ref("fct_gads_campaign_daily")}
   WHERE date < CURRENT_DATE()
-  GROUP BY 1, 2
+  GROUP BY 1
 ),
 by_account AS (
-  SELECT date, account_id, spend
+  SELECT account_id, SUM(spend) AS spend
   FROM ${ref("fct_gads_account_daily")}
   WHERE date < CURRENT_DATE()
+  GROUP BY 1
 ),
 joined AS (
   SELECT
-    COALESCE(c.date, a.date)             AS date,
-    COALESCE(c.account_id, a.account_id) AS account_id,
+    COALESCE(a.account_id, c.account_id) AS account_id,
     COALESCE(a.spend, 0)                 AS account_spend,
     COALESCE(c.spend, 0)                 AS campaign_rollup_spend
-  FROM by_campaign c
-  FULL JOIN by_account a USING (date, account_id)
+  FROM by_account a
+  FULL JOIN by_campaign c USING (account_id)
 )
 SELECT
-  date,
   account_id,
-  account_spend,
-  campaign_rollup_spend,
-  ROUND(account_spend - campaign_rollup_spend, 4)                  AS spend_diff,
+  ROUND(account_spend, 2)                                AS account_spend,
+  ROUND(campaign_rollup_spend, 2)                        AS campaign_rollup_spend,
+  ROUND(account_spend - campaign_rollup_spend, 2)        AS spend_diff,
   SAFE_DIVIDE(ABS(account_spend - campaign_rollup_spend),
-              NULLIF(account_spend, 0))                            AS relative_diff
+              NULLIF(account_spend, 0))                  AS relative_diff
 FROM joined
 WHERE ABS(account_spend - campaign_rollup_spend) > 1
   AND SAFE_DIVIDE(ABS(account_spend - campaign_rollup_spend),
