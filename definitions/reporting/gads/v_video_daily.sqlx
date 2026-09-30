@@ -1,0 +1,58 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.gads_reporting,
+  name: "v_video_daily",
+  tags: ["gads", "reporting"],
+  description: "Google Ads video and YouTube ads only, by ad and day. Lets you compare formats — bumper against in-stream against responsive — on cost per view. It is NOT a video funnel: quartiles, TrueView views and the YouTube Earned metrics are not synced and cannot be added by modelling.",
+  columns: {
+    ad_type_raw: "TrueView in-stream, responsive, non-skippable, bumper, efficient reach, in-display, YouTube audio. Measured 2026-09-30: 27,864 video ads across those seven types.",
+    video_views: "The ONLY video metric in the entire google_ads feed. There is no 25/50/75/100% quartile, no TrueView view count, no Earned Views, Likes, Shares, Subscribers or Playlist Additions, and no video title.",
+    cost_per_view: "spend / video_views. The number that actually separates one video format from another.",
+    view_rate: "video_views / impressions. Bumper and non-skippable will read near 1.0 by construction; skippable formats will not. Compare within a format, not across.",
+    spend: "AD level, so Performance Max is absent — but PMax has no video ads anyway, so for this view the blind spot does not bite."
+  }
+}
+
+SELECT
+  f.date,
+  DATE_TRUNC(f.date, WEEK(MONDAY)) AS week,
+  DATE_TRUNC(f.date, MONTH)        AS month,
+
+  f.account_id,
+  c.account_name,
+  c.currency,
+  f.campaign_id,
+  c.campaign_name,
+  c.advertising_channel_type,
+  f.adgroup_id,
+  g.adgroup_name,
+  f.ad_id,
+  a.ad_name,
+  a.ad_type_raw,
+  a.ad_format_group,
+  a.ad_status,
+  a.ad_strength,
+  a.is_not_serving,
+  a.final_urls,
+
+  f.impressions,
+  f.clicks,
+  f.interactions,
+  f.video_views,
+  f.conversions,
+  f.conversions_value,
+  f.spend,
+
+  ${metrics.cpm("f.spend", "f.impressions")}            AS cpm,
+  ${metrics.ctr("f.clicks", "f.impressions")}           AS ctr,
+  ${metrics.cpc("f.spend", "f.clicks")}                 AS cpc,
+  ${metrics.viewRate("f.video_views", "f.impressions")} AS view_rate,
+  ${metrics.cpa("f.spend", "f.video_views")}            AS cost_per_view,
+  ${metrics.cpa("f.spend", "f.conversions")}            AS cpa,
+  ${metrics.roas("f.conversions_value", "f.spend")}     AS roas
+FROM ${ref("fct_gads_ad_daily")} f
+JOIN ${ref("dim_gads_ad")} a
+  ON a.adgroup_id = f.adgroup_id AND a.ad_id = f.ad_id
+LEFT JOIN ${ref("dim_gads_ad_group")} g USING (adgroup_id)
+LEFT JOIN ${ref("dim_gads_campaign")} c ON c.campaign_id = f.campaign_id
+WHERE a.is_video_ad

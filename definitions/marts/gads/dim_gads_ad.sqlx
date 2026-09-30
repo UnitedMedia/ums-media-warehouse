@@ -12,7 +12,9 @@ config {
     nonNull: ["ad_id", "adgroup_id"]
   },
   columns: {
-    is_not_serving: "TRUE where the ad is DISAPPROVED or not ENABLED. The fastest explanation for an ad with zero delivery."
+    is_not_serving: "TRUE where the ad is DISAPPROVED or not ENABLED. The fastest explanation for an ad with zero delivery.",
+    ad_format_group: "VIDEO / SEARCH / DISPLAY / SHOPPING / SMART / UNKNOWN, derived from the raw ad type. Grouping exists because the raw values are 15 strings and nobody filters a dashboard on VIDEO_TRUE_VIEW_IN_DISPLAY by hand.",
+    is_video_ad: "TRUE for every VIDEO_* type and YOUTUBE_AUDIO. Measured 2026-09-30: 27,864 of 338,849 ads. Note this identifies the FORMAT — the video funnel metrics (quartiles, TrueView views, YouTube Earned actions) are not synced."
   }
 }
 
@@ -26,6 +28,16 @@ SELECT
   a.account_id,
   a.ad_name,
   a.ad_type,
+  a.ad_type_raw,
+  CASE
+    WHEN a.ad_type_raw LIKE 'VIDEO%' OR a.ad_type_raw = 'YOUTUBE_AUDIO' THEN 'VIDEO'
+    WHEN a.ad_type_raw LIKE 'SEARCH%'   THEN 'SEARCH'
+    WHEN a.ad_type_raw LIKE 'DISPLAY%'  THEN 'DISPLAY'
+    WHEN a.ad_type_raw LIKE 'SHOPPING%' THEN 'SHOPPING'
+    WHEN a.ad_type_raw LIKE 'SMART%'    THEN 'SMART'
+    ELSE 'UNKNOWN'
+  END                                                    AS ad_format_group,
+  (a.ad_type_raw LIKE 'VIDEO%' OR a.ad_type_raw = 'YOUTUBE_AUDIO') AS is_video_ad,
   a.ad_status,
   a.ad_strength,
   a.added_by_google_ads,

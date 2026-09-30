@@ -50,6 +50,7 @@ correct no matter how Looker rolls it up; a ratio stored in a table does not.
 | **Budget vs actual spend, pacing** | `gads_reporting.v_pacing` |
 | **Keyword Quality Score** | `gads_reporting.v_keyword_quality` |
 | Google Ads by audience segment | `gads_reporting.v_audience_daily` |
+| **Google Ads video / YouTube by format** | `gads_reporting.v_video_daily` |
 | All five channels in one chart | `reporting.v_ad_performance_daily` |
 | What is broken or unmapped right now | `reporting.v_data_gaps` |
 | How fresh each channel is | `reporting.v_source_freshness` |
@@ -369,6 +370,7 @@ keywords and search terms follow.
 | `v_ad_daily` | ad × day | Same PMax blind spot. The only Google view with `video_views`. Also carries `ad_strength`, `policy_approval_status` and `is_not_serving`. |
 | **`v_keyword_quality`** | keyword | **Quality Score 1–10 and its three components.** A snapshot, not a history — the source carries no date. |
 | `v_audience_daily` | ad group × audience × day | Audience performance. **Segments have no name** — only a criterion id. |
+| **`v_video_daily`** | video ad × day | Video and YouTube ads only, by format: TrueView in-stream, responsive, non-skippable, bumper, efficient reach, in-display, YouTube audio. Cost per view and view rate. **Not a funnel** — see below. |
 
 **Caveats that matter:**
 
@@ -400,9 +402,16 @@ keywords and search terms follow.
 - **There is no creative text.** Weld's `ad` table is 23 columns and none is a
   headline, description, image or card. `ad_strength`, `final_urls` and
   `display_url` are all you get.
-- **No YouTube or video funnel.** The complete video inventory across all 35
-  tables is `video_views` in three stats tables. No quartiles, no TrueView, no
-  Earned Views/Likes/Shares/Subscribers, no video title.
+- **Video FORMAT is available; the video FUNNEL is not.** `ad.type` identifies
+  27,864 video ads across seven formats, so `v_video_daily` can compare bumper
+  against in-stream on cost per view. But the complete video *metric* inventory
+  across all 35 tables is `video_views` in three stats tables — no 25/50/75/100%
+  quartiles, no TrueView view count, no Earned Views, Likes, Shares, Subscribers
+  or Playlist Additions, and no video title. Knowing an ad is
+  VIDEO_TRUE_VIEW_IN_STREAM tells you what it is, not how far people watched.
+- **`view_rate` is not comparable across formats.** Bumper and non-skippable
+  ads count a view on essentially every impression; skippable ones do not.
+  Compare within a format.
 - **Audience segments have no name**, only a criterion id.
 - **Quality Score has no history** — `ad_group_criterion` carries no date, so
   `v_keyword_quality` is today's snapshot and cannot be trended.
