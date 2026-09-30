@@ -13,8 +13,9 @@ config {
   },
   columns: {
     is_not_serving: "TRUE where the ad is DISAPPROVED or not ENABLED. The fastest explanation for an ad with zero delivery.",
-    ad_format_group: "VIDEO / SEARCH / DISPLAY / SHOPPING / SMART / UNKNOWN, derived from the raw ad type. Grouping exists because the raw values are 15 strings and nobody filters a dashboard on VIDEO_TRUE_VIEW_IN_DISPLAY by hand.",
-    is_video_ad: "TRUE for every VIDEO_* type and YOUTUBE_AUDIO. Measured 2026-09-30: 27,864 of 338,849 ads. Note this identifies the FORMAT — the video funnel metrics (quartiles, TrueView views, YouTube Earned actions) are not synced."
+    ad_type: "The detailed format, 28 values. Use this, not ad_type_raw — the `type` column behind ad_type_raw is coarser and NULL for 11,918 ads.",
+    ad_format_group: "VIDEO / SEARCH / DISPLAY / DEMAND_GEN / SHOPPING / APP / SMART / LOCAL / UNKNOWN. Grouped because nobody filters a dashboard on VIDEO_NON_SKIPPABLE_IN_STREAM_AD by hand.",
+    is_video_ad: "TRUE for every format containing VIDEO, plus YOUTUBE_AUDIO_AD. Measured 2026-09-30: 29,708 of 338,849 ads. This is the FORMAT — the video funnel metrics (quartiles, TrueView views, YouTube Earned actions) are still not synced."
   }
 }
 
@@ -29,15 +30,29 @@ SELECT
   a.ad_name,
   a.ad_type,
   a.ad_type_raw,
+  -- Derived from ad_type, not from type. Measured 2026-09-30: ad_type has
+  -- 28 distinct values against type's 15, only 4,136 UNKNOWN against
+  -- type's 11,918 NULL plus 243 UNKNOWN, and it finds 29,708 video ads
+  -- against 27,864 — type misses DEMAND_GEN_VIDEO_RESPONSIVE_AD (1,841)
+  -- and IN_FEED_VIDEO_AD (67) entirely.
+  --
+  -- VIDEO is tested FIRST so DEMAND_GEN_VIDEO_RESPONSIVE_AD lands there
+  -- rather than in DEMAND_GEN. A video ad is a video ad whatever bought it.
   CASE
-    WHEN a.ad_type_raw LIKE 'VIDEO%' OR a.ad_type_raw = 'YOUTUBE_AUDIO' THEN 'VIDEO'
-    WHEN a.ad_type_raw LIKE 'SEARCH%'   THEN 'SEARCH'
-    WHEN a.ad_type_raw LIKE 'DISPLAY%'  THEN 'DISPLAY'
-    WHEN a.ad_type_raw LIKE 'SHOPPING%' THEN 'SHOPPING'
-    WHEN a.ad_type_raw LIKE 'SMART%'    THEN 'SMART'
+    WHEN a.ad_type LIKE '%VIDEO%' OR a.ad_type = 'YOUTUBE_AUDIO_AD' THEN 'VIDEO'
+    WHEN a.ad_type LIKE '%SEARCH%'
+      OR a.ad_type IN ('TEXT_AD', 'EXPANDED_TEXT_AD', 'CALL_AD')    THEN 'SEARCH'
+    WHEN a.ad_type LIKE '%DEMAND_GEN%'                              THEN 'DEMAND_GEN'
+    WHEN a.ad_type LIKE '%SHOPPING%'                                THEN 'SHOPPING'
+    WHEN a.ad_type LIKE '%APP%'                                     THEN 'APP'
+    WHEN a.ad_type IN ('IMAGE_AD', 'RESPONSIVE_DISPLAY_AD',
+                       'HTML5_UPLOAD_AD', 'LEGACY_RESPONSIVE_DISPLAY_AD')
+                                                                    THEN 'DISPLAY'
+    WHEN a.ad_type LIKE '%SMART%'                                   THEN 'SMART'
+    WHEN a.ad_type = 'LOCAL_AD'                                     THEN 'LOCAL'
     ELSE 'UNKNOWN'
   END                                                    AS ad_format_group,
-  (a.ad_type_raw LIKE 'VIDEO%' OR a.ad_type_raw = 'YOUTUBE_AUDIO') AS is_video_ad,
+  (a.ad_type LIKE '%VIDEO%' OR a.ad_type = 'YOUTUBE_AUDIO_AD') AS is_video_ad,
   a.ad_status,
   a.ad_strength,
   a.added_by_google_ads,
