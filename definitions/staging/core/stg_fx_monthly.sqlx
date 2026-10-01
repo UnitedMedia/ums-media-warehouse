@@ -1,0 +1,20 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.core_staging,
+  name: "stg_fx_monthly",
+  tags: ["core", "staging"],
+  description: "The monthly RON/EUR rate from FINAL_TABLES.MonthlyExchangeRate, given an explicit currency so it can sit alongside rates from other sources.",
+  columns: {
+    rate_to_eur: "Units of local currency per 1 EUR. 5.278 means 5.278 RON buys 1 EUR, so spend_eur = spend / rate_to_eur.",
+    currency: "Hard-coded RON. The source table has no currency column — a single unlabelled rate that has always meant RON per EUR."
+  }
+}
+
+SELECT
+  DATE_TRUNC(DATE(Date), MONTH) AS month,
+  'RON'                         AS currency,
+  ExchangeRate                  AS rate_to_eur,
+  'MonthlyExchangeRate'         AS rate_source
+FROM ${ref({ schema: constants.DATASETS.final, name: "MonthlyExchangeRate" })}
+WHERE ExchangeRate IS NOT NULL
+  AND ExchangeRate > 0

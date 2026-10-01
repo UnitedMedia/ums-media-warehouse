@@ -1,0 +1,71 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.core,
+  name: "dim_fx_rate",
+  tags: ["core"],
+  description: "One row per month per currency, giving the rate used to convert spend to euros. The single place any currency conversion in this warehouse is defined.",
+  bigquery: {
+    clusterBy: ["currency", "month"]
+  },
+  assertions: {
+    uniqueKey: ["month", "currency"],
+    nonNull: ["month", "currency", "rate_to_eur"]
+  },
+  columns: {
+    rate_to_eur: "Units of local currency per 1 EUR. EUR is 1.0 by definition. spend_eur = spend / rate_to_eur — always divide, never multiply.",
+    rate_source: "Which source supplied this rate: 'EUR base' for the identity, 'MonthlyExchangeRate' for RON, 'seed_fx_rate_manual' for anything typed in by hand."
+  }
+}
+
+-- The month spine is generated rather than taken from a fact table. A
+-- dimension that selected its months FROM fct_ad_performance_daily would
+-- be a cycle, because the fact joins back to this to convert its spend.
+--
+-- Rates are monthly and spend is daily, so a mid-month move shows up as a
+-- step on the 1st. That is a known approximation, fine for reporting,
+-- not something to reconcile against a bank statement.
+
+WITH months AS (
+  SELECT month
+  FROM UNNEST(GENERATE_DATE_ARRAY(
+    DATE '2026-01-01',
+    DATE_ADD(DATE_TRUNC(CURRENT_DATE(), MONTH), INTERVAL 1 MONTH),
+    INTERVAL 1 MONTH)) AS month
+),
+
+-- EUR converts to itself. Defined here rather than expected from a
+-- source, so it can never go missing.
+eur AS (
+  SELECT month, 'EUR' AS currency, 1.0 AS rate_to_eur, 'EUR base' AS rate_source
+  FROM months
+),
+
+ron AS (
+  SELECT month, currency, rate_to_eur, rate_source
+  FROM ${ref("stg_fx_monthly")}
+),
+
+manual AS (
+  SELECT month, currency, rate_to_eur, 'seed_fx_rate_manual' AS rate_source
+  FROM ${ref("seed_fx_rate_manual")}
+),
+
+-- The automatic source wins where both have a rate for the same month and
+-- currency; the hand-maintained seed is a fallback, not an override.
+stacked AS (
+  SELECT *, 1 AS precedence FROM eur
+  UNION ALL
+  SELECT *, 2 FROM ron
+  UNION ALL
+  SELECT *, 3 FROM manual
+)
+
+SELECT
+  month,
+  currency,
+  rate_to_eur,
+  rate_source
+FROM stacked
+QUALIFY ROW_NUMBER() OVER (
+  PARTITION BY month, currency ORDER BY precedence
+) = 1

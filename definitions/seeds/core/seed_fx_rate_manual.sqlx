@@ -1,0 +1,34 @@
+config {
+  type: "operations",
+  schema: constants.SCHEMAS.core_seeds,
+  name: "seed_fx_rate_manual",
+  hasOutput: true,
+  tags: ["core", "seeds"],
+  description: "Hand-maintained exchange rates for currencies FINAL_TABLES.MonthlyExchangeRate does not cover. That table carries one rate — RON per EUR — and spend arrives in other currencies too."
+}
+
+-- CREATE TABLE IF NOT EXISTS — human-entered rows, never truncated.
+--
+-- Measured 2026-10-01: PLN appears in Meta, 28 rows worth 5,946.65, with
+-- no rate anywhere. Until a row lands here that spend cannot convert and
+-- is reported in reporting.v_data_gaps rather than silently dropped or
+-- silently counted as euros.
+--
+-- EUR needs no row. dim_fx_rate gives it 1.0 for every month.
+
+CREATE TABLE IF NOT EXISTS ${self()} (
+  month       DATE    NOT NULL OPTIONS(description = "First day of the month the rate applies to"),
+  currency    STRING  NOT NULL OPTIONS(description = "ISO code, e.g. PLN"),
+  rate_to_eur FLOAT64 NOT NULL OPTIONS(description = "Units of local currency per 1 EUR. spend_eur = spend / rate_to_eur"),
+  source      STRING           OPTIONS(description = "Where the rate came from, e.g. ECB, bank, manual"),
+  updated_at  DATE             OPTIONS(description = "When this row was last touched")
+)
+OPTIONS (
+  description = "Hand-maintained FX rates for currencies the automatic source does not cover. Dataform creates this table but never writes rows to it."
+);
+
+-- Example:
+--   INSERT INTO ums-digital-core-automation.core_seeds.seed_fx_rate_manual
+--     (month, currency, rate_to_eur, source, updated_at)
+--   VALUES
+--     (DATE '2026-09-01', 'PLN', 4.27, 'ECB monthly average', CURRENT_DATE());

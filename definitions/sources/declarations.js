@@ -149,6 +149,15 @@ const GOOGLE_ADS_TABLES = [
                      // user_interest or topic, which are not declared yet.
 ];
 
+// ---------------------------------------------------------------------
+// FINAL_TABLES — hand-built reference data that predates this project
+// ---------------------------------------------------------------------
+const FINAL_TABLES = [
+  "MonthlyExchangeRate",  // Date (first of month) + ExchangeRate. No
+                          // currency column: it is implicitly RON per
+                          // 1 EUR. Covers 2026-04 onwards.
+];
+
 KEBOOLA_TABLES.forEach(name => {
   declare({
     database: constants.RAW_PROJECT,
@@ -177,6 +186,14 @@ GOOGLE_ADS_TABLES.forEach(name => {
   declare({
     database: constants.RAW_PROJECT,
     schema: constants.DATASETS.gads,
+    name: name,
+  });
+});
+
+FINAL_TABLES.forEach(name => {
+  declare({
+    database: constants.RAW_PROJECT,
+    schema: constants.DATASETS.final,
     name: name,
   });
 });

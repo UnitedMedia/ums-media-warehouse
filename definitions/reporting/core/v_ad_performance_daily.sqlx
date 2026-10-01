@@ -6,7 +6,10 @@ config {
   description: "The cross-channel Looker Studio surface. One row per date + channel + campaign, with rate metrics computed here so they stay correct at every roll-up.",
   columns: {
     spend: "The channel's own currency, and CM360 does not say which one. Break out by currency before summing across channels.",
-    cpa: "Computed against a conversions figure that means something different per channel — always show conversions_definition next to it."
+    cpa: "Computed against a conversions figure that means something different per channel — always show conversions_definition next to it.",
+    spend_eur: "The ONLY column safe to total across channels. spend mixes RON, EUR and PLN. NULL where no rate exists — CM360 has no currency, PLN has no rate yet.",
+    is_fx_converted: "Filter on this before showing a euro total, or you are summing a column that is NULL for part of your spend.",
+    cpm_eur: "Euro CPM. The plain cpm mixes currencies and is only meaningful filtered to one."
   }
 }
 
@@ -30,10 +33,20 @@ SELECT
   cast(c.conversions as INT64) as conversions,
   c.conversions_definition,
   c.spend,
+  c.currency                                                     AS spend_currency,
+  c.spend_eur,
+  c.fx_rate_to_eur,
+  c.is_fx_converted,
   ${metrics.cpm("c.spend", "c.impressions")}                     AS cpm,
   ${metrics.ctr("c.clicks", "c.impressions")}                    AS ctr,
   ${metrics.cpc("c.spend", "c.clicks")}                          AS cpc,
   ${metrics.interactionRate("c.interactions", "c.impressions")}  AS interaction_rate,
   ${metrics.completionRate("c.complete_views", "c.impressions")} AS completion_rate,
-  ${metrics.cpa("c.spend", "c.conversions")}                     AS cpa
+  ${metrics.cpa("c.spend", "c.conversions")}                     AS cpa,
+
+  -- Euro equivalents. These are the ones to put on a cross-channel chart;
+  -- the versions above are only meaningful filtered to a single currency.
+  ${metrics.cpm("c.spend_eur", "c.impressions")}                 AS cpm_eur,
+  ${metrics.cpc("c.spend_eur", "c.clicks")}                      AS cpc_eur,
+  ${metrics.cpa("c.spend_eur", "c.conversions")}                 AS cpa_eur
 FROM ${ref("fct_ad_performance_daily")} c

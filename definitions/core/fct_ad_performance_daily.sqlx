@@ -16,6 +16,9 @@ config {
     client_name: "Canonical client, resolved through seed_client_name_map. Falls back to the channel's own spelling when the seed has no row — group on THIS, never on advertiser_raw_name.",
     advertiser_raw_name: "Exactly what the channel calls the advertiser. Kept so an unmapped client can be traced back and added to the seed.",
     currency: "NULL for CM360: the Keboola report carries no currency column. Do not add CM360 spend to another channel's without first deciding what currency you are in.",
+    spend_eur: "spend converted to euros at the month's rate. NULL where no rate exists — CM360 has no currency at all, and PLN has no rate until someone fills core_seeds.seed_fx_rate_manual. NULL means not convertible; it never silently means zero.",
+    fx_rate_to_eur: "The rate actually used, carried on the row so any euro figure can be traced back. 1.0 for EUR.",
+    is_fx_converted: "FALSE where spend_eur is NULL. Filter on this before presenting a euro total, or sum only the rows that converted and say so.",
     conversions: "Each channel's OWN headline conversion count. These are NOT like for like — read conversions_definition on the same row before adding or comparing them.",
     conversions_definition: "What produced the conversions figure on this row. Exists so nobody has to remember which channel means what.",
     clicks: "Clicks to the destination, on every channel. DV360, CM360 and TikTok count only those natively; for Meta this is inline_link_clicks, NOT its `clicks` field, which also counts likes, comments and profile taps and would overstate Meta against the rest.",
@@ -249,8 +252,19 @@ SELECT
   u.complete_views,
   u.conversions,
   u.conversions_definition,
-  u.spend
+  u.spend,
+
+  -- Currency conversion happens HERE, once, not in each reporting view.
+  -- spend_eur is additive, so it belongs in the fact: sum it at any grain
+  -- and it stays correct. A view computing it would have to repeat this
+  -- join, and the repetitions would eventually disagree.
+  SAFE_DIVIDE(u.spend, fx.rate_to_eur)          AS spend_eur,
+  fx.rate_to_eur                                AS fx_rate_to_eur,
+  (fx.rate_to_eur IS NOT NULL)                  AS is_fx_converted
 FROM unioned u
 LEFT JOIN ${ref("seed_client_name_map")} m
   ON m.channel  = u.channel
  AND m.raw_name = u.advertiser_raw_name
+LEFT JOIN ${ref("dim_fx_rate")} fx
+  ON fx.month    = DATE_TRUNC(u.date, MONTH)
+ AND fx.currency = u.currency

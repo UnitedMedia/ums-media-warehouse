@@ -11,6 +11,8 @@ const DATASETS = {
   meta:      "facebook_ads_weld", // Meta (Weld)
   tiktok:    "tiktok_ads",        // TikTok (Weld)
   gads:      "google_ads",        // Google Ads (Weld)
+  final:     "FINAL_TABLES",      // hand-built reference data that predates
+                                  // this project. Home of MonthlyExchangeRate.
 };
 
 // Output datasets. Channel stacks keep the <channel>_<layer> pattern
@@ -45,6 +47,7 @@ const SCHEMAS = {
   gads_marts:       "gads_marts",
   gads_reporting:   "gads_reporting",
 
+  core_staging:    "core_staging",
   core:            "core",      // cross-channel, channel-agnostic schema
   core_seeds:      "core_seeds",
   reporting:       "reporting", // cross-channel Looker Studio surface

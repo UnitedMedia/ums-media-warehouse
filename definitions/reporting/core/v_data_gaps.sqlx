@@ -293,6 +293,20 @@ WITH gaps AS (
 
   UNION ALL
 
+  -- Core: spend that cannot be converted to euros
+  SELECT
+    channel,
+    'core_spend_without_fx_rate',
+    COALESCE(currency, '(no currency)'),
+    'No exchange rate for this currency and month, so spend_eur is NULL and this money is absent from every euro total. Add a row to core_seeds.seed_fx_rate_manual, or settle what CM360 media_cost is.',
+    COUNT(*),
+    CAST(SUM(spend) AS FLOAT64)
+  FROM ${ref("fct_ad_performance_daily")}
+  WHERE NOT is_fx_converted
+  GROUP BY channel, currency
+
+  UNION ALL
+
   -- Core: clients with no canonical name — this is what splits one
   -- client into three in every cross-channel report
   SELECT
