@@ -1,0 +1,53 @@
+config {
+  type: "assertion",
+  tags: ["meta", "monitoring"],
+  description: "The age_gender source must keep publishing 7-day windows, and the weeks we retain must not overlap. If Weld switches to time_increment: 1 this goes red, which is the point — the Monday filter in stg_meta_age_gender would otherwise silently keep one day in seven."
+}
+
+-- Two ways this table can go wrong, in descending order of how quietly
+-- it would happen:
+--
+--   1. The source changes grain. The Monday filter keeps only Mondays, so
+--      daily rows would drop 6/7 of the data and nothing would look odd —
+--      spend would just quietly fall. This is the check that matters.
+--   2. Retained windows overlap, which would double count. Cannot happen
+--      while every window is 6 days and starts on a Monday, but the cost
+--      of proving it is one window function.
+--
+-- Duplicate keys are NOT checked here. The mart has no requirePartitionFilter,
+-- so its config-level uniqueKey assertion runs fine and already covers that.
+
+WITH source_grain AS (
+  SELECT
+    'source window is not 7 days'                   AS problem,
+    CAST(DATE_DIFF(DATE(date_stop),
+                   DATE(date_start), DAY) AS STRING) AS detail,
+    COUNT(*)                                        AS rows_affected
+  FROM ${ref({ schema: constants.DATASETS.meta, name: "age_gender" })}
+  WHERE DATE_DIFF(DATE(date_stop), DATE(date_start), DAY) <> 6
+  GROUP BY 1, 2
+),
+
+weeks AS (
+  SELECT DISTINCT week_start_date, week_end_date
+  FROM ${ref("stg_meta_age_gender")}
+),
+sequenced AS (
+  SELECT
+    week_start_date,
+    LAG(week_end_date) OVER (ORDER BY week_start_date) AS previous_week_end
+  FROM weeks
+),
+overlaps AS (
+  SELECT
+    'retained weeks overlap'          AS problem,
+    CAST(week_start_date AS STRING)   AS detail,
+    COUNT(*)                          AS rows_affected
+  FROM sequenced
+  WHERE previous_week_end >= week_start_date
+  GROUP BY 1, 2
+)
+
+SELECT * FROM source_grain
+UNION ALL
+SELECT * FROM overlaps

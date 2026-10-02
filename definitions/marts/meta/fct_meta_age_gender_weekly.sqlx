@@ -1,0 +1,45 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.meta_marts,
+  name: "fct_meta_age_gender_weekly",
+  tags: ["meta", "marts"],
+  description: "Meta delivery at ISO week x campaign x age x gender. The ONLY Meta demographic fact with a campaign key. WEEKLY — it cannot be rolled up to calendar months, because weeks straddle month boundaries.",
+  bigquery: {
+    partitionBy: "week_start_date",
+    clusterBy: ["campaign_id", "age", "gender"]
+  },
+  assertions: {
+    uniqueKey: ["week_start_date", "campaign_id", "age", "gender"],
+    nonNull: ["week_start_date", "campaign_id"]
+  },
+  columns: {
+    week_start_date: "Monday. Weeks are disjoint and tile the period exactly once.",
+    age: "Meta's own bucket: 13-17, 18-24, 25-34, 35-44, 45-54, 55-64, 65+, unknown.",
+    clicks_all: "ALL-INTERACTION clicks. The source has no link clicks, so rates derived here will NOT match v_ad_daily.",
+    spend: "Account currency. There is deliberately no spend_eur: dim_fx_rate is keyed on month, and a week spanning two months has no single correct rate."
+  }
+}
+
+-- No requirePartitionFilter. Same reasoning as fct_meta_demographic_daily —
+-- this is a small table and the filter would only make every downstream
+-- query more awkward for no saving.
+--
+-- NO reach, NO link clicks, NO conversions. The source carries three
+-- metrics and that is all there is. fct_meta_demographic_action_daily has
+-- age x gender conversions but only at ACCOUNT grain, so the two cannot be
+-- joined — that would be the same fan-out this table exists to avoid.
+
+SELECT
+  week_start_date,
+  week_end_date,
+  account_id,
+  campaign_id,
+  age,
+  gender,
+  SUM(spend)      AS spend,
+  SUM(impressions) AS impressions,
+  SUM(clicks_all)  AS clicks_all
+FROM ${ref("stg_meta_age_gender")}
+WHERE week_start_date IS NOT NULL
+  AND campaign_id IS NOT NULL
+GROUP BY 1, 2, 3, 4, 5, 6

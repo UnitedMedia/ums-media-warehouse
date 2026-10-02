@@ -58,6 +58,21 @@ const META_TABLES = [
 
   // breakdowns — each a different slice of the SAME spend.
   // Never union these with the ad-level fact.
+
+  // The ONLY breakdown carrying campaign_id. Appeared 2026-10-02 and does
+  // not follow the connector's demographics_* naming, so it is almost
+  // certainly a hand-built Weld model rather than a standard sync — treat
+  // it as something that can change without notice.
+  //
+  // ROLLING 7-DAY WINDOWS, not days. There is no `date` column: every row
+  // spans date_start..date_stop = 6 days, and a new window starts EVERY
+  // DAY. All 723,638 rows overlap six of their neighbours, so an unfiltered
+  // SUM(spend) returns 28.3M against a true ~3.8M. stg_meta_age_gender
+  // keeps only Monday starts, which tile the calendar exactly once.
+  // Verified 2026-10-02 against ad_roas_insight: every campaign ratio
+  // 1.000, diff 0.00.
+  "age_gender",
+
   "demographics_age_and_gender",             // no ad_id
   "demographics_age_and_gender_actions",     // conversions at age x gender.
                                              // The ONLY way to get post

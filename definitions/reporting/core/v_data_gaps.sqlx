@@ -119,6 +119,21 @@ WITH gaps AS (
 
   UNION ALL
 
+  -- Meta: the one breakdown WITH a campaign key, but only weekly.
+  -- Not a defect in the data -- it reconciles to the penny -- a defect in
+  -- the grain. Verified 2026-10-02 over Sep 2-29 against ad_roas_insight:
+  -- every campaign ratio 1.000, diff 0.00.
+  SELECT
+    '${constants.CHANNEL.meta}',
+    'meta_age_gender_weekly_only',
+    CAST(NULL AS STRING),
+    'facebook_ads_weld.age_gender publishes rolling 7-day windows, so fct_meta_age_gender_weekly is weekly and cannot roll up to calendar months or carry spend_eur. Fix is time_increment: 1 on the Weld model, which makes it daily and joinable to everything else.',
+    COUNT(*),
+    CAST(SUM(spend) AS FLOAT64)
+  FROM ${ref("fct_meta_age_gender_weekly")}
+
+  UNION ALL
+
   -- TikTok: spend the ad-level report cannot attribute to a named ad
   SELECT
     '${constants.CHANNEL.tiktok}',

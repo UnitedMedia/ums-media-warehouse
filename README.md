@@ -160,6 +160,7 @@ number is wrong:
 | `assert_meta_alias_leak` | a purchase alias got past the whitelist |
 | `assert_meta_results_coverage` | spend exists under an optimization goal with no Results definition |
 | `assert_meta_ad_daily_grain` | duplicate or null-keyed rows at Meta's base grain |
+| `assert_meta_age_gender_grain` | the `age_gender` source stopped publishing 7-day windows, so the Monday filter is now wrong |
 | `assert_staging_date_parsing` | a channel's date or hour string stopped parsing |
 | `assert_tiktok_ad_coverage` | TikTok ad-level spend drops below the known ~98.6% of campaign-level |
 | `assert_tiktok_grain` | TikTok started delivering duplicate rows, so staging now needs de-duplication |
@@ -273,6 +274,22 @@ either asserted on or surfaced in `v_data_gaps`.
   real spend, which is why that one *is* an assertion.
 - Three of the five breakdowns have no `ad_id`, so those rows cannot be labelled
   below account level. Sized in `v_data_gaps`.
+- **`facebook_ads_weld.age_gender` is the one demographic source with a campaign
+  key**, and it arrived on 2026-10-02. It does not follow the connector's
+  `demographics_*` naming, which suggests a hand-built Weld model rather than a
+  standard sync — treat it as something that can change without notice.
+  It publishes **rolling 7-day windows, not days**: no `date` column, every row
+  spans `date_start..date_stop` = 6 days, and a new window opens every day. All
+  723,638 rows overlap six of their neighbours, so an unfiltered `SUM(spend)`
+  returns 28.3M against a true figure near 3.8M. `stg_meta_age_gender` keeps
+  only Monday starts, which tile the calendar exactly once. The numbers
+  themselves are exact — verified 2026-10-02 over Sep 2-29 against
+  `ad_roas_insight`, every campaign ratio 1.000 and diff 0.00. The consequence
+  is grain, not accuracy: weekly rows cannot roll up to calendar months and
+  cannot carry `spend_eur`, because `dim_fx_rate` is keyed on month and a week
+  can straddle two. **The fix is `time_increment: 1` on the Weld model.** When
+  that lands, `assert_meta_age_gender_grain` goes red on the first daily row —
+  that is the signal to rewrite the view at daily grain, not a failure.
 
 **TikTok**
 

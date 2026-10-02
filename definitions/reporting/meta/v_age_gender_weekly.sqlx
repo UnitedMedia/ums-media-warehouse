@@ -1,0 +1,53 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.meta_reporting,
+  name: "v_age_gender_weekly",
+  tags: ["meta", "reporting"],
+  description: "Meta by age and gender WITH CAMPAIGN NAME. Weekly grain. This is the one demographic view that can be labelled with a campaign — v_demographics_daily cannot, because its source has no campaign key.",
+  columns: {
+    week_start_date: "Monday. Weeks are disjoint, so these rows are safe to sum within a campaign.",
+    share_of_campaign_spend: "This bucket's share of the campaign's spend that week, 0-1. The distribution question, and the main reason to use this view.",
+    ctr_all_clicks: "Uses Meta's ALL-INTERACTION clicks, because the source carries nothing else. It will read HIGHER than the CTR in v_ad_daily, which uses link clicks. Do not put the two on one chart.",
+    reach: "NOT AVAILABLE at this grain. The source carries spend, impressions and clicks only."
+  }
+}
+
+-- WEEKLY, AND IT DOES NOT ROLL UP TO MONTHS.
+--
+-- A week such as 2026-09-28..2026-10-04 is half September and half October.
+-- Filter on week_start_date and report by week. If someone needs a monthly
+-- age x gender figure with campaign labels, the answer is not a smarter
+-- query here — it is time_increment: 1 on the Weld model.
+--
+-- No spend_eur either, for the same reason: dim_fx_rate is keyed on month.
+
+SELECT
+  f.week_start_date,
+  f.week_end_date,
+
+  f.account_id,
+  acc.account_name,
+  acc.account_currency        AS currency,
+
+  f.campaign_id,
+  c.campaign_name,
+  c.objective,
+  c.campaign_status,
+
+  f.age,
+  f.gender,
+
+  f.spend,
+  f.impressions,
+  f.clicks_all,
+
+  SAFE_DIVIDE(f.spend, SUM(f.spend) OVER w)             AS share_of_campaign_spend,
+  SAFE_DIVIDE(f.impressions, SUM(f.impressions) OVER w) AS share_of_campaign_impressions,
+
+  ${metrics.cpm("f.spend", "f.impressions")}            AS cpm,
+  ${metrics.ctr("f.clicks_all", "f.impressions")}       AS ctr_all_clicks,
+  ${metrics.cpc("f.spend", "f.clicks_all")}             AS cpc_all_clicks
+FROM ${ref("fct_meta_age_gender_weekly")} f
+LEFT JOIN ${ref("stg_meta_campaign")} c ON c.campaign_id = f.campaign_id
+LEFT JOIN ${ref("stg_meta_account")}  acc ON acc.account_id = f.account_id
+WINDOW w AS (PARTITION BY f.week_start_date, f.campaign_id)

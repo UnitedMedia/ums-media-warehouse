@@ -37,6 +37,7 @@ correct no matter how Looker rolls it up; a ratio stored in a table does not.
 | CM360 conversions or reach | `cm360_reporting.v_campaign_daily` |
 | Meta spend, conversions, ROAS, cost per anything | `meta_reporting.v_ad_daily` |
 | Meta by age and gender, with conversions | `meta_reporting.v_demographics_daily` |
+| Meta by age and gender **per campaign** | `meta_reporting.v_age_gender_weekly` (weekly) |
 | Meta by country, platform, device | `meta_reporting.v_breakdown_daily` |
 | TikTok spend — the complete total | `tiktok_reporting.v_campaign_daily` |
 | TikTok by ad, creative, video performance | `tiktok_reporting.v_daily` |
@@ -237,7 +238,7 @@ name anywhere.
 
 ## Meta
 
-Source: Weld → `facebook_ads_weld`. Weld lands about 137 tables; 14 are used.
+Source: Weld → `facebook_ads_weld`. Weld lands about 137 tables; 15 are used.
 
 ### Reporting views — `meta_reporting`
 
@@ -245,6 +246,7 @@ Source: Weld → `facebook_ads_weld`. Weld lands about 137 tables; 14 are used.
 |---|---|---|
 | **`v_ad_daily`** | ad × day | **The main one, and it is wide.** Spend, impressions, clicks, link clicks, reach, frequency, CPM, CPC, CTR — plus every conversion metric as its own column, plus cost-per and ROAS for the common ones. Carries account, campaign, ad set and creative attributes including headline, primary text, CTA and thumbnail. |
 | **`v_demographics_daily`** | account × age × gender × day | Spend, impressions, clicks, reach **and conversions** — post engagements, leads, the lot. Account grain: Meta's demographics feed has no campaign or ad key, so campaign name cannot be added. |
+| **`v_age_gender_weekly`** | campaign × age × gender × **week** | **The only demographic view with a campaign name.** Spend, impressions, all-interaction clicks, and each bucket's share of its campaign. Weekly — it does not roll up to calendar months. No reach, no link clicks, no conversions: the source carries three metrics. |
 | `v_breakdown_daily` | breakdown slice × day | Age, gender, country, publisher platform, device — the raw five, in one shape. |
 
 **How the conversion columns work.** Meta reports conversions as a long list of
@@ -273,6 +275,22 @@ seed, its results come back NULL and `assert_meta_results_coverage` goes red.
 - Three of the five breakdowns (age/gender, platform+device, region) have **no
   `ad_id`**, so those rows carry no campaign or ad labels at all. Weld does not
   sync it. Sized in `reporting.v_data_gaps`.
+- **`v_age_gender_weekly` is the exception, and it has its own rule.** Its
+  source, `facebook_ads_weld.age_gender`, publishes **rolling 7-day windows**:
+  no `date` column, every row spans `date_start..date_stop` = 6 days, and a new
+  window opens every single day. Each day therefore appears in seven rows.
+  Querying the raw table without a filter returns 28.3M of spend against a true
+  figure near 3.8M. `stg_meta_age_gender` keeps only Monday starts, which are
+  exactly 7 days apart and tile the calendar once — a reduction, not a sample.
+  **The numbers themselves are exact.** Verified 2026-10-02 over Sep 2–29
+  against `ad_roas_insight`: every campaign returned ratio 1.000, diff 0.00.
+- **`v_age_gender_weekly` does not roll up to months.** A week such as
+  2026-09-28..2026-10-04 is half September and half October. Report it by week.
+  For the same reason it carries no `spend_eur` — `dim_fx_rate` is keyed on
+  month and a straddling week has no single correct rate.
+- **Its CTR is not comparable with `v_ad_daily`'s.** The source carries no
+  `inline_link_clicks`, so the column is `clicks_all` and the rate is
+  `ctr_all_clicks`. It reads higher. Do not put the two on one chart.
 - `reach` is de-duplicated by Meta at ad × day. Never sum it above that grain.
 - Meta reports purchases under seven identical aliases. We keep one.
   `assert_meta_alias_leak` watches for the others getting through.
@@ -288,6 +306,7 @@ All three facts **require a date filter on every query**.
 | `fct_meta_ad_daily` | ad × day | Additive metrics only. Source of truth for Meta spend. |
 | `fct_meta_ad_action_daily` | ad × day × metric | **Long, not wide.** A new conversion event adds rows, never columns. Aliases already excluded. |
 | `fct_meta_breakdown_daily` | breakdown slice × day | |
+| `fct_meta_age_gender_weekly` | campaign × age × gender × week | The only Meta demographic fact with a campaign key. Weekly, and deliberately carries no `spend_eur`. |
 | `dim_meta_ad` | ad | Account, campaign, ad set and creative flattened into one row. No dates, no metrics, so it cannot double-count. |
 
 ---
@@ -448,16 +467,24 @@ Both channels stop short of the usual request, and neither gap is fixable here:
 
 | Wanted | Meta | TikTok |
 |---|---|---|
-| Campaign name / objective | **no** — the demographics feed has no `ad_id` or `campaign_id` | yes |
+| Campaign name / objective | **yes, weekly only** — via `v_age_gender_weekly`. The daily `demographics_*` feed still has no `ad_id` or `campaign_id`. | yes |
 | Reach | yes | **no** — not in the demographic report |
 | Video views | 3-second only, **not ThruPlay** | **no** at this grain |
 | Post engagements / likes, comments, follows | yes | **no** at this grain |
 | Device crossed with age and gender | no | no — separate breakdown |
 
-Both are Weld sync scope questions. Meta's API does support `breakdowns=age,gender`
-on the ad-level insights endpoint, and `video_thruplay_watched_actions` is a
-standard action type — neither is synced. Confirmed 2026-09-23: the only video
-action in the feed is `video_view`, 417,210 of them.
+Both are Weld sync scope questions. `video_thruplay_watched_actions` is a
+standard action type and is not synced — confirmed 2026-09-23, the only
+video action in the feed is `video_view`, 417,210 of them.
+
+**Campaign-level age and gender was the long-standing gap, and it is now
+half-closed.** `facebook_ads_weld.age_gender` arrived on 2026-10-02 carrying
+`campaign_id`, which no `demographics_*` table does. It is exact but weekly, so
+`v_age_gender_weekly` answers *"how did this campaign's audience split"* and
+still cannot answer *"how much did we spend on women 35-44 in September"*.
+Closing the other half is one parameter: **`time_increment: 1`** on the Weld
+model, which turns the rolling windows into true daily rows. Until then,
+`v_demographics_daily` remains the daily view and remains account-level.
 
 ---
 
@@ -550,10 +577,11 @@ fails.
 
 ### `facebook_ads_weld` — Weld → Meta
 
-14 declared, 14 required.
+15 declared, 15 required.
 
 | Source table | Read by | Note |
 |---|---|---|
+| `age_gender` | `stg_meta_age_gender` | **The only Meta demographic source with `campaign_id`.** Appeared 2026-10-02. Rolling 7-day windows, not days; staging keeps Monday starts only. Does not follow the `demographics_*` naming, so probably a hand-built Weld model. |
 | `account` | `stg_meta_account` | Meta and Google Ads each have one. For Google Ads it is the only source of `currency_code` and of the manager / test_account flags. |
 | `ad` | `stg_meta_ad` | Meta and TikTok each have one, and they are unrelated tables. |
 | `ad_roas_insight` | `assert_meta_spend_reconciliation`, `stg_meta_ad_insight` | Meta backbone — ad x day metrics. |

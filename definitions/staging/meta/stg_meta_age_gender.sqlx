@@ -1,0 +1,53 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.meta_staging,
+  name: "stg_meta_age_gender",
+  tags: ["meta", "staging"],
+  description: "Meta age x gender at CAMPAIGN grain, reduced from overlapping rolling windows to disjoint ISO weeks. The only Meta demographic source carrying campaign_id. Weekly, not daily — see the WHERE clause for why.",
+  columns: {
+    week_start_date: "Monday. The source's date_start, kept only where it falls on a Monday.",
+    week_end_date: "Sunday, six days after week_start_date. The source's date_stop.",
+    campaign_id: "What makes this table worth having. Every other Meta demographic breakdown stops at account level.",
+    clicks_all: "ALL-INTERACTION clicks, Meta's `clicks`. NOT link clicks — the source carries no inline_link_clicks, so CTR and CPC from this table are NOT comparable with v_ad_daily, which uses link_clicks."
+  }
+}
+
+-- WHY THE MONDAY FILTER
+--
+-- The source has no `date` column. Every row spans date_start..date_stop,
+-- which is always a 7-day window, and a new window opens EVERY DAY. So a
+-- given day's spend appears in seven separate rows and the raw table is
+-- non-additive: SUM(spend) over all 723,638 rows returns 28.3M against a
+-- true figure near 3.8M.
+--
+-- Monday starts are exactly 7 days apart and each window is exactly 7 days
+-- long, so they tile the calendar once, with no gap and no overlap. The
+-- filter is a reduction, not a sample: nothing is dropped except the
+-- duplicate views of days already counted.
+--
+-- Verified 2026-10-02 over Sep 2-29 against ad_roas_insight: every campaign
+-- returned ratio 1.000 and diff 0.00.
+--
+-- IF WELD EVER SETS time_increment: 1, this filter becomes WRONG — it would
+-- silently keep one day in seven. assert_meta_age_gender_grain fires on the
+-- first row whose window is not 6 days, which is the signal to rewrite this
+-- view at daily grain and rename the mart.
+
+SELECT
+  DATE(date_start)             AS week_start_date,
+  DATE(date_stop)              AS week_end_date,
+  CAST(account_id  AS STRING)  AS account_id,
+  CAST(campaign_id AS STRING)  AS campaign_id,
+  campaign_name                AS campaign_name_raw,
+  age,
+  gender,
+  CAST(spend       AS NUMERIC) AS spend,
+  CAST(impressions AS INT64)   AS impressions,
+  CAST(clicks      AS INT64)   AS clicks_all
+FROM ${ref({ schema: constants.DATASETS.meta, name: "age_gender" })}
+WHERE EXTRACT(DAYOFWEEK FROM DATE(date_start)) = 2   -- 1 = Sunday, 2 = Monday
+  AND DATE_DIFF(DATE(date_stop), DATE(date_start), DAY) = 6
+QUALIFY ROW_NUMBER() OVER (
+  PARTITION BY DATE(date_start), CAST(campaign_id AS STRING), age, gender
+  ORDER BY _weld_synced DESC
+) = 1
