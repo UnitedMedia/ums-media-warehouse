@@ -3,8 +3,17 @@ config {
   schema: constants.SCHEMAS.dv360_staging,
   name: "stg_dv360_reach",
   tags: ["dv360", "staging"],
-  description: "DV360 reach. NON-ADDITIVE — unique reach cannot be summed across days or line items, and must never be joined into an impression fact. No Total_Users column exists in the source."
+  description: "DV360 reach. NON-ADDITIVE — unique reach cannot be summed across days or line items, and must never be joined into an impression fact. No Total_Users column exists in the source.",
+  columns: {
+    unique_reach: "Arrives as a STRING and is parsed here. Keboola types this column as STRING while the equivalent columns in the other DV360 extracts are INT64 — fct_dv360_reach_daily is the exception, confirmed 2026-10-05."
+  }
 }
+
+-- Unique_Reach_Total_Reach is STRING in kebooladv, so the mart's
+-- SUM(unique_reach) failed with no matching signature for SUM until this
+-- parse was added. Routed through FLOAT64 rather than straight to INT64
+-- so that "1234.0" and thousands separators both survive; SAFE_CAST so
+-- one unparseable row nulls itself instead of failing the whole run.
 
 SELECT
   ${metrics.parseSlashDate("Date")} AS date,
@@ -13,6 +22,7 @@ SELECT
   Advertiser_ID            AS advertiser_id,
   Line_Item_ID             AS line_item_id,
   Line_Item                AS line_item,
-  Unique_Reach_Total_Reach AS unique_reach
+  CAST(SAFE_CAST(REPLACE(Unique_Reach_Total_Reach, ',', '') AS FLOAT64)
+       AS INT64)         AS unique_reach
 FROM ${ref({ schema: constants.DATASETS.kebooladv, name: "fct_dv360_reach_daily" })}
 WHERE Date IS NOT NULL

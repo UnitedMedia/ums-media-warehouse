@@ -84,7 +84,7 @@ within it but must never add two breakdowns together.
 
 ## Read this before you total anything
 
-**TikTok, Meta and Google Ads are live; DV360 and CM360 are not.**
+**Meta and Google Ads are live. TikTok, DV360 and CM360 are not** — measured 2026-10-05: TikTok 6 days stale, CM360 7, DV360 3. TikTok was delivering daily until 2026-09-29.
 TikTok runs through today and updates daily, 46 days of history from 3 August.
 Meta is current. The other two stopped in August — see below.
 

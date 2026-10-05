@@ -134,6 +134,18 @@ const RESULT_TYPES = [
   ["REACH",               "reach",               "Comes from the fact table, not from actions"],
   ["IMPRESSIONS",         "impressions",         "Comes from the fact table, not from actions"],
   ["EVENT_RESPONSES",     "event_responses",     "Found spending in Sep 2026 with no mapping. Clean match: the goal and the rsvp action are the same thing."],
+  // Found spending on 2026-10-05 with no mapping, 25,675.94 between them.
+  // Three resolve to a real action; three deliberately carry NULL, which
+  // satisfies assert_meta_results_coverage (the goal IS acknowledged) while
+  // leaving `results` NULL in v_ad_daily. That view INNER JOINs this seed on
+  // result_metric_name, so a NULL never matches and no number is invented.
+  // A wrong Result is worse than no Result.
+  ["TWO_SECOND_CONTINUOUS_VIDEO_VIEWS", "views_3s", "APPROXIMATION, the same compromise as THRUPLAY. Meta's video_continuous_2_sec_watched_actions is not synced; views_3s (the video_view action) is the only video count in the feed and reads LOWER than a 2-second metric would. 499.82 spend."],
+  ["PROFILE_AND_PAGE_ENGAGEMENT", "page_engagement", "Closest real action. The goal spans Instagram profile AND Facebook page; page_engagement is only the Facebook half, so this undercounts. 3,967.72 spend."],
+  ["AD_RECALL_LIFT",      null,                  "DELIBERATELY UNMAPPED. The Result is Estimated Ad Recall Lift (people), from estimated_ad_recallers, which is not synced at any grain. Reach is NOT a substitute: it counts people shown the ad, not people estimated to remember it. 11,743.45 spend, the largest unmapped goal."],
+  ["PROFILE_VISIT",       null,                  "DELIBERATELY UNMAPPED. No profile-visit action exists anywhere in the feed. 8,197.90 spend."],
+  ["VISIT_INSTAGRAM_PROFILE", null,              "DELIBERATELY UNMAPPED. Same gap as PROFILE_VISIT, Instagram side. 225.01 spend."],
+  ["AUTOMATIC_OBJECTIVE", null,                  "DELIBERATELY UNMAPPED, and NOT fixable by syncing a field. Advantage+ picks the optimisation per ad set at delivery time, so no single metric is the Result for this goal. 1,442.04 spend."],
   ["QUALITY_CALL",        "calls_connected_60s", "UNCONFIRMED. Found spending in Sep 2026 with no mapping. Meta's quality-call optimisation counts calls past a duration threshold, and 60s is the longest we collect — but the real threshold is set per ad set. CONFIRM with the account team; if it is wrong, cost_per_result is wrong for this goal and nothing else."],
 ];
 

@@ -332,9 +332,11 @@ either asserted on or surfaced in `v_data_gaps`.
 
 **TikTok**
 
-- **The only channel that is actually live.** Data through today, updating daily,
-  46 days of history from 2026-08-03. Meta is current too; DV360 and CM360 are
-  not.
+- **No longer the only live channel, and no longer live.** Measured 2026-10-05
+  by `assert_source_freshness`: TikTok 6 days stale (latest 2026-09-29), CM360 7
+  (2026-09-28), DV360 3 (2026-10-02). **Meta and Google Ads are the only current
+  channels** — neither appears in the assertion. TikTok going stale is new; it
+  had been delivering daily since 2026-08-03 and nobody changed anything here.
 - Weld lands 41 tables and **21 of them carry identical metrics** — the same
   money at every hierarchy level, every time grain and every breakdown. Eleven
   are declared; the rest are derivable and would each become a second source of
