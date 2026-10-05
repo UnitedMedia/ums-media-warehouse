@@ -3,10 +3,10 @@ config {
   schema: constants.SCHEMAS.gads_reporting,
   name: "v_video_daily",
   tags: ["gads", "reporting"],
-  description: "Google Ads video and YouTube ads only, by ad and day. Lets you compare formats — bumper against in-stream against responsive — on cost per view. It is NOT a video funnel: quartiles, TrueView views and the YouTube Earned metrics are not synced and cannot be added by modelling.",
+  description: "Google Ads video and YouTube ads only, by ad and day. Lets you compare formats — bumper against in-stream against responsive — on cost per view. It is NOT the funnel: for quartiles and TrueView views use v_video_funnel_daily, which has them at campaign x network grain. The YouTube Earned metrics are still not synced anywhere.",
   columns: {
     ad_type: "TrueView in-stream (14,864), responsive (7,007), bumper (2,491), Demand Gen video responsive (1,841), non-skippable in-stream (1,764), plain video (1,668), in-feed (67), YouTube audio (6). Measured 2026-09-30: 29,708 video ads across eight formats.",
-    video_views: "The ONLY video metric in the entire google_ads feed. There is no 25/50/75/100% quartile, no TrueView view count, no Earned Views, Likes, Shares, Subscribers or Playlist Additions, and no video title.",
+    video_views: "The only video metric available AT AD LEVEL. Quartile rates and video_trueview_views arrived 2026-10-02 in google_ads.youtube_ads, but only at campaign x day x network — see v_video_funnel_daily. Earned Views, Likes, Shares, Subscribers, Playlist Additions and video title are still not synced at any grain.",
     cost_per_view: "spend / video_views. The number that actually separates one video format from another.",
     view_rate: "video_views / impressions. Bumper and non-skippable will read near 1.0 by construction; skippable formats will not. Compare within a format, not across.",
     spend: "AD level, so Performance Max is absent — but PMax has no video ads anyway, so for this view the blind spot does not bite."

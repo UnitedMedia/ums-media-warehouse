@@ -134,6 +134,23 @@ WITH gaps AS (
 
   UNION ALL
 
+  -- Google Ads: the video funnel exists, but its quartile denominator does not.
+  -- The rates are correct per row and cannot be aggregated: solving for the
+  -- denominator that makes all four quartiles whole gives a video-impressions
+  -- figure that is not in the feed (e.g. 561 where impressions is 571).
+  -- Tested 2026-10-02 across every channel type: impressions works as the
+  -- denominator for 230 of 7,971 VIDEO rows, the coincidence rate.
+  SELECT
+    '${constants.CHANNEL.gads}',
+    'gads_video_quartile_no_denominator',
+    CAST(NULL AS STRING),
+    'Weld does not sync video impressions, so quartile rates cannot be rolled up past campaign x day x network and no quartile COUNT can be derived. Ask for the denominator, or for these seven columns to be added to campaign_stats so youtube_ads can be dropped.',
+    COUNT(*),
+    CAST(NULL AS FLOAT64)
+  FROM ${ref("fct_gads_campaign_video_daily")}
+
+  UNION ALL
+
   -- TikTok: spend the ad-level report cannot attribute to a named ad
   SELECT
     '${constants.CHANNEL.tiktok}',

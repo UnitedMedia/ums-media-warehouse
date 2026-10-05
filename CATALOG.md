@@ -52,6 +52,7 @@ correct no matter how Looker rolls it up; a ratio stored in a table does not.
 | **Keyword Quality Score** | `gads_reporting.v_keyword_quality` |
 | Google Ads by audience segment | `gads_reporting.v_audience_daily` |
 | **Google Ads video / YouTube by format** | `gads_reporting.v_video_daily` |
+| **Google Ads video completion funnel (25/50/75/100%)** | `gads_reporting.v_video_funnel_daily` |
 | All five channels in one chart | `reporting.v_ad_performance_daily` |
 | What is broken or unmapped right now | `reporting.v_data_gaps` |
 | How fresh each channel is | `reporting.v_source_freshness` |
@@ -389,7 +390,8 @@ keywords and search terms follow.
 | `v_ad_daily` | ad × day | Same PMax blind spot. The only Google view with `video_views`. Also carries `ad_strength`, `policy_approval_status` and `is_not_serving`. |
 | **`v_keyword_quality`** | keyword | **Quality Score 1–10 and its three components.** A snapshot, not a history — the source carries no date. |
 | `v_audience_daily` | ad group × audience × day | Audience performance. **Segments have no name** — only a criterion id. |
-| **`v_video_daily`** | video ad × day | Video and YouTube ads only, by format: TrueView in-stream, responsive, non-skippable, bumper, efficient reach, in-display, YouTube audio. Cost per view and view rate. **Not a funnel** — see below. |
+| **`v_video_daily`** | video ad × day | Video and YouTube ads only, by format: TrueView in-stream, responsive, non-skippable, bumper, efficient reach, in-display, YouTube audio. Cost per view and view rate. Formats, not the funnel. |
+| **`v_video_funnel_daily`** | campaign × network × day | **The completion funnel.** 25/50/75/100% rates, TrueView views, engagements, all-conversions. Rates are NON-ADDITIVE — see below. |
 
 **Caveats that matter:**
 
@@ -421,13 +423,27 @@ keywords and search terms follow.
 - **There is no creative text.** Weld's `ad` table is 23 columns and none is a
   headline, description, image or card. `ad_strength`, `final_urls` and
   `display_url` are all you get.
-- **Video FORMAT is available; the video FUNNEL is not.** `ad.type` identifies
-  27,864 video ads across seven formats, so `v_video_daily` can compare bumper
-  against in-stream on cost per view. But the complete video *metric* inventory
-  across all 35 tables is `video_views` in three stats tables — no 25/50/75/100%
-  quartiles, no TrueView view count, no Earned Views, Likes, Shares, Subscribers
-  or Playlist Additions, and no video title. Knowing an ad is
-  VIDEO_TRUE_VIEW_IN_STREAM tells you what it is, not how far people watched.
+- **Format and funnel live in different views, at different grains.** `ad.type`
+  identifies 27,864 video ads across seven formats, so `v_video_daily` compares
+  bumper against in-stream on cost per view — at AD level. The funnel arrived
+  2026-10-02 in `google_ads.youtube_ads` and is in `v_video_funnel_daily` — at
+  CAMPAIGN × NETWORK level. There is no grain where you have both. Earned Views,
+  Likes, Shares, Subscribers, Playlist Additions and video title are still not
+  synced anywhere.
+- **The quartile rates cannot be aggregated.** Their denominator is video
+  impressions, which is not in the feed. Solving for the value that makes all
+  four quartiles whole gives 561 where `impressions` is 571, and 1,435 where it
+  is 1,838. Tested 2026-10-02 across every channel type: `impressions` works as
+  the denominator for 230 of 7,971 VIDEO rows (2.9%), the coincidence rate. So
+  the rates are correct at campaign × network × day and nowhere coarser. Never
+  `SUM`, never `AVG` above that grain, set Looker aggregation to MAX. Same rule
+  as `reach`. `retention_25_to_100` is exact, because both rates share the same
+  hidden denominator and it cancels.
+- **`google_ads.youtube_ads` is not a YouTube table, and its spend is a
+  duplicate.** It covers all seven channel types, and its `cost_micros` matches
+  `campaign_stats` to the cent (23,575 September campaign-days, zero differing,
+  both 5,240,904.57). Staging deliberately omits the spend column.
+  `fct_gads_campaign_daily` remains the only Google Ads money source.
 - **`view_rate` is not comparable across formats.** Bumper and non-skippable
   ads count a view on essentially every impression; skippable ones do not.
   Compare within a format.
@@ -447,6 +463,7 @@ keywords and search terms follow.
 | `fct_gads_ad_group_daily` | ad group × day | Excludes PMax by construction. |
 | `fct_gads_ad_daily` | ad × day | Key is **adgroup_id + ad_id**, never ad_id alone. Only Google fact with `video_views`. |
 | `fct_gads_account_daily` | account × day | Exists to reconcile against the campaign rollup. |
+| `fct_gads_campaign_video_daily` | campaign × network × day | Video funnel. **Carries no spend by design** — its source duplicates `campaign_stats` exactly. |
 | `dim_gads_campaign` | campaign | Campaign, account, currency, **real booked flight dates**, budget, recommended budget and bid strategy targets. Driven by delivery. |
 | `dim_gads_ad_group` | ad group | Delivery-driven; names resolve from the fact when the entity sync lags. |
 
@@ -455,7 +472,7 @@ and `flight_end_date` from the platform. DV360 needs them typed in by hand.
 
 ### Staging — `gads_staging`
 
-Three views. Every one over a stats table filters `_weld_deleted_at IS NULL` —
+Thirteen views. Every one over a stats table filters `_weld_deleted_at IS NULL` —
 Google Ads is the only source in this project that soft-deletes rows, and
 without the filter deleted rows keep contributing spend forever.
 
@@ -615,23 +632,37 @@ fails.
 | `campaign_daily_report` | `stg_tiktok_campaign_daily` | TikTok **complete** spend. What `core` reads. |
 | `campaign_platform_report` | `stg_tiktok_breakdown` |  |
 
-### `google_ads` — Weld → Google Ads (Phase 1: campaign level)
+### `google_ads` — Weld → Google Ads
 
-3 declared, 3 required.
+13 declared, 13 required. **Every stats table here must filter
+`_weld_deleted_at IS NULL`** — Google Ads is the only source in this project
+that soft-deletes rows.
 
 | Source table | Read by | Note |
 |---|---|---|
 | `account` | `stg_gads_account` | Meta and Google Ads each have one. For Google Ads it is the only source of `currency_code` and of the manager / test_account flags. |
+| `account_stats` | `stg_gads_account_daily` | The true account total, reconciled against the campaign rollup. |
 | `campaign` | `stg_gads_campaign` | Meta, TikTok and Google Ads each have one — three unrelated tables sharing a name. Google Ads' carries REAL booked flight dates. |
-| `campaign_stats` | `stg_gads_campaign_daily` | Google Ads **complete** spend. Performance Max reports here and at no level below — about a fifth of spend. Soft-deleted rows must be filtered with `_weld_deleted_at IS NULL`. |
+| `campaign_stats` | `stg_gads_campaign_daily` | Google Ads **complete** spend. Performance Max reports here and at no level below — about a fifth of spend. |
+| `campaign_budget` | `stg_gads_campaign_budget` | Booked budget plus Google's own recommendation. No date column — current state only. |
+| `campaign_bidding_strategy` | `stg_gads_campaign_bidding` | Bid strategy and its targets. `target_impression_share_*` are SETTINGS; achieved impression share is not synced. |
+| `ad_group` | `stg_gads_ad_group` | |
+| `ad_group_stats` | `stg_gads_ad_group_daily` | Excludes PMax by construction — PMax has no ad groups. |
+| `ad` | `stg_gads_ad` | Ad type, status, URLs, ad strength, policy approval. **No creative text** — 23 columns, none a headline or description. |
+| `ad_stats` | `stg_gads_ad_daily` | The only stats table with `video_views` at ad level. |
+| `ad_group_criterion` | `stg_gads_keyword` | Keywords and the full Quality Score: score, expected CTR, ad relevance, landing page. |
+| `audience_stats` | `stg_gads_audience_daily` | Keyed on `criterion_id`. The audience NAME needs `user_list` / `user_interest` / `topic`, none declared. |
+| `youtube_ads` | `stg_gads_campaign_network_daily` | **The name is wrong.** Campaign × day × network across all seven channel types. Read ONLY for the video quartiles, `video_trueview_views`, `engagements` and `all_conversions`. Its `cost_micros` duplicates `campaign_stats` exactly and is not staged. |
 
 ### What is deliberately excluded
 
 - **Meta** — Weld lands ~137 tables; 14 are used.
 - **TikTok** — Weld lands 41; 11 are used. Twenty-one carry *identical* metrics:
   the same money at every hierarchy level, time grain and breakdown.
-- **Google Ads** — Phase 1 is campaign level only. Ad groups, ads, keywords and
-  search terms follow in phases 2 and 3.
+- **Google Ads** — `search_term_stats`, `keyword_stats`, the geo tables and the
+  audience name lookups (`user_list`, `user_interest`, `topic`) are not declared
+  yet. Achieved impression share, conversion action/category/source, PMax asset
+  groups and creative text are not synced by Weld at all.
 - **DV360** — `fct_dv360_youtube_daily` is declared but not read; it duplicates
   a metric the backbone already carries.
 

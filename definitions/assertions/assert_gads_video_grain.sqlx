@@ -1,0 +1,62 @@
+config {
+  type: "assertion",
+  tags: ["gads", "monitoring"],
+  description: "google_ads.youtube_ads must stay one row per date x campaign x ad_network_type, and must keep agreeing with campaign_stats on spend. If it ever disagrees, one of the two tables is wrong about the money and the video mart cannot be trusted either."
+}
+
+-- The video mart carries no spend, so it cannot double-count by itself.
+-- What it CAN do is describe a campaign-day that campaign_stats disagrees
+-- about, which would mean the two pulls have drifted apart.
+--
+-- Verified 2026-10-02 over September: 23,575 campaign-days, zero differing,
+-- both totals 5,240,904.57. This watches that it stays true.
+--
+-- Scoped to the Weld lookback window. Google restates cost for weeks and
+-- the two tables are synced minutes apart, so a full-history comparison
+-- would flag restatement noise rather than a real problem. The tolerance is
+-- one cent per campaign-day for the same reason.
+
+WITH grain AS (
+  SELECT
+    'duplicate date + campaign + network'  AS problem,
+    CONCAT(CAST(date AS STRING), ' ', campaign_id, ' ', ad_network_type) AS detail,
+    COUNT(*)                               AS rows_affected
+  FROM ${ref("stg_gads_campaign_network_daily")}
+  GROUP BY 1, 2
+  HAVING COUNT(*) > 1
+),
+
+video_src AS (
+  SELECT
+    DATE(date)              AS date,
+    CAST(campaign_id AS STRING) AS campaign_id,
+    SUM(cost_micros)        AS cost_micros
+  FROM ${ref({ schema: constants.DATASETS.gads, name: "youtube_ads" })}
+  WHERE _weld_deleted_at IS NULL
+    AND DATE(date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${constants.WELD_LOOKBACK_DAYS} DAY)
+  GROUP BY 1, 2
+),
+campaign_src AS (
+  SELECT
+    DATE(date)              AS date,
+    CAST(campaign_id AS STRING) AS campaign_id,
+    SUM(cost_micros)        AS cost_micros
+  FROM ${ref({ schema: constants.DATASETS.gads, name: "campaign_stats" })}
+  WHERE _weld_deleted_at IS NULL
+    AND DATE(date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${constants.WELD_LOOKBACK_DAYS} DAY)
+  GROUP BY 1, 2
+),
+spend_drift AS (
+  SELECT
+    'youtube_ads and campaign_stats disagree on spend' AS problem,
+    CONCAT(CAST(date AS STRING), ' ', campaign_id)     AS detail,
+    1                                                  AS rows_affected
+  FROM video_src
+  FULL JOIN campaign_src USING (date, campaign_id)
+  WHERE ABS(IFNULL(video_src.cost_micros, 0)
+          - IFNULL(campaign_src.cost_micros, 0)) > 10000
+)
+
+SELECT * FROM grain
+UNION ALL
+SELECT * FROM spend_drift

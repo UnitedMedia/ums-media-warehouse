@@ -161,6 +161,7 @@ number is wrong:
 | `assert_meta_results_coverage` | spend exists under an optimization goal with no Results definition |
 | `assert_meta_ad_daily_grain` | duplicate or null-keyed rows at Meta's base grain |
 | `assert_meta_age_gender_grain` | the `age_gender` source stopped publishing 7-day windows, so the Monday filter is now wrong |
+| `assert_gads_video_grain` | `youtube_ads` gained duplicate rows, or stopped agreeing with `campaign_stats` on spend |
 | `assert_staging_date_parsing` | a channel's date or hour string stopped parsing |
 | `assert_tiktok_ad_coverage` | TikTok ad-level spend drops below the known ~98.6% of campaign-level |
 | `assert_tiktok_grain` | TikTok started delivering duplicate rows, so staging now needs de-duplication |
@@ -290,6 +291,34 @@ either asserted on or surfaced in `v_data_gaps`.
   can straddle two. **The fix is `time_increment: 1` on the Weld model.** When
   that lands, `assert_meta_age_gender_grain` goes red on the first daily row —
   that is the signal to rewrite the view at daily grain, not a failure.
+
+**Google Ads**
+
+- **`google_ads.youtube_ads` is not a YouTube table.** It is campaign x day x
+  `ad_network_type` across all seven channel types — SEARCH, PERFORMANCE_MAX,
+  DEMAND_GEN, VIDEO, DISPLAY, MULTI_CHANNEL, SHOPPING. YouTube is only where
+  the video columns stop being NULL. Filter on `ad_network_type`, never on the
+  table name.
+- **Its `cost_micros` duplicates `campaign_stats` exactly.** Verified 2026-10-02
+  over September: 23,575 campaign-days, zero differing, both totals
+  5,240,904.57 to the cent. `stg_gads_campaign_network_daily` does not select a
+  spend column at all, which is the only reliable way to stop someone unioning
+  the two. `fct_gads_campaign_daily` stays the single Google Ads money source.
+- It is read for **seven columns that exist nowhere else**: the four video
+  quartile rates, `video_trueview_views`, `engagements` and
+  `all_conversions`(+`_value`). Checked 2026-10-05 — the only video or
+  engagement column in `campaign_stats` is `video_views`.
+- **The quartile rates have a denominator that is not in the feed.** Solving for
+  the value that makes all four quartiles whole gives video impressions, not
+  `impressions`: 561 where impressions is 571, 1,435 where impressions is 1,838.
+  Tested across every channel type, `impressions` works for 230 of 7,971 VIDEO
+  rows (2.9%), which is coincidence. So the rates are correct at their own row
+  and cannot be summed, averaged or re-weighted, and no quartile count can be
+  derived. Same treatment as `reach`.
+- **It is not a replacement for anything.** `campaign_stats` has nine more days
+  of history (107 vs 98) and carries device; ad group, ad, keyword, audience and
+  budget data have no equivalent here. The right upstream fix is to add the
+  seven columns to the `campaign_stats` pull and delete `youtube_ads`.
 
 **TikTok**
 

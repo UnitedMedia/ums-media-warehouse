@@ -162,6 +162,28 @@ const GOOGLE_ADS_TABLES = [
   "audience_stats",  // audience performance, keyed on criterion_id. The
                      // audience NAME is not in it — that needs user_list,
                      // user_interest or topic, which are not declared yet.
+
+  // PHASE 2c — THE NAME IS A LIE. "youtube_ads" is a campaign x day x
+  // ad_network_type table covering ALL SEVEN channel types: SEARCH,
+  // PERFORMANCE_MAX, DEMAND_GEN, VIDEO, DISPLAY, MULTI_CHANNEL, SHOPPING.
+  // YouTube is merely where the video columns stop being NULL.
+  //
+  // Its cost_micros is an EXACT DUPLICATE of campaign_stats. Verified
+  // 2026-10-02 over September: 23,575 campaign-days, zero differing, both
+  // totals 5,240,904.57 to the cent. stg_gads_campaign_network_daily
+  // therefore does not select a spend column at all — a column that is not
+  // there cannot be summed by accident.
+  //
+  // It is read for SEVEN columns that exist nowhere else in the feed:
+  // the four video quartile rates, video_trueview_views, engagements and
+  // all_conversions(+_value). Checked 2026-10-05: the only video or
+  // engagement column in campaign_stats is video_views.
+  //
+  // It is NOT a replacement for campaign_stats, which has nine more days of
+  // history (107 vs 98) and carries device, and NOT for anything at ad
+  // group, ad, keyword or audience level. The right upstream fix is to add
+  // these seven columns to the campaign_stats pull and delete this table.
+  "youtube_ads",
 ];
 
 // ---------------------------------------------------------------------

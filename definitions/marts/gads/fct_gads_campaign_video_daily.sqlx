@@ -1,0 +1,52 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.gads_marts,
+  name: "fct_gads_campaign_video_daily",
+  tags: ["gads", "marts"],
+  description: "Google Ads video funnel at campaign x day x ad_network_type. Rows that actually carry video quartile data. NO SPEND — join fct_gads_campaign_daily for money, which is the only Google Ads spend source.",
+  bigquery: {
+    partitionBy: "date",
+    clusterBy: ["account_id", "campaign_id", "ad_network_type"]
+  },
+  assertions: {
+    uniqueKey: ["date", "campaign_id", "ad_network_type"],
+    nonNull: ["date", "campaign_id", "ad_network_type"]
+  },
+  columns: {
+    video_quartile_p_25_rate: "NON-ADDITIVE. Set Looker aggregation to MAX and read it only at this exact grain. The denominator is video impressions, which Weld does not sync, so these rates cannot be re-weighted into a campaign or monthly figure and no quartile COUNT can be derived.",
+    video_trueview_views: "Additive. A TrueView view is 30 seconds, or completion, or an interaction. Not the same as campaign_stats.video_views — do not assume they agree.",
+    all_conversions: "Additive, and WIDER than fct_gads_campaign_daily.conversions. Different measure, not a restatement."
+  }
+}
+
+-- No requirePartitionFilter: this is a small table, a few thousand rows.
+--
+-- Filtered to rows with a quartile rate. Everything else in the source is
+-- either already in fct_gads_campaign_daily or is zero.
+--
+-- A GROUP BY would be wrong here. stg_gads_campaign_network_daily is
+-- already one row per date x campaign x ad_network_type (verified
+-- 2026-10-02: 142,678 rows, 142,678 distinct keys), and SUMming a
+-- non-additive rate is exactly the mistake this table exists to prevent.
+-- assert_gads_video_grain watches the grain instead.
+
+SELECT
+  date,
+  account_id,
+  campaign_id,
+  ad_network_type,
+  advertising_channel_type,
+
+  engagements,
+  video_trueview_views,
+  all_conversions,
+  all_conversions_value,
+
+  video_quartile_p_25_rate,
+  video_quartile_p_50_rate,
+  video_quartile_p_75_rate,
+  video_quartile_p_100_rate
+FROM ${ref("stg_gads_campaign_network_daily")}
+WHERE date IS NOT NULL
+  AND campaign_id IS NOT NULL
+  AND video_quartile_p_25_rate IS NOT NULL

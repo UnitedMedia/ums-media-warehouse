@@ -1,0 +1,63 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.gads_staging,
+  name: "stg_gads_campaign_network_daily",
+  tags: ["gads", "staging"],
+  description: "The seven metrics that exist only in google_ads.youtube_ads, at campaign x day x ad_network_type. Deliberately carries NO spend, impressions, clicks or conversions — those duplicate campaign_stats exactly and belong to fct_gads_campaign_daily.",
+  columns: {
+    ad_network_type: "Part of the grain. SEARCH, YOUTUBE, CONTENT, SEARCH_PARTNERS, DISCOVER, GMAIL, MAPS, GOOGLE_OWNED_CHANNELS, MIXED — the same nine values campaign_stats uses.",
+    advertising_channel_type: "Carried on the fact so video rows can be read without a join. SEARCH, PERFORMANCE_MAX, DEMAND_GEN, VIDEO, DISPLAY, MULTI_CHANNEL, SHOPPING.",
+    video_quartile_p_25_rate: "NON-ADDITIVE, and its denominator is NOT in the feed. See the note below before using it.",
+    all_conversions: "WIDER than conversions: includes conversion actions excluded from the primary `conversions` column. Never add the two, and never compare it with conversions from fct_gads_campaign_daily as if they were the same measure.",
+    engagements: "Interactions on Discovery and Demand Gen formats. Not available in campaign_stats."
+  }
+}
+
+-- THE SOURCE TABLE NAME IS WRONG. google_ads.youtube_ads is not a YouTube
+-- table: it covers all seven advertising channel types. Filter on
+-- ad_network_type, never on the table name.
+--
+-- NO SPEND HERE, ON PURPOSE. cost_micros in this source is an exact
+-- duplicate of campaign_stats — 23,575 September campaign-days, zero
+-- differing, both totals 5,240,904.57. fct_gads_campaign_daily remains the
+-- single source of truth for Google Ads money, and omitting the column is
+-- the only way to guarantee nobody unions the two.
+--
+-- THE QUARTILE RATES HAVE A HIDDEN DENOMINATOR.
+-- They are not over `impressions`. Solving for the denominator that makes
+-- all four quartiles whole numbers gives, for example, 561 where
+-- impressions is 571 and active_view_impressions is 527; and 1435 where
+-- impressions is 1838. Tested across every channel type on 2026-10-02:
+-- impressions works as the denominator for 230 of 7,971 VIDEO rows (2.9%),
+-- which is the coincidence rate, not a rule.
+--
+-- So the denominator is video impressions, a column nobody syncs. The
+-- consequence: these rates are correct AT THEIR OWN ROW and cannot be
+-- summed, averaged or weighted into any coarser grain. Treat them exactly
+-- as `reach` is treated everywhere else in this project.
+--
+-- _weld_deleted_at IS NULL is NOT optional, as everywhere in google_ads.
+
+SELECT
+  DATE(date)                              AS date,
+  CAST(customer_id AS STRING)             AS account_id,
+  customer_descriptive_name               AS account_name,
+  customer_currency_code                  AS currency,
+  CAST(campaign_id AS STRING)             AS campaign_id,
+  campaign_name,
+  campaign_advertising_channel_type       AS advertising_channel_type,
+  ad_network_type,
+
+  -- additive, and new
+  CAST(engagements          AS INT64)     AS engagements,
+  CAST(video_trueview_views AS INT64)     AS video_trueview_views,
+  all_conversions,
+  all_conversions_value,
+
+  -- NON-ADDITIVE rates. Row grain only.
+  video_quartile_p_25_rate,
+  video_quartile_p_50_rate,
+  video_quartile_p_75_rate,
+  video_quartile_p_100_rate
+FROM ${ref({ schema: constants.DATASETS.gads, name: "youtube_ads" })}
+WHERE _weld_deleted_at IS NULL

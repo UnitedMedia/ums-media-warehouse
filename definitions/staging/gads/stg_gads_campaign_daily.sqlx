@@ -8,7 +8,7 @@ config {
     spend: "cost_micros converted out of micros. The account's own currency; join stg_gads_account for which one.",
     conversions: "FLOAT64, and fractional on purpose — Google splits an attributed conversion across touchpoints.",
     device: "Part of the grain: MOBILE, DESKTOP, TABLET, CONNECTED_TV, OTHER.",
-    ad_network_type: "Part of the grain: SEARCH, SEARCH_PARTNERS, CONTENT, YOUTUBE_SEARCH, YOUTUBE_WATCH, MIXED.",
+    ad_network_type: "Part of the grain. Measured 2026-10-02, nine values: SEARCH (59,418 rows), YOUTUBE (36,866), CONTENT (23,849), SEARCH_PARTNERS (15,926), DISCOVER (9,417), GMAIL (5,198), MAPS (2,839), GOOGLE_OWNED_CHANNELS (322), MIXED (211). There is no YOUTUBE_SEARCH or YOUTUBE_WATCH split.",
     campaign_name: "Carried on the fact itself, which is unusual and useful — a campaign missing from the entity table still has a name."
   }
 }
