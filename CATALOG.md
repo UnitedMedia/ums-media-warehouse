@@ -84,7 +84,17 @@ within it but must never add two breakdowns together.
 
 ## Read this before you total anything
 
-**Meta and Google Ads are live. TikTok, DV360 and CM360 are not** — measured 2026-10-05: TikTok 6 days stale, CM360 7, DV360 3. TikTok was delivering daily until 2026-09-29.
+**Meta and Google Ads are live. TikTok, DV360 and CM360 are not** — measured
+2026-10-05: TikTok 6 days stale, CM360 7, DV360 3. TikTok was delivering daily
+until 2026-09-29.
+
+**The Keboola extracts hold ONE DAY at a time.** Confirmed 2026-10-05:
+`fct_dv360_lineitem_daily_v5` and `cm360_hourly` each contained a single date.
+The DV360 and CM360 marts are therefore **incremental** and accumulate history
+run by run; the history that existed before 2026-10-05 is gone from the source
+and only Keboola can restore it. Those marts will be thin until they have run
+for a while, and that is expected, not a bug. Meta, TikTok and Google Ads marts
+are unaffected and remain full rebuilds.
 TikTok runs through today and updates daily, 46 days of history from 3 August.
 Meta is current. The other two stopped in August — see below.
 

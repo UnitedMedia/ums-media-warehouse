@@ -1,5 +1,5 @@
 config {
-  type: "table",
+  type: "incremental",
   schema: constants.SCHEMAS.dv360_marts,
   name: "fct_dv360_inventory_daily",
   tags: ["dv360", "marts"],
@@ -12,6 +12,29 @@ config {
     nonNull: ["date", "line_item_id"]
   }
 }
+
+
+-- INCREMENTAL, APPEND-ONLY. The Keboola extract holds ONE DAY at a time
+-- (confirmed 2026-10-05: fct_dv360_lineitem_daily_v5 had a single date,
+-- cm360_hourly likewise). A full rebuild therefore wrote a one-day mart and
+-- threw the rest away, which is exactly what had happened by 5 Oct.
+--
+-- The predicate loads any date NOT ALREADY in the table, rather than
+-- `date > MAX(date)`. That distinction matters: if Keboola ever backfills
+-- June to September, a MAX(date) predicate would skip all of it, because
+-- every backfilled date is older than what is already here.
+--
+-- Append-only rather than a uniqueKey MERGE, deliberately. Half the grain
+-- columns here are nullable (country, app_url, creative_asset ...), and
+-- BigQuery MERGE joins with `=`, which never matches NULL to NULL — so a
+-- null-keyed row would be re-inserted on every single run, forever.
+-- Loading each date exactly once cannot duplicate anything.
+--
+-- THE TRADE-OFF: a date already loaded is never reloaded, so an upstream
+-- RESTATEMENT of an existing day is ignored. DV360 revises conversions for
+-- several days after delivery. When a restatement or backfill matters, run
+-- this table once with FULL REFRESH and it rebuilds from whatever the
+-- source currently holds.
 
 SELECT
   date,
@@ -37,4 +60,7 @@ SELECT
   SUM(spend)                 AS spend
 FROM ${ref("stg_dv360_inventory")}
 WHERE date IS NOT NULL
+${when(incremental(),
+  `AND date NOT IN (SELECT DISTINCT date FROM ${self()}
+                    WHERE ${constants.allPartitions()})`)}
 GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13,14

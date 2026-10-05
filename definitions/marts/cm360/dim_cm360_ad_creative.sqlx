@@ -1,9 +1,10 @@
 config {
-  type: "table",
+  type: "incremental",
   schema: constants.SCHEMAS.cm360_marts,
   name: "dim_cm360_ad_creative",
   tags: ["cm360", "marts"],
   description: "One row per ad x creative pair, with its landing page. A landing page can change over a creative's life, so the most recently seen URL wins.",
+  uniqueKey: ["ad_id", "creative_id"],
   bigquery: {
     clusterBy: ["ad_id", "creative_id", "placement_id"]
   },
@@ -12,25 +13,44 @@ config {
   }
 }
 
-SELECT
-  ad_id,
-  creative_id,
-  placement_id,
-  campaign_id,
-  landing_page_url,
-  first_active_date,
-  last_active_date
-FROM (
+
+-- INCREMENTAL WITH A uniqueKey MERGE, unlike the CM360 facts, which append.
+-- A dimension needs one row per entity that gets UPDATED, not added to.
+--
+-- Activity dates read from fct_cm360_placement_hourly, which accumulates.
+-- stg_cm360_hourly is ONE DAY wide (confirmed 2026-10-05), so dates derived
+-- from it alone would reset every night. That fact carries
+-- requirePartitionFilter, hence the explicit date predicate.
+
+WITH activity AS (
+  SELECT
+    ad_id,
+    creative_id,
+    MIN(date) AS first_active_date,
+    MAX(date) AS last_active_date
+  FROM ${ref("fct_cm360_placement_hourly")}
+  WHERE ${constants.allPartitions()}
+  GROUP BY 1, 2
+),
+latest AS (
   SELECT
     ad_id,
     creative_id,
     placement_id,
     campaign_id,
     landing_page_url,
-    MIN(date) OVER (PARTITION BY ad_id, creative_id) AS first_active_date,
-    MAX(date) OVER (PARTITION BY ad_id, creative_id) AS last_active_date,
     ROW_NUMBER() OVER (PARTITION BY ad_id, creative_id ORDER BY date DESC) AS rn
   FROM ${ref("stg_cm360_hourly")}
   WHERE ad_id IS NOT NULL
 )
-WHERE rn = 1
+SELECT
+  l.ad_id,
+  l.creative_id,
+  l.placement_id,
+  l.campaign_id,
+  l.landing_page_url,
+  a.first_active_date,
+  a.last_active_date
+FROM latest l
+LEFT JOIN activity a USING (ad_id, creative_id)
+WHERE l.rn = 1

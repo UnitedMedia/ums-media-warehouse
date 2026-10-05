@@ -192,6 +192,52 @@ disagree slightly. The spend half moved to `v_data_gaps` as
 **Any check that compares two restating pulls of the same money belongs in
 `v_data_gaps`, not in an assertion.**
 
+## Incremental marts: DV360 and CM360
+
+Every Meta, TikTok and Google Ads mart is a full rebuild, because Weld keeps
+history. **Every DV360 and CM360 mart is incremental, because Keboola does not.**
+
+Confirmed 2026-10-05: `kebooladv.fct_dv360_lineitem_daily_v5` held exactly
+**one date**, and `kebooladv.cm360_hourly` likewise. The extracts are fully
+replaced on each run. A full-rebuild mart over a one-day source writes a
+one-day mart — which is what had already happened: `fct_dv360_daily` and
+`fct_cm360_placement_daily` were down to a single day each.
+
+Two strategies, because facts and dimensions need different things:
+
+**Facts append.** `type: "incremental"` with no `uniqueKey`, loading any date
+not already present:
+
+```
+${when(incremental(),
+  `AND date NOT IN (SELECT DISTINCT date FROM ${self()}
+                    WHERE ${constants.allPartitions()})`)}
+```
+
+Not `date > MAX(date)`: if Keboola ever backfills June–September, every
+backfilled date is *older* than what is already loaded, and a MAX(date)
+predicate would skip the lot. And not a `uniqueKey` MERGE either — half the
+grain columns are nullable (`country`, `app_url`, `creative_asset`), BigQuery
+MERGE joins with `=`, and `NULL = NULL` is never true, so a null-keyed row
+would be re-inserted on every run forever. Loading each date exactly once
+cannot duplicate anything.
+
+**Dimensions merge.** `type: "incremental"` with `uniqueKey` on the entity id,
+which is non-null, so the MERGE is sound. Each run sees only the entities in
+today's one-day extract, refreshes those, and leaves the rest untouched.
+Their activity columns (`first_active_date`, `lifetime_spend`) read from the
+**incremental fact**, never from staging — staging is one day wide, so
+anything derived from it alone would reset every night.
+
+`fct_cm360_placement_daily` stays a plain `table`: it reads
+`fct_cm360_placement_hourly`, so it inherits that table's history for free.
+
+**THE TRADE-OFF: a date already loaded is never reloaded.** An upstream
+restatement of an existing day is ignored, and DV360 revises conversions for
+several days after delivery. When a restatement or a backfill matters, run the
+table once with **full refresh** and it rebuilds from whatever the source holds.
+That is also the recovery path if Keboola ever restores the lost history.
+
 Two tables carry `requirePartitionFilter` and therefore have **no** `assertions`
 block in their config: `fct_meta_ad_daily` and `fct_cm360_placement_hourly`.
 Dataform generates those assertions without a date filter, and BigQuery refuses

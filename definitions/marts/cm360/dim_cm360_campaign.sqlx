@@ -1,9 +1,10 @@
 config {
-  type: "table",
+  type: "incremental",
   schema: constants.SCHEMAS.cm360_marts,
   name: "dim_cm360_campaign",
   tags: ["cm360", "marts"],
   description: "One row per CM360 campaign. Names come from the standard table, falling back to reach; the most recently seen name wins if a campaign was renamed mid-flight.",
+  uniqueKey: ["campaign_id"],
   bigquery: {
     clusterBy: ["campaign_id", "advertiser_id"]
   },
@@ -13,6 +14,15 @@ config {
   }
 }
 
+
+-- INCREMENTAL WITH A uniqueKey MERGE, unlike the CM360 facts, which append.
+-- A dimension needs one row per entity that gets UPDATED, not added to, and
+-- these keys are non-null so the MERGE has no null-key problem.
+--
+-- Activity dates read from fct_cm360_placement_hourly, which accumulates.
+-- stg_cm360_hourly is ONE DAY wide (confirmed 2026-10-05), so anything
+-- derived from it alone would reset every night. That table carries
+-- requirePartitionFilter, hence the explicit date predicate.
 WITH names AS (
   SELECT campaign_id, campaign_name, date
   FROM ${ref("stg_cm360_campaign_daily")}
@@ -33,7 +43,8 @@ activity AS (
     ANY_VALUE(advertiser_id) AS advertiser_id,
     MIN(date)                AS first_active_date,
     MAX(date)                AS last_active_date
-  FROM ${ref("stg_cm360_hourly")}
+  FROM ${ref("fct_cm360_placement_hourly")}
+  WHERE ${constants.allPartitions()}
   GROUP BY 1
 )
 SELECT

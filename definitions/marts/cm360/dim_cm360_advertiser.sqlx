@@ -1,9 +1,10 @@
 config {
-  type: "table",
+  type: "incremental",
   schema: constants.SCHEMAS.cm360_marts,
   name: "dim_cm360_advertiser",
   tags: ["cm360", "marts"],
   description: "One row per CM360 advertiser. Names come from the reach bridge, the only source that has advertiser_id and advertiser_name together. is_name_missing is the honest flag for advertisers that never appeared in the reach report.",
+  uniqueKey: ["advertiser_id"],
   bigquery: {
     clusterBy: ["advertiser_id"]
   },
@@ -13,13 +14,29 @@ config {
   }
 }
 
+
+-- INCREMENTAL WITH A uniqueKey MERGE, unlike the CM360 facts, which append.
+-- A dimension needs one row per entity that gets UPDATED, not added to, and
+-- these keys are non-null so the MERGE has no null-key problem.
+--
+-- Activity dates read from fct_cm360_placement_hourly, which accumulates.
+-- stg_cm360_hourly is ONE DAY wide (confirmed 2026-10-05), so anything
+-- derived from it alone would reset every night. That table carries
+-- requirePartitionFilter, hence the explicit date predicate.
+WITH activity AS (
+  SELECT advertiser_id, MIN(date) AS first_active_date, MAX(date) AS last_active_date
+  FROM ${ref("fct_cm360_placement_hourly")}
+  WHERE ${constants.allPartitions()}
+  GROUP BY advertiser_id
+)
 SELECT
   h.advertiser_id,
   COALESCE(b.advertiser_name, CONCAT('advertiser_', h.advertiser_id)) AS advertiser_name,
   (b.advertiser_name IS NULL)                                         AS is_name_missing,
-  MIN(h.date) AS first_active_date,
-  MAX(h.date) AS last_active_date
+  a.first_active_date,
+  a.last_active_date
 FROM ${ref("stg_cm360_hourly")} h
 LEFT JOIN ${ref("stg_cm360_advertiser_bridge")} b USING (advertiser_id)
+LEFT JOIN activity a USING (advertiser_id)
 WHERE h.advertiser_id IS NOT NULL
-GROUP BY 1, 2, 3
+GROUP BY 1, 2, 3, 4, 5

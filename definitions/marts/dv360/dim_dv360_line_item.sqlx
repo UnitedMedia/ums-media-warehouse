@@ -1,9 +1,10 @@
 config {
-  type: "table",
+  type: "incremental",
   schema: constants.SCHEMAS.dv360_marts,
   name: "dim_dv360_line_item",
   tags: ["dv360", "marts"],
   description: "The DV360 spine. One row per line item: latest attributes, delivery window, and hand-maintained flight dates. Every breakdown fact stays narrow and picks up campaign/partner from here at read time, so changing the dimension does not mean rebuilding six facts.",
+  uniqueKey: ["line_item_id"],
   bigquery: {
     clusterBy: ["advertiser_id", "line_item_id"]
   },
@@ -17,6 +18,17 @@ config {
   }
 }
 
+
+-- INCREMENTAL WITH A uniqueKey MERGE, unlike the facts, which append.
+-- A dimension needs one row per entity that gets UPDATED, not added to.
+-- line_item_id is non-null (the assertion enforces it), so the MERGE has no
+-- null-key problem and uniqueKey is the right tool here.
+--
+-- Each run sees only the line items in today's one-day staging extract, so
+-- the merge refreshes those and leaves every other row untouched. Without
+-- this the dimension would shrink to whatever delivered today, and
+-- yesterday's facts would join to a spine that had forgotten them.
+
 WITH latest AS (
   SELECT
     *,
@@ -25,13 +37,15 @@ WITH latest AS (
   WHERE line_item_id IS NOT NULL
 ),
 activity AS (
+  -- From the FACT, not from staging. staging is one day wide; the fact
+  -- accumulates, so lifetime figures are only correct when read from it.
   SELECT
     line_item_id,
     MIN(IF(impressions > 0, date, NULL)) AS first_active_date,
     MAX(IF(impressions > 0, date, NULL)) AS last_active_date,
     SUM(impressions)                     AS lifetime_impressions,
     SUM(spend)                           AS lifetime_spend
-  FROM ${ref("stg_dv360_lineitem")}
+  FROM ${ref("fct_dv360_daily")}
   GROUP BY line_item_id
 )
 SELECT
