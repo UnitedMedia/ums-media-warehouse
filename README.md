@@ -161,7 +161,7 @@ number is wrong:
 | `assert_meta_results_coverage` | spend exists under an optimization goal with no Results definition |
 | `assert_meta_ad_daily_grain` | duplicate or null-keyed rows at Meta's base grain |
 | `assert_meta_age_gender_grain` | the `age_gender` source stopped publishing 7-day windows, so the Monday filter is now wrong |
-| `assert_gads_video_grain` | `youtube_ads` gained duplicate rows, or stopped agreeing with `campaign_stats` on spend |
+| `assert_gads_video_grain` | `youtube_ads` gained duplicate rows at campaign x day x network |
 | `assert_staging_date_parsing` | a channel's date or hour string stopped parsing |
 | `assert_tiktok_ad_coverage` | TikTok ad-level spend drops below the known ~98.6% of campaign-level |
 | `assert_tiktok_grain` | TikTok started delivering duplicate rows, so staging now needs de-duplication |
@@ -181,6 +181,16 @@ they will always disagree slightly. No threshold separated that from a real gap.
 It now reports in `reporting.v_data_gaps` as `gads_account_spend_above_campaigns`,
 where it is visible without turning the workflow red. If a check cannot be made
 to go green on good data, it is the wrong check.
+
+The same rule claimed a second check on 2026-10-05. `assert_gads_video_grain`
+originally compared `youtube_ads` spend against `campaign_stats` with a one-cent
+tolerance and failed on its first run: 35 disagreeing campaign-days out of
+28,015 (0.125%), worst 1.06, total 7.59. Two Google-sourced tables synced
+minutes apart, against a platform that restates cost for weeks, will always
+disagree slightly. The spend half moved to `v_data_gaps` as
+`gads_youtube_ads_spend_drift` and the assertion kept only the grain check.
+**Any check that compares two restating pulls of the same money belongs in
+`v_data_gaps`, not in an assertion.**
 
 Two tables carry `requirePartitionFilter` and therefore have **no** `assertions`
 block in their config: `fct_meta_ad_daily` and `fct_cm360_placement_hourly`.

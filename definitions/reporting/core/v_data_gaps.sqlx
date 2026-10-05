@@ -151,6 +151,42 @@ WITH gaps AS (
 
   UNION ALL
 
+  -- Google Ads: the two pulls that carry the same money restate it apart.
+  -- Measured 2026-10-05 over the lookback window: 35 campaign-days of
+  -- 28,015 (0.125%), worst 1.06, total 7.59. Was an assertion for one run;
+  -- it failed on good data, so it lives here instead. Only act on it if the
+  -- numbers grow by an order of magnitude.
+  SELECT
+    '${constants.CHANNEL.gads}',
+    'gads_youtube_ads_spend_drift',
+    CAST(NULL AS STRING),
+    'youtube_ads and campaign_stats carry identical money from two pulls synced minutes apart, and Google restates cost for weeks. Expected to be non-zero and tiny. No spend is staged from youtube_ads, so this cannot reach any reported figure.',
+    COUNT(*),
+    CAST(SUM(abs_diff) AS FLOAT64)
+  FROM (
+    SELECT ABS(IFNULL(y.cost_micros, 0) - IFNULL(c.cost_micros, 0)) / 1000000 AS abs_diff
+    FROM (
+      SELECT DATE(date) AS date, CAST(campaign_id AS STRING) AS campaign_id,
+             SUM(cost_micros) AS cost_micros
+      FROM ${ref({ schema: constants.DATASETS.gads, name: "youtube_ads" })}
+      WHERE _weld_deleted_at IS NULL
+        AND DATE(date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${constants.WELD_LOOKBACK_DAYS} DAY)
+      GROUP BY 1, 2
+    ) y
+    FULL JOIN (
+      SELECT DATE(date) AS date, CAST(campaign_id AS STRING) AS campaign_id,
+             SUM(cost_micros) AS cost_micros
+      FROM ${ref({ schema: constants.DATASETS.gads, name: "campaign_stats" })}
+      WHERE _weld_deleted_at IS NULL
+        AND DATE(date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${constants.WELD_LOOKBACK_DAYS} DAY)
+      GROUP BY 1, 2
+    ) c
+    USING (date, campaign_id)
+    WHERE ABS(IFNULL(y.cost_micros, 0) - IFNULL(c.cost_micros, 0)) > 10000
+  )
+
+  UNION ALL
+
   -- TikTok: spend the ad-level report cannot attribute to a named ad
   SELECT
     '${constants.CHANNEL.tiktok}',

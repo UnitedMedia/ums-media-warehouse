@@ -53,6 +53,6 @@ SELECT
 FROM ${ref("fct_gads_ad_daily")} f
 JOIN ${ref("dim_gads_ad")} a
   ON a.adgroup_id = f.adgroup_id AND a.ad_id = f.ad_id
-LEFT JOIN ${ref("dim_gads_ad_group")} g USING (adgroup_id)
+LEFT JOIN ${ref("dim_gads_ad_group")} g ON g.adgroup_id = f.adgroup_id
 LEFT JOIN ${ref("dim_gads_campaign")} c ON c.campaign_id = f.campaign_id
 WHERE a.is_video_ad

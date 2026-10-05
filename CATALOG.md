@@ -442,7 +442,10 @@ keywords and search terms follow.
 - **`google_ads.youtube_ads` is not a YouTube table, and its spend is a
   duplicate.** It covers all seven channel types, and its `cost_micros` matches
   `campaign_stats` to the cent (23,575 September campaign-days, zero differing,
-  both 5,240,904.57). Staging deliberately omits the spend column.
+  both 5,240,904.57). Staging deliberately omits the spend column. The two do
+  drift by rounding as Google restates — 35 campaign-days of 28,015, total 7.59,
+  measured 2026-10-05 — which is reported as `gads_youtube_ads_spend_drift` in
+  `v_data_gaps` and is deliberately not an assertion.
   `fct_gads_campaign_daily` remains the only Google Ads money source.
 - **`view_rate` is not comparable across formats.** Bumper and non-skippable
   ads count a view on essentially every impression; skippable ones do not.
