@@ -3,13 +3,15 @@ config {
   schema: constants.SCHEMAS.reporting,
   name: "v_ad_performance_daily",
   tags: ["core", "reporting"],
-  description: "The cross-channel Looker Studio surface. One row per date + channel + campaign, with rate metrics computed here so they stay correct at every roll-up.",
+  description: "The cross-channel Looker Studio surface. One row per date + channel + campaign. The rate metrics are correct AT THIS ROW GRAIN ONLY — rebuild them as calculated fields in Looker, because the average of ratios is not the ratio of sums.",
   columns: {
     spend: "The channel's own currency, and CM360 does not say which one. Break out by currency before summing across channels.",
     cpa: "Computed against a conversions figure that means something different per channel — always show conversions_definition next to it.",
     spend_eur: "The ONLY column safe to total across channels. spend mixes RON, EUR and PLN. NULL where no rate exists — CM360 has no currency, PLN has no rate yet.",
     is_fx_converted: "Filter on this before showing a euro total, or you are summing a column that is NULL for part of your spend.",
-    cpm_eur: "Euro CPM. The plain cpm mixes currencies and is only meaningful filtered to one."
+    cpm_eur: "Euro CPM. The plain cpm mixes currencies and is only meaningful filtered to one.",
+    cpc_eur: "CORRECT FOR THIS ROW, WRONG IF LOOKER AGGREGATES IT. Measured 2026-10-08 over September: the true SUM(spend_eur)/SUM(clicks) is 0.157, while averaging this column across rows gives roughly 0.76 — close enough to the unconverted mixed-currency 0.648 to look like a broken conversion when it is not. Build SUM(spend_eur)/SUM(clicks) as a calculated field instead.",
+    cpa_eur: "Same caveat as cpc_eur. Use SUM(spend_eur)/SUM(conversions) in Looker."
   }
 }
 
@@ -44,8 +46,18 @@ SELECT
   ${metrics.completionRate("c.complete_views", "c.impressions")} AS completion_rate,
   ${metrics.cpa("c.spend", "c.conversions")}                     AS cpa,
 
-  -- Euro equivalents. These are the ones to put on a cross-channel chart;
-  -- the versions above are only meaningful filtered to a single currency.
+  -- Euro equivalents. These are the ones for a cross-channel chart; the
+  -- versions above are only meaningful filtered to a single currency.
+  --
+  -- BUT THEY ARE ROW-GRAIN RATIOS. Dropping one straight onto a Looker
+  -- scorecard averages it across rows, and the average of ratios is not the
+  -- ratio of sums: a DV360 row with 133 clicks weighs the same as a Google
+  -- row with 8 million. Over September that turns a true 0.157 euro CPC into
+  -- about 0.76, which sits suspiciously near the unconverted 0.648 and reads
+  -- exactly like a conversion that never happened.
+  --
+  -- In Looker, build SUM(spend_eur)/SUM(clicks) as a calculated field, and
+  -- filter is_fx_converted -- CM360 contributes clicks with NULL spend_eur.
   ${metrics.cpm("c.spend_eur", "c.impressions")}                 AS cpm_eur,
   ${metrics.cpc("c.spend_eur", "c.clicks")}                      AS cpc_eur,
   ${metrics.cpa("c.spend_eur", "c.conversions")}                 AS cpa_eur

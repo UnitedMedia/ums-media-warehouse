@@ -6,6 +6,10 @@ config {
   description: "The single object Looker Studio connects to for Meta. It does three things the marts deliberately do not: pivots the long action table into wide n_* / val_* columns, computes every ratio, and resolves Meta's 'Results' from the ad set optimization goal.",
   columns: {
     results: "Meta's 'Results'. Resolved per ad set via seed_result_type — NOT a field Meta delivers.",
+    spend: "ACCOUNT CURRENCY, whatever account_currency says. Not comparable across accounts without converting.",
+    spend_eur: "spend converted at the month's rate from core.dim_fx_rate. NULL where no rate exists for that month and currency — never silently zero, and never silently unconverted. Check is_fx_converted before totalling across accounts.",
+    fx_rate_to_eur: "Units of account_currency per 1 EUR, for the month of this row. spend_eur = spend / this. EUR rows carry 1.0.",
+    is_fx_converted: "FALSE where dim_fx_rate had no rate. Those rows contribute NULL to spend_eur, so a SUM silently under-reports — filter or surface this flag on any euro total.",
     reach: "Deduplicated by Meta at ad x day. Do not sum it in Looker above that grain.",
     frequency: "impressions / reach at ad x day. Valid only at this grain."
   }
@@ -18,6 +22,16 @@ config {
 --
 -- The deployed Weld script did this with DECLARE + EXECUTE IMMEDIATE.
 -- Dataform compiles to static SQL, so that machinery is gone.
+--
+-- EUROS come from core.dim_fx_rate, the one place a conversion is defined
+-- in this warehouse. Rates are MONTHLY, so a mid-month move appears as a
+-- step on the 1st — fine for reporting, not for reconciling to a bank
+-- statement. Reading a core dimension from a channel view is not a cycle:
+-- dim_fx_rate is built off a generated month spine and the FX sources, and
+-- never touches a channel mart.
+--
+-- SAFE_DIVIDE, so a missing rate yields NULL rather than an error, and
+-- is_fx_converted says which rows those are. Spend itself is untouched.
 
 WITH wide_actions AS (
   SELECT * FROM (
@@ -60,7 +74,12 @@ SELECT
   d.campaign_daily_budget, d.campaign_lifetime_budget,
   d.adset_daily_budget, d.adset_lifetime_budget,
 
-  f.spend, f.impressions, f.clicks, f.link_clicks, f.reach,
+  f.spend,
+  SAFE_DIVIDE(f.spend, fx.rate_to_eur)   AS spend_eur,
+  fx.rate_to_eur                         AS fx_rate_to_eur,
+  (fx.rate_to_eur IS NOT NULL)           AS is_fx_converted,
+
+  f.impressions, f.clicks, f.link_clicks, f.reach,
 
   ${metrics.frequency("f.impressions", "f.reach")}      AS frequency,
   ${metrics.cpm("f.spend", "f.impressions")}            AS cpm,
@@ -89,6 +108,9 @@ SELECT
 
 FROM ${ref("fct_meta_ad_daily")} f
 LEFT JOIN ${ref("dim_meta_ad")} d USING (ad_id)
+LEFT JOIN ${ref("dim_fx_rate")} fx
+  ON  fx.month    = DATE_TRUNC(f.date, MONTH)
+  AND fx.currency = d.account_currency
 LEFT JOIN wide_actions w ON f.date = w.date AND f.ad_id = w.ad_id
 LEFT JOIN results      r ON f.date = r.date AND f.ad_id = r.ad_id
 WHERE ${constants.allPartitions("f")}

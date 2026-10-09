@@ -111,6 +111,27 @@ mislabels the money. `reporting.v_ad_performance_daily` will happily sum them.
 Do not build a cross-channel spend figure until someone confirms what CM360's
 cost column represents.
 
+**Rate metrics do not survive aggregation — rebuild them in Looker.** Every
+view here computes `cpm`, `ctr`, `cpc`, `cpa` and their `_eur` versions **at its
+own row grain**. Dropped straight onto a Looker scorecard they get averaged, and
+the average of ratios is not the ratio of sums: a DV360 row with 133 clicks
+counts as much as a Google row with 8 million. Measured 2026-10-08 over
+September, the true cross-channel euro CPC is **0.157**; averaging the `cpc_eur`
+column gives about **0.76** — near enough to the unconverted mixed-currency
+**0.648** to look like the FX conversion is broken when it is working perfectly.
+
+Use calculated fields on the additive columns instead:
+
+```
+cpc_eur = SUM(spend_eur) / SUM(clicks)
+cpm_eur = SUM(spend_eur) / SUM(impressions) * 1000
+cpa_eur = SUM(spend_eur) / SUM(conversions)
+ctr     = SUM(clicks)    / SUM(impressions)
+```
+
+And filter `is_fx_converted = true`: CM360 has no currency, so it contributes
+clicks and impressions with a NULL `spend_eur`, dragging any euro rate down.
+
 **Reach is never additive.** `unique_reach` (DV360) and `total_reach` (CM360)
 are de-duplicated by the platform at one specific grain. A month's reach is not
 the sum of its days. In Looker Studio set those fields' aggregation to **MAX**,
@@ -121,6 +142,17 @@ sides come out wrong.
 **Currency.** DV360 spend is in advertiser currency, Meta in account currency,
 CM360 has no currency column at all. Break out or filter by currency before
 summing across advertisers.
+
+**Euros.** Two views carry `spend_eur` alongside native `spend`:
+`reporting.v_ad_performance_daily` and `meta_reporting.v_ad_daily`. Both convert
+through `core.dim_fx_rate`, the single definition of a rate in this warehouse —
+`spend_eur = spend / rate_to_eur`, always divide. Rates are **monthly**, so a
+mid-month move shows as a step on the 1st; good enough for reporting, not for
+reconciling to a bank statement. Where no rate exists for a month and currency,
+`spend_eur` is **NULL and `is_fx_converted` is FALSE** — it is never silently
+zero and never silently unconverted, so a euro total that ignores the flag
+under-reports. `meta_reporting.v_age_gender_weekly` deliberately has no
+`spend_eur`: its weeks straddle month boundaries and no single rate is correct.
 
 **`clicks` in the cross-channel view means clicks to the destination.**
 DV360, CM360 and TikTok count only those. Meta's own `clicks` field also
