@@ -17,6 +17,12 @@ config {
 --
 -- So: one branch per mart that is fed by its own source table. If a feed
 -- dies, the row naming it appears here.
+--
+-- FOUR marts carry requirePartitionFilter -- fct_meta_ad_daily,
+-- fct_meta_ad_action_daily, fct_meta_breakdown_daily and
+-- fct_cm360_placement_hourly. BigQuery rejects an unfiltered query against
+-- any of them, so every branch reading one carries
+-- constants.allPartitions(). Adding a feed here means checking that first.
 
 WITH latest AS (
   -- DV360 ----------------------------------------------------------------
@@ -47,10 +53,12 @@ WITH latest AS (
   UNION ALL
   SELECT '${constants.CHANNEL.meta}', 'ad actions', MAX(date)
   FROM ${ref("fct_meta_ad_action_daily")}
+  WHERE ${constants.allPartitions()}
 
   UNION ALL
   SELECT '${constants.CHANNEL.meta}', 'breakdowns', MAX(date)
   FROM ${ref("fct_meta_breakdown_daily")}
+  WHERE ${constants.allPartitions()}
 
   UNION ALL
   SELECT '${constants.CHANNEL.meta}', 'demographics', MAX(date)

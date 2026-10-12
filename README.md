@@ -238,8 +238,12 @@ several days after delivery. When a restatement or a backfill matters, run the
 table once with **full refresh** and it rebuilds from whatever the source holds.
 That is also the recovery path if Keboola ever restores the lost history.
 
-Two tables carry `requirePartitionFilter` and therefore have **no** `assertions`
-block in their config: `fct_meta_ad_daily` and `fct_cm360_placement_hourly`.
+**Four** tables carry `requirePartitionFilter` and therefore have **no**
+`assertions` block in their config: `fct_meta_ad_daily`,
+`fct_meta_ad_action_daily`, `fct_meta_breakdown_daily` and
+`fct_cm360_placement_hourly`. **Anything querying one of them needs a date
+filter**, including assertions and views — `assert_source_freshness` went red
+on 2026-10-12 for exactly that reason after gaining new branches.
 Dataform generates those assertions without a date filter, and BigQuery refuses
 to run an unfiltered query against such a table. The equivalent checks are
 written by hand in `assert_meta_ad_daily_grain` and `assert_cm360_hourly_grain`,
