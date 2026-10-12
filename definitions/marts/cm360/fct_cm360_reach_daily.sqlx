@@ -1,6 +1,5 @@
 config {
   type: "incremental",
-  onSchemaChange: "EXTEND",
   schema: constants.SCHEMAS.cm360_marts,
   name: "fct_cm360_reach_daily",
   tags: ["cm360", "marts"],

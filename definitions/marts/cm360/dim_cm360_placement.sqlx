@@ -1,6 +1,5 @@
 config {
   type: "incremental",
-  onSchemaChange: "EXTEND",
   schema: constants.SCHEMAS.cm360_marts,
   name: "dim_cm360_placement",
   tags: ["cm360", "marts"],

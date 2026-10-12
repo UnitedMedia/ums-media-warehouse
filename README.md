@@ -232,20 +232,27 @@ anything derived from it alone would reset every night.
 `fct_cm360_placement_daily` stays a plain `table`: it reads
 `fct_cm360_placement_hourly`, so it inherits that table's history for free.
 
-**New columns need `onSchemaChange`.** An incremental run MERGEs or INSERTs
-into a table that already exists, and Dataform's default `onSchemaChange` is
-`IGNORE` — a column added to the model is silently dropped, and the deployed
-table keeps its old shape with no error anywhere. That caught `placement_name`
-on `dim_cm360_placement` on 2026-10-12: the run went green, the column simply
-was not there. Every incremental model here now sets:
+**ADDING A COLUMN TO AN INCREMENTAL MODEL NEEDS A FULL REFRESH.** An
+incremental run MERGEs or INSERTs into a table that already exists, and a
+column the target does not have is silently dropped. The run goes green, no
+error anywhere, and the column simply is not there. That caught
+`placement_name` on `dim_cm360_placement` on 2026-10-12.
 
-```
-onSchemaChange: "EXTEND"
-```
+There is no config flag for this. `onSchemaChange` is a dbt feature, not a
+Dataform one — adding it to the 15 incremental models produced 15 compilation
+errors and took the whole project down until it was removed. Do not try again.
 
-so added columns appear on the next ordinary run. EXTEND only adds; a REMOVED
-or RETYPED column still needs a full refresh, which is what the FLOAT64/INT64
-mismatch on the CM360 move required.
+The procedure is: add the column, then run that table **once** with full
+refresh, then untick it. A full refresh on a DV360 or CM360 mart is cheap
+because the Keboola source only holds one day anyway — but it is exactly what
+must never be left on in a schedule.
+
+So incremental models fail two ways, and they are opposites:
+
+| change | symptom |
+|---|---|
+| a column changes TYPE | **loud** — the run fails on insert |
+| a column is ADDED | **silent** — green run, column missing |
 
 **THE TRADE-OFF: a date already loaded is never reloaded.** An upstream
 restatement of an existing day is ignored, and DV360 revises conversions for
