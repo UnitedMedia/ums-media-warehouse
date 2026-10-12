@@ -343,6 +343,12 @@ either asserted on or surfaced in `v_data_gaps`.
   **view-through / click-through split**. It also carries `advertiserId`, which
   the old one did not — that absence is the entire reason
   `stg_cm360_advertiser_bridge` exists.
+- **The new tables deliver counts as FLOAT64**, where `kebooladv` gave INT64.
+  Staging casts `impressions`, `clicks`, `viewable_impressions` and
+  `video_views` back to INT64 — without that the incremental marts fail on
+  insert ("type FLOAT64 ... cannot be inserted into column impressions, which
+  has type INT64") and the warehouse would store counts as floats, which no
+  other channel does. `media_cost` stays FLOAT64; it is money, not a count.
 - Everything else about CM360 is unchanged, including the **unresolved
   `media_cost`** question. Moving dataset did not change what that column means.
 

@@ -11,6 +11,15 @@ config {
   }
 }
 
+
+-- COUNTS ARE CAST TO INT64. keboola_cm360 delivers impressions, clicks,
+-- activeViewViewableImpressions and richMediaVideoViews as FLOAT64, where
+-- the old kebooladv tables gave INT64. Without these casts the incremental
+-- marts fail on insert -- "Query column 9 has type FLOAT64 which cannot be
+-- inserted into column impressions, which has type INT64" -- and the
+-- warehouse would end up storing counts as floats, which nothing else here
+-- does. media_cost stays FLOAT64: it is money, not a count.
+
 SELECT
   CAST(profileId AS STRING)                                  AS profile_id,
   profileName                                                AS profile_name,
@@ -36,10 +45,10 @@ SELECT
   NULLIF(TRIM(landingPageUrl), '')                           AS landing_page_url,
 
   -- additive metrics, kept raw
-  impressions                                                AS impressions,
-  clicks                                                     AS clicks,
-  activeViewViewableImpressions                              AS viewable_impressions,
-  richMediaVideoViews                                        AS video_views,
+  CAST(impressions                   AS INT64)               AS impressions,
+  CAST(clicks                        AS INT64)               AS clicks,
+  CAST(activeViewViewableImpressions AS INT64)               AS viewable_impressions,
+  CAST(richMediaVideoViews           AS INT64)               AS video_views,
   mediaCost                                                  AS media_cost,
 
   -- NON-additive, kept only for row-level audit
