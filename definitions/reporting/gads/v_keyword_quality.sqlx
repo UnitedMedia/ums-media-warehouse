@@ -14,8 +14,12 @@ config {
 
 -- No spend here on purpose. Quality Score has no date, so joining it to a
 -- daily fact would attach today's score to every past day and invite
--- exactly the wrong chart. Use this to find the keywords worth fixing,
--- then look them up in the keyword performance fact when that lands.
+-- exactly the wrong chart.
+--
+-- That fact now exists: v_keyword_daily carries keyword performance over
+-- time with this score attached as a LABEL. Use this view to find the
+-- keywords worth fixing, and that one to see what they cost. Filtering by
+-- quality_score there is fine; charting it over date is not.
 
 SELECT
   k.account_id,

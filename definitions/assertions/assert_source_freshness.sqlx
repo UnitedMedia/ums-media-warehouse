@@ -1,38 +1,98 @@
 config {
   type: "assertion",
   tags: ["freshness", "monitoring"],
-  description: "Fails when a channel has not received new rows recently. This is the check that would have caught DV360 stopping on 2026-08-25 within a day instead of by accident weeks later."
+  description: "Fails when any FEED has stopped receiving rows — not just a channel's backbone. One branch per independently-synced feed, because a connector can drop a single table while the main one keeps flowing."
 }
 
 -- An assertion FAILS if it returns rows. Empty result = healthy.
--- One branch per channel, taken from each channel's backbone fact —
--- the table that stops first when an extraction breaks.
+--
+-- WHY ONE ROW PER FEED, NOT PER CHANNEL.
+-- This used to watch a single backbone table per channel, on the theory
+-- that the backbone stops first. That is not how a sync actually fails.
+-- Found 2026-10-12: a third of the Meta tables in facebook_ads_weld had
+-- been frozen since 2026-09-22 while ad_roas_insight kept updating daily.
+-- None of them happened to be staged, so nothing was wrong — but nothing
+-- would have told us either. A breakdown feed can die on its own and the
+-- only symptom is a view that quietly stops moving.
+--
+-- So: one branch per mart that is fed by its own source table. If a feed
+-- dies, the row naming it appears here.
 
 WITH latest AS (
-  SELECT '${constants.CHANNEL.dv360}' AS channel, MAX(date) AS latest_date
+  -- DV360 ----------------------------------------------------------------
+  SELECT '${constants.CHANNEL.dv360}' AS channel, 'line item daily' AS feed,
+         MAX(date) AS latest_date
   FROM ${ref("fct_dv360_daily")}
 
   UNION ALL
-  SELECT '${constants.CHANNEL.cm360}', MAX(date)
+  SELECT '${constants.CHANNEL.dv360}', 'placement daily', MAX(date)
+  -- qualified: kebooladv has a source table of the same name
+  FROM ${ref({ schema: constants.SCHEMAS.dv360_marts, name: "fct_dv360_placement_daily" })}
+
+  -- CM360 ----------------------------------------------------------------
+  UNION ALL
+  SELECT '${constants.CHANNEL.cm360}', 'placement hourly', MAX(date)
   FROM ${ref("fct_cm360_placement_daily")}
 
   UNION ALL
-  SELECT '${constants.CHANNEL.meta}', MAX(date)
+  SELECT '${constants.CHANNEL.cm360}', 'campaign daily', MAX(date)
+  FROM ${ref("fct_cm360_campaign_daily")}
+
+  -- Meta -----------------------------------------------------------------
+  UNION ALL
+  SELECT '${constants.CHANNEL.meta}', 'ad daily', MAX(date)
   FROM ${ref("fct_meta_ad_daily")}
   WHERE ${constants.allPartitions()}
 
   UNION ALL
-  SELECT '${constants.CHANNEL.tiktok}', MAX(date)
+  SELECT '${constants.CHANNEL.meta}', 'ad actions', MAX(date)
+  FROM ${ref("fct_meta_ad_action_daily")}
+
+  UNION ALL
+  SELECT '${constants.CHANNEL.meta}', 'breakdowns', MAX(date)
+  FROM ${ref("fct_meta_breakdown_daily")}
+
+  UNION ALL
+  SELECT '${constants.CHANNEL.meta}', 'demographics', MAX(date)
+  FROM ${ref("fct_meta_demographic_daily")}
+
+  -- TikTok ---------------------------------------------------------------
+  UNION ALL
+  SELECT '${constants.CHANNEL.tiktok}', 'campaign daily', MAX(date)
   FROM ${ref("fct_tiktok_campaign_daily")}
 
   UNION ALL
-  SELECT '${constants.CHANNEL.gads}', MAX(date)
+  SELECT '${constants.CHANNEL.tiktok}', 'ad daily', MAX(date)
+  FROM ${ref("fct_tiktok_ad_daily")}
+
+  UNION ALL
+  SELECT '${constants.CHANNEL.tiktok}', 'breakdowns', MAX(date)
+  FROM ${ref("fct_tiktok_breakdown_daily")}
+
+  -- Google Ads -----------------------------------------------------------
+  UNION ALL
+  SELECT '${constants.CHANNEL.gads}', 'campaign daily', MAX(date)
   FROM ${ref("fct_gads_campaign_daily")}
+
+  UNION ALL
+  SELECT '${constants.CHANNEL.gads}', 'ad daily', MAX(date)
+  FROM ${ref("fct_gads_ad_daily")}
+
+  UNION ALL
+  SELECT '${constants.CHANNEL.gads}', 'audience daily', MAX(date)
+  FROM ${ref("fct_gads_audience_daily")}
 )
+
+-- meta_marts.fct_meta_age_gender_weekly is deliberately absent: it is
+-- WEEKLY, so its newest date is up to seven days behind by construction
+-- and would read as stale every day of the week but one.
+
 SELECT
   channel,
+  feed,
   latest_date,
   DATE_DIFF(CURRENT_DATE(), latest_date, DAY) AS days_stale
 FROM latest
 WHERE latest_date IS NULL
    OR latest_date < DATE_SUB(CURRENT_DATE(), INTERVAL ${dataform.projectConfig.vars.freshnessThresholdDays} DAY)
+ORDER BY days_stale DESC

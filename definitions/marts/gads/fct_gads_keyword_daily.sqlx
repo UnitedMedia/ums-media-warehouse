@@ -1,0 +1,46 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.gads_marts,
+  name: "fct_gads_keyword_daily",
+  tags: ["gads", "marts"],
+  description: "Google Ads keyword performance at day x keyword x device x network. Join dim_gads_keyword on BOTH adgroup_id and criterion_id for Quality Score — criterion_id alone is not unique.",
+  bigquery: {
+    partitionBy: "date",
+    clusterBy: ["account_id", "campaign_id", "adgroup_id"]
+  },
+  assertions: {
+    uniqueKey: ["date", "adgroup_id", "criterion_id", "device", "ad_network_type"],
+    nonNull: ["date", "criterion_id", "adgroup_id"]
+  },
+  columns: {
+    spend: "AD GROUP spend broken out by keyword, so Performance Max is absent — PMax has no keywords. Never total Google Ads money from here.",
+    conversions: "FLOAT64 and fractional on purpose, like every Google conversions column."
+  }
+}
+
+-- Keywords exist only in Search and Shopping campaigns. This fact covers
+-- a minority of Google Ads spend by design, and that is not a gap.
+
+SELECT
+  date,
+  account_id,
+  campaign_id,
+  adgroup_id,
+  criterion_id,
+  device,
+  ad_network_type,
+
+  SUM(impressions)                        AS impressions,
+  SUM(clicks)                             AS clicks,
+  SUM(interactions)                       AS interactions,
+  SUM(conversions)                        AS conversions,
+  SUM(conversions_value)                  AS conversions_value,
+  SUM(view_through_conversions)           AS view_through_conversions,
+  SUM(spend)                              AS spend,
+  SUM(active_view_impressions)            AS active_view_impressions,
+  SUM(active_view_measurable_impressions) AS active_view_measurable_impressions,
+  SUM(active_view_measurable_spend)       AS active_view_measurable_spend
+FROM ${ref("stg_gads_keyword_daily")}
+WHERE date IS NOT NULL
+  AND criterion_id IS NOT NULL
+GROUP BY 1, 2, 3, 4, 5, 6, 7

@@ -1,0 +1,57 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.gads_staging,
+  name: "stg_gads_search_term",
+  tags: ["gads", "staging"],
+  description: "Google Ads search terms: the actual queries people typed, the keyword that matched each one, and whether it is already added or negated. Typed passthrough — no aggregation here, the mart does that.",
+  columns: {
+    search_term: "What the user typed. NOT the keyword — the keyword that matched it is keyword_criterion_resource.",
+    search_term_status: "ADDED, EXCLUDED, ADDED_EXCLUDED or NONE. The actionable column: NONE with real spend is a term nobody has decided about yet.",
+    src_absolute_top_impression_rate: "STORED RATE, non-additive. Google's share of this term's impressions shown as the very first ad. Kept as src_ because the numerator is not in the feed — see the note below before trying to recover a count.",
+    spend: "cost_micros arrives as FLOAT64 in this table, unlike every other google_ads stats table where it is INT64."
+  }
+}
+
+-- TYPES ARE DIFFERENT HERE. search_term_stats delivers campaign_id and
+-- ad_group_id as STRING, and every metric as FLOAT64 — impressions and
+-- clicks included. Cast on the way in so the mart looks like every other
+-- Google Ads fact.
+--
+-- THE TWO IMPRESSION-POSITION RATES ARE KEPT AS src_ AND NOT SUMMED.
+-- absolute_top_impression_percentage is almost certainly
+-- impressions_at_absolute_top / impressions, which would make a count
+-- recoverable by multiplying. That is not assumed here, because the same
+-- reasoning about google_ads.youtube_ads quartile rates turned out to be
+-- wrong: their denominator was a column nobody syncs. Verify first with
+--
+--   SELECT COUNTIF(ABS(absolute_top_impression_percentage * impressions
+--          - ROUND(absolute_top_impression_percentage * impressions)) < 0.0001),
+--          COUNT(*)
+--   FROM google_ads.search_term_stats
+--   WHERE impressions > 0 AND absolute_top_impression_percentage IS NOT NULL
+--
+-- If those two numbers match, the count is safe to derive and these become
+-- additive. Until then they are rates, correct at this row and nowhere else.
+--
+-- _weld_deleted_at IS NULL is NOT optional, as everywhere in google_ads.
+
+SELECT
+  DATE(date)                                  AS date,
+  CAST(customer_id   AS STRING)               AS account_id,
+  CAST(campaign_id   AS STRING)               AS campaign_id,
+  CAST(ad_group_id   AS STRING)               AS adgroup_id,
+  search_term,
+  search_term_match_type,
+  status                                      AS search_term_status,
+  keyword_ad_group_criterion                  AS keyword_criterion_resource,
+
+  CAST(impressions              AS INT64)     AS impressions,
+  CAST(clicks                   AS INT64)     AS clicks,
+  CAST(conversions              AS FLOAT64)   AS conversions,
+  CAST(view_through_conversions AS INT64)     AS view_through_conversions,
+  ${metrics.micros("CAST(cost_micros AS NUMERIC)")} AS spend,
+
+  absolute_top_impression_percentage          AS src_absolute_top_impression_rate,
+  top_impression_percentage                   AS src_top_impression_rate
+FROM ${ref({ schema: constants.DATASETS.gads, name: "search_term_stats" })}
+WHERE _weld_deleted_at IS NULL

@@ -187,6 +187,22 @@ WITH gaps AS (
 
   UNION ALL
 
+  -- Google Ads: search terms nobody has added or negated. Not a pipeline
+  -- gap -- a work list. Every row is money spent on a query no one has
+  -- decided about.
+  SELECT
+    '${constants.CHANNEL.gads}',
+    'gads_search_term_undecided',
+    CAST(NULL AS STRING),
+    'Search terms with status NONE that spent money: nobody has added them as a keyword or negated them. Sort gads_reporting.v_search_terms by spend with needs_decision = TRUE and work down.',
+    COUNT(*),
+    CAST(SUM(spend) AS FLOAT64)
+  FROM ${ref("fct_gads_search_term_daily")}
+  WHERE search_term_status = 'NONE'
+    AND spend > 0
+
+  UNION ALL
+
   -- TikTok: spend the ad-level report cannot attribute to a named ad
   SELECT
     '${constants.CHANNEL.tiktok}',

@@ -1,0 +1,54 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.gads_marts,
+  name: "fct_gads_search_term_daily",
+  tags: ["gads", "marts"],
+  description: "Google Ads search terms at day x campaign x ad group x term x match type. A BREAKDOWN of ad group spend, not a spend source — Performance Max has no search terms and no ad groups, so this never totals to Google Ads money.",
+  bigquery: {
+    partitionBy: "date",
+    clusterBy: ["account_id", "campaign_id", "adgroup_id"]
+  },
+  assertions: {
+    uniqueKey: ["date", "campaign_id", "adgroup_id", "search_term", "search_term_match_type", "search_term_status"],
+    nonNull: ["date", "search_term"]
+  },
+  columns: {
+    search_term_status: "Part of the grain. ADDED / EXCLUDED / ADDED_EXCLUDED / NONE — a term can change status mid-period, which is why it is a key and not an attribute.",
+    src_absolute_top_impression_rate: "NON-ADDITIVE weighted average, kept only so the row-level value survives. Set Looker aggregation to MAX and read it at this grain. See stg_gads_search_term for how to make it additive.",
+    spend: "AD GROUP spend, so it carries the Performance Max blind spot. Never total Google Ads money from here."
+  }
+}
+
+-- No requirePartitionFilter: 5.8M source rows is large for this project
+-- but not large enough to justify making every downstream query awkward,
+-- and the two tables that do carry it both needed hand-written assertions
+-- as a consequence.
+--
+-- The two impression-position rates are averaged weighted by impressions,
+-- which is the least-wrong thing to do with a stored rate. They are still
+-- not additive and the column docs say so.
+
+SELECT
+  date,
+  account_id,
+  campaign_id,
+  adgroup_id,
+  search_term,
+  search_term_match_type,
+  search_term_status,
+  ANY_VALUE(keyword_criterion_resource)        AS keyword_criterion_resource,
+
+  SUM(impressions)                             AS impressions,
+  SUM(clicks)                                  AS clicks,
+  SUM(conversions)                             AS conversions,
+  SUM(view_through_conversions)                AS view_through_conversions,
+  SUM(spend)                                   AS spend,
+
+  SAFE_DIVIDE(SUM(src_absolute_top_impression_rate * impressions),
+              SUM(impressions))                AS src_absolute_top_impression_rate,
+  SAFE_DIVIDE(SUM(src_top_impression_rate * impressions),
+              SUM(impressions))                AS src_top_impression_rate
+FROM ${ref("stg_gads_search_term")}
+WHERE date IS NOT NULL
+  AND search_term IS NOT NULL
+GROUP BY 1, 2, 3, 4, 5, 6, 7

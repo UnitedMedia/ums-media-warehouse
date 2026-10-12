@@ -184,6 +184,19 @@ const GOOGLE_ADS_TABLES = [
   // group, ad, keyword or audience level. The right upstream fix is to add
   // these seven columns to the campaign_stats pull and delete this table.
   "youtube_ads",
+
+  // PHASE 3 — search intent. Both fresh daily and both were sitting
+  // unread until the 2026-10-12 source audit; neither is a duplicate of
+  // anything already staged.
+  "search_term_stats", // 5.8M rows. What people ACTUALLY typed, which
+                       // keyword matched it, and whether it is already
+                       // added or negated. All metric columns arrive as
+                       // FLOAT64, including cost_micros and impressions.
+  "keyword_stats",     // 969k rows. Keyword performance BY DAY. The
+                       // history dim_gads_keyword has never had — that
+                       // table is a Quality Score snapshot with no date.
+                       // Every id column is a STRING here, unlike every
+                       // other google_ads table.
 ];
 
 // ---------------------------------------------------------------------

@@ -1,0 +1,49 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.gads_staging,
+  name: "stg_gads_keyword_daily",
+  tags: ["gads", "staging"],
+  description: "Google Ads keyword performance BY DAY, at keyword x device x network. The history dim_gads_keyword has never had — that table is a Quality Score snapshot with no date column at all.",
+  columns: {
+    criterion_id: "Unique only WITH adgroup_id, the same rule dim_gads_keyword follows. Join on both or rows fan out.",
+    device: "Part of the grain: MOBILE, DESKTOP, TABLET, CONNECTED_TV, OTHER.",
+    ad_network_type: "Part of the grain. Same nine values campaign_stats uses."
+  }
+}
+
+-- EVERY ID IS A STRING IN THIS TABLE. keyword_stats is the only table in
+-- google_ads that delivers customer_id, campaign_id, ad_group_id and
+-- ad_group_criterion_criterion_id as STRING rather than INT64. The casts
+-- below are therefore no-ops that exist to make that explicit, and to
+-- survive Weld changing its mind.
+--
+-- This finally gives v_keyword_quality something to join to. Quality Score
+-- has no date, so it could never be put on a daily chart; now the score
+-- can label a keyword whose performance over time lives here.
+
+SELECT
+  DATE(date)                                        AS date,
+  CAST(customer_id AS STRING)                       AS account_id,
+  CAST(campaign_id AS STRING)                       AS campaign_id,
+  CAST(ad_group_id AS STRING)                       AS adgroup_id,
+  CAST(ad_group_criterion_criterion_id AS STRING)   AS criterion_id,
+  device,
+  ad_network_type,
+
+  impressions,
+  clicks,
+  interactions,
+  conversions,
+  conversions_value,
+  view_through_conversions,
+  ${metrics.micros("cost_micros")}                  AS spend,
+
+  active_view_impressions,
+  active_view_measurable_impressions,
+  ${metrics.micros("active_view_measurable_cost_micros")} AS active_view_measurable_spend,
+
+  -- describes WHAT interactions counted for this keyword's campaign type.
+  -- Not a reporting dimension, not part of the grain.
+  interaction_event_types                           AS src_interaction_event_types
+FROM ${ref({ schema: constants.DATASETS.gads, name: "keyword_stats" })}
+WHERE _weld_deleted_at IS NULL
