@@ -13,7 +13,7 @@ config {
     nonNull: ["date", "geo_target_id"]
   },
   columns: {
-    location_type: "PART OF THE GRAIN. Summing across it double counts — a search for 'hotels in Paris' made from Bucharest is reported under Romania as presence AND France as interest.",
+    location_type: "PART OF THE GRAIN, and the two values are NOT symmetric. LOCATION_OF_PRESENCE covers all delivery; AREA_OF_INTEREST exists only where the query named a place, and measured 2026-10-12 it is 6.7% of presence. Default to presence. Summing both overstates by roughly that 7%.",
     spend: "AD GROUP spend, so Performance Max is absent. Never total Google Ads money from here."
   }
 }

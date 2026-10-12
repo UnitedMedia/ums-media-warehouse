@@ -5,7 +5,7 @@ config {
   tags: ["gads", "reporting"],
   description: "Google Ads performance by location, with resolved place names. ALWAYS FILTER TO ONE location_type — the two values are two readings of the same click, and summing them double counts.",
   columns: {
-    location_type: "**Filter this on every chart.** LOCATION_OF_PRESENCE = where the user was. AREA_OF_INTEREST = the place they searched about. A Bucharest user searching 'hotels Paris' appears under both.",
+    location_type: "**Filter this on every chart, and DEFAULT TO LOCATION_OF_PRESENCE.** The two are not symmetric. Measured 2026-10-12 from 2026-09-01: presence 5,189,208.84 across 88 places, interest 372,461.32 across 50 — interest is 6.7% of presence, not a mirror of it. LOCATION_OF_PRESENCE is where the user physically was and covers all delivery. AREA_OF_INTEREST only exists where the query named a place (hotels Paris, dentist Cluj); most searches name none. Summing both overstates by about 7%.",
     geo_name: "Resolved through dim_gads_geo. Reads geo_<id> where Google's reference list has no entry.",
     canonical_name: "Full path, e.g. 'Cluj-Napoca,Cluj,Romania'. Use it when a bare name is ambiguous.",
     geo_target_type: "Country, Region, City, Postal Code, Airport. Filter on it to pick a resolution rather than mixing cities with countries on one chart.",
@@ -15,6 +15,10 @@ config {
 
 -- Rate metrics below are row-grain. In Looker rebuild them as calculated
 -- fields over the additive columns -- see CATALOG.md.
+--
+-- USE LOCATION_OF_PRESENCE unless someone specifically asks "which places were
+-- people searching ABOUT". Interest is a question about intent, presence is a
+-- question about audience, and only presence covers all the spend.
 
 SELECT
   f.date,
