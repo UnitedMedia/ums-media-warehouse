@@ -1,5 +1,6 @@
 config {
   type: "incremental",
+  onSchemaChange: "EXTEND",
   schema: constants.SCHEMAS.cm360_marts,
   name: "dim_cm360_ad_creative",
   tags: ["cm360", "marts"],

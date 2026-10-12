@@ -232,6 +232,21 @@ anything derived from it alone would reset every night.
 `fct_cm360_placement_daily` stays a plain `table`: it reads
 `fct_cm360_placement_hourly`, so it inherits that table's history for free.
 
+**New columns need `onSchemaChange`.** An incremental run MERGEs or INSERTs
+into a table that already exists, and Dataform's default `onSchemaChange` is
+`IGNORE` — a column added to the model is silently dropped, and the deployed
+table keeps its old shape with no error anywhere. That caught `placement_name`
+on `dim_cm360_placement` on 2026-10-12: the run went green, the column simply
+was not there. Every incremental model here now sets:
+
+```
+onSchemaChange: "EXTEND"
+```
+
+so added columns appear on the next ordinary run. EXTEND only adds; a REMOVED
+or RETYPED column still needs a full refresh, which is what the FLOAT64/INT64
+mismatch on the CM360 move required.
+
 **THE TRADE-OFF: a date already loaded is never reloaded.** An upstream
 restatement of an existing day is ignored, and DV360 revises conversions for
 several days after delivery. When a restatement or a backfill matters, run the

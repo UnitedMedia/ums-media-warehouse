@@ -1,5 +1,6 @@
 config {
   type: "incremental",
+  onSchemaChange: "EXTEND",
   schema: constants.SCHEMAS.dv360_marts,
   name: "fct_dv360_inventory_daily",
   tags: ["dv360", "marts"],
