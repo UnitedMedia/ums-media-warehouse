@@ -7,7 +7,11 @@ const RAW_PROJECT = "ums-digital-core-automation";
 // Source datasets, one per ingestion tool. Nothing in this repo writes
 // to any of these.
 const DATASETS = {
-  kebooladv: "kebooladv",         // CM360 + DV360 (Keboola)
+  kebooladv: "kebooladv",         // DV360 (Keboola). CM360 lived here
+                                  // until 2026-10-12, when its tables
+                                  // were dropped and recreated in
+                                  // keboola_cm360 below.
+  cm360:     "keboola_cm360",     // CM360 (Keboola), since 2026-10-12
   meta:      "facebook_ads_weld", // Meta (Weld)
   tiktok:    "tiktok_ads",        // TikTok (Weld)
   gads:      "google_ads",        // Google Ads (Weld)

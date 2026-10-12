@@ -37,7 +37,7 @@ correct no matter how Looker rolls it up; a ratio stored in a table does not.
 | CM360 conversions or reach | `cm360_reporting.v_campaign_daily` |
 | Meta spend, conversions, ROAS, cost per anything | `meta_reporting.v_ad_daily` |
 | Meta by age and gender, with conversions | `meta_reporting.v_demographics_daily` |
-| Meta by age and gender **per campaign** | `meta_reporting.v_age_gender_weekly` (weekly) |
+| Meta by age and gender **per campaign** | `meta_reporting.v_age_gender_daily` |
 | Meta by country, platform, device | `meta_reporting.v_breakdown_daily` |
 | TikTok spend — the complete total | `tiktok_reporting.v_campaign_daily` |
 | TikTok by ad, creative, video performance | `tiktok_reporting.v_daily` |
@@ -51,6 +51,9 @@ correct no matter how Looker rolls it up; a ratio stored in a table does not.
 | **Budget vs actual spend, pacing** | `gads_reporting.v_pacing` |
 | **Keyword Quality Score** | `gads_reporting.v_keyword_quality` |
 | Google Ads by audience segment | `gads_reporting.v_audience_daily` |
+| **What people typed into Google** | `gads_reporting.v_search_terms` |
+| **Google Ads keyword performance over time** | `gads_reporting.v_keyword_daily` |
+| **Google Ads by country / city** | `gads_reporting.v_geo_daily` (filter `location_type`) |
 | **Google Ads video / YouTube by format** | `gads_reporting.v_video_daily` |
 | **Google Ads video completion funnel (25/50/75/100%)** | `gads_reporting.v_video_funnel_daily` |
 | All five channels in one chart | `reporting.v_ad_performance_daily` |
@@ -84,9 +87,14 @@ within it but must never add two breakdowns together.
 
 ## Read this before you total anything
 
-**Meta and Google Ads are live. TikTok, DV360 and CM360 are not** — measured
-2026-10-05: TikTok 6 days stale, CM360 7, DV360 3. TikTok was delivering daily
-until 2026-09-29.
+**Meta, Google Ads and CM360 are live. TikTok is not.**
+
+**CM360 moved dataset on 2026-10-12**: its tables were dropped from `kebooladv`
+and recreated in **`keboola_cm360`**, fresh daily and about seven times larger.
+It had looked dead since 2026-09-28; it had in fact been relocated.
+
+**TikTok stopped on 2026-09-29** and has not resumed. DV360 still delivers but
+one day at a time.
 
 **The Keboola extracts hold ONE DAY at a time.** Confirmed 2026-10-05:
 `fct_dv360_lineitem_daily_v5` and `cm360_hourly` each contained a single date.
@@ -151,8 +159,7 @@ mid-month move shows as a step on the 1st; good enough for reporting, not for
 reconciling to a bank statement. Where no rate exists for a month and currency,
 `spend_eur` is **NULL and `is_fx_converted` is FALSE** — it is never silently
 zero and never silently unconverted, so a euro total that ignores the flag
-under-reports. `meta_reporting.v_age_gender_weekly` deliberately has no
-`spend_eur`: its weeks straddle month boundaries and no single rate is correct.
+under-reports. `meta_reporting.v_age_gender_daily` carries it too.
 
 **`clicks` in the cross-channel view means clicks to the destination.**
 DV360, CM360 and TikTok count only those. Meta's own `clicks` field also
@@ -229,7 +236,8 @@ conversions" rather than "no data", which is worse than nothing.
 
 ## CM360
 
-Source: Keboola → `kebooladv.cm360_hourly`, `cm360_standard_table`, `cm360_reach`.
+Source: Keboola → **`keboola_cm360`** (moved there from `kebooladv` on
+2026-10-12): `cm360_hourly`, `cm360_united`, `cm360_floodlights`, `cm360_reach`.
 
 ### Reporting views — `cm360_reporting`
 
@@ -281,7 +289,7 @@ name anywhere.
 
 ## Meta
 
-Source: Weld → `facebook_ads_weld`. Weld lands about 137 tables; 15 are used.
+Source: Weld → `facebook_ads_weld`. Weld lands about 137 tables; 16 are used.
 
 ### Reporting views — `meta_reporting`
 
@@ -289,7 +297,7 @@ Source: Weld → `facebook_ads_weld`. Weld lands about 137 tables; 15 are used.
 |---|---|---|
 | **`v_ad_daily`** | ad × day | **The main one, and it is wide.** Spend, impressions, clicks, link clicks, reach, frequency, CPM, CPC, CTR — plus every conversion metric as its own column, plus cost-per and ROAS for the common ones. Carries account, campaign, ad set and creative attributes including headline, primary text, CTA and thumbnail. |
 | **`v_demographics_daily`** | account × age × gender × day | Spend, impressions, clicks, reach **and conversions** — post engagements, leads, the lot. Account grain: Meta's demographics feed has no campaign or ad key, so campaign name cannot be added. |
-| **`v_age_gender_weekly`** | campaign × age × gender × **week** | **The only demographic view with a campaign name.** Spend, impressions, all-interaction clicks, and each bucket's share of its campaign. Weekly — it does not roll up to calendar months. No reach, no link clicks, no conversions: the source carries three metrics. |
+| **`v_age_gender_daily`** | campaign × age × gender × day | **The only demographic view with a campaign name.** Spend (native and euro), impressions, all-interaction clicks, and each bucket's share of its campaign. No reach, no link clicks, no conversions — the source carries three metrics. |
 | `v_breakdown_daily` | breakdown slice × day | Age, gender, country, publisher platform, device — the raw five, in one shape. |
 
 **How the conversion columns work.** Meta reports conversions as a long list of
@@ -318,19 +326,15 @@ seed, its results come back NULL and `assert_meta_results_coverage` goes red.
 - Three of the five breakdowns (age/gender, platform+device, region) have **no
   `ad_id`**, so those rows carry no campaign or ad labels at all. Weld does not
   sync it. Sized in `reporting.v_data_gaps`.
-- **`v_age_gender_weekly` is the exception, and it has its own rule.** Its
-  source, `facebook_ads_weld.age_gender`, publishes **rolling 7-day windows**:
-  no `date` column, every row spans `date_start..date_stop` = 6 days, and a new
-  window opens every single day. Each day therefore appears in seven rows.
-  Querying the raw table without a filter returns 28.3M of spend against a true
-  figure near 3.8M. `stg_meta_age_gender` keeps only Monday starts, which are
-  exactly 7 days apart and tile the calendar once — a reduction, not a sample.
-  **The numbers themselves are exact.** Verified 2026-10-02 over Sep 2–29
-  against `ad_roas_insight`: every campaign returned ratio 1.000, diff 0.00.
-- **`v_age_gender_weekly` does not roll up to months.** A week such as
-  2026-09-28..2026-10-04 is half September and half October. Report it by week.
-  For the same reason it carries no `spend_eur` — `dim_fx_rate` is keyed on
-  month and a straddling week has no single correct rate.
+- **`v_age_gender_daily` is the only demographic view with a campaign key**,
+  and it went daily on 2026-10-12. Until then its source published rolling
+  7-day windows with a new window every day, so staging kept only Monday starts
+  to stop each day being counted seven times; an unfiltered `SUM(spend)` on the
+  raw table returned 29.2M against a true ~4M. Weld switched the report to
+  `time_increment: 1` and the columns changed with it — `date_start` and
+  `date_stop` were replaced by a single `date`. Verified: 600,800 rows, 105 days
+  from 2026-06-30, spend 4,456,568.88. It now rolls up to calendar months and
+  carries `spend_eur`, neither of which the weekly grain allowed.
 - **Its CTR is not comparable with `v_ad_daily`'s.** The source carries no
   `inline_link_clicks`, so the column is `clicks_all` and the rate is
   `ctr_all_clicks`. It reads higher. Do not put the two on one chart.
@@ -349,7 +353,7 @@ All three facts **require a date filter on every query**.
 | `fct_meta_ad_daily` | ad × day | Additive metrics only. Source of truth for Meta spend. |
 | `fct_meta_ad_action_daily` | ad × day × metric | **Long, not wide.** A new conversion event adds rows, never columns. Aliases already excluded. |
 | `fct_meta_breakdown_daily` | breakdown slice × day | |
-| `fct_meta_age_gender_weekly` | campaign × age × gender × week | The only Meta demographic fact with a campaign key. Weekly, and deliberately carries no `spend_eur`. |
+| `fct_meta_age_gender_daily` | campaign × age × gender × day | The only Meta demographic fact with a campaign key. |
 | `dim_meta_ad` | ad | Account, campaign, ad set and creative flattened into one row. No dates, no metrics, so it cannot double-count. |
 
 ---
@@ -481,6 +485,22 @@ keywords and search terms follow.
   `SUM`, never `AVG` above that grain, set Looker aggregation to MAX. Same rule
   as `reach`. `retention_25_to_100` is exact, because both rates share the same
   hidden denominator and it cancels.
+- **Always filter `v_geo_daily` to one `location_type`, and default to
+  `LOCATION_OF_PRESENCE`.** Unlike Meta's five breakdowns, these two are **not**
+  symmetric. Measured 2026-10-12 from 2026-09-01:
+
+  | `location_type` | places | spend | share |
+  |---|---|---|---|
+  | `LOCATION_OF_PRESENCE` | 88 | 5,189,208.84 | 93.3% |
+  | `AREA_OF_INTEREST` | 50 | 372,461.32 | 6.7% |
+
+  `LOCATION_OF_PRESENCE` is where the user physically was and covers all
+  delivery. `AREA_OF_INTEREST` exists only where the query named a place —
+  "hotels Paris", "dentist Cluj" — and most searches name none. So this is not
+  a double-count of equal halves: summing both overstates by about **7%**, and
+  charting interest alone shows 7% of your spend while looking like a complete
+  map. Use presence unless the question is specifically "which places were
+  people searching *about*".
 - **`google_ads.youtube_ads` is not a YouTube table, and its spend is a
   duplicate.** It covers all seven channel types, and its `cost_micros` matches
   `campaign_stats` to the cent (23,575 September campaign-days, zero differing,
@@ -508,6 +528,10 @@ keywords and search terms follow.
 | `fct_gads_ad_group_daily` | ad group × day | Excludes PMax by construction. |
 | `fct_gads_ad_daily` | ad × day | Key is **adgroup_id + ad_id**, never ad_id alone. Only Google fact with `video_views`. |
 | `fct_gads_account_daily` | account × day | Exists to reconcile against the campaign rollup. |
+| `fct_gads_geo_daily` | day × ad group × geo × location type × device × network | **Never sum across `location_type`.** |
+| `dim_gads_geo` | location | Delivery-driven, so only places that actually ran. Names from `geo_target`. |
+| `fct_gads_search_term_daily` | day × campaign × ad group × term × match type × status | Breakdown of ad group spend. PMax has no search terms. |
+| `fct_gads_keyword_daily` | day × keyword × device × network | Join `dim_gads_keyword` on **both** adgroup_id and criterion_id. |
 | `fct_gads_campaign_video_daily` | campaign × network × day | Video funnel. **Carries no spend by design** — its source duplicates `campaign_stats` exactly. |
 | `dim_gads_campaign` | campaign | Campaign, account, currency, **real booked flight dates**, budget, recommended budget and bid strategy targets. Driven by delivery. |
 | `dim_gads_ad_group` | ad group | Delivery-driven; names resolve from the fact when the entity sync lags. |
@@ -529,7 +553,7 @@ Both channels stop short of the usual request, and neither gap is fixable here:
 
 | Wanted | Meta | TikTok |
 |---|---|---|
-| Campaign name / objective | **yes, weekly only** — via `v_age_gender_weekly`. The daily `demographics_*` feed still has no `ad_id` or `campaign_id`. | yes |
+| Campaign name / objective | **yes** — via `v_age_gender_daily`. The `demographics_*` feed still has no `ad_id` or `campaign_id`. | yes |
 | Reach | yes | **no** — not in the demographic report |
 | Video views | 3-second only, **not ThruPlay** | **no** at this grain |
 | Post engagements / likes, comments, follows | yes | **no** at this grain |
@@ -542,11 +566,10 @@ video action in the feed is `video_view`, 417,210 of them.
 **Campaign-level age and gender was the long-standing gap, and it is now
 half-closed.** `facebook_ads_weld.age_gender` arrived on 2026-10-02 carrying
 `campaign_id`, which no `demographics_*` table does. It is exact but weekly, so
-`v_age_gender_weekly` answers *"how did this campaign's audience split"* and
-still cannot answer *"how much did we spend on women 35-44 in September"*.
-Closing the other half is one parameter: **`time_increment: 1`** on the Weld
-model, which turns the rolling windows into true daily rows. Until then,
-`v_demographics_daily` remains the daily view and remains account-level.
+`v_age_gender_daily` answers both *"how did this campaign's audience split"*
+and *"how much did we spend on women 35-44 in September"*. The remaining gap is
+conversions: the source carries spend, impressions and all-interaction clicks
+only, so an `age_gender_actions` sibling is still needed.
 
 ---
 
@@ -616,17 +639,29 @@ dependencies. **If a table is not in that file, nothing in this project reads
 it.** A model physically cannot: `ref()` would not resolve and compilation
 fails.
 
-**40 declared, 39 required.** Remove any of those upstream and the run breaks.
+**57 declared, 56 required.** Remove any of those upstream and the run breaks.
 
-### `kebooladv` — Keboola → DV360 and CM360
+### `kebooladv` — Keboola → DV360
 
-12 declared, 11 required.
+9 declared, 8 required. **CM360 left this dataset on 2026-10-12** — see
+`keboola_cm360` below.
 
 | Source table | Read by | Note |
 |---|---|---|
-| `cm360_hourly` | `stg_cm360_hourly` | CM360 backbone — every CM360 dimension. |
-| `cm360_reach` | `stg_cm360_reach` | Non-additive reach, and the only table with advertiserId and advertiser name on the same row. |
-| `cm360_standard_table` | `stg_cm360_campaign_daily` | Only source of CM360 total_conversions. |
+
+### `keboola_cm360` — Keboola → CM360
+
+4 declared, 4 required. **CM360 moved here from `kebooladv` on 2026-10-12**:
+the old tables were dropped, these were created, and the extract went from
+frozen since 2026-09-28 to fresh daily with ~7× the rows.
+
+| Source table | Read by | Note |
+|---|---|---|
+| `cm360_hourly` | `stg_cm360_hourly` | CM360 backbone, hourly. Column names unchanged from the old location — staging needed only a repoint. 11,804 → 82,413 rows. |
+| `cm360_united` | `stg_cm360_united`, `stg_cm360_campaign_daily` | **New, and the largest at 235,821 rows.** Daily rather than hourly, and the first CM360 source carrying **names** (advertiser, campaign, site, placement, ad, creative) plus **country and city**. |
+| `cm360_floodlights` | `stg_cm360_floodlight`, `stg_cm360_campaign_daily` | **Replaces `cm360_standard_table`.** Conversions by Floodlight activity, with revenue and the view-through / click-through split. Carries `advertiserId`, which the old table did not. 23 → 2,026 rows. |
+| `cm360_reach` | `stg_cm360_reach` | Non-additive unique reach. 136 → 439 rows. |
+
 | `fct_dv360_creative_daily` | `stg_dv360_creative` |  |
 | `fct_dv360_floodlight_daily` | `stg_dv360_floodlight` | **EMPTY — 0 rows.** Staged with no mart behind it. Still required: drop it and the run breaks. |
 | `fct_dv360_geo_daily` | `stg_dv360_geo` | Country only, ~61 rows/month. |
@@ -639,11 +674,11 @@ fails.
 
 ### `facebook_ads_weld` — Weld → Meta
 
-15 declared, 15 required.
+16 declared, 16 required.
 
 | Source table | Read by | Note |
 |---|---|---|
-| `age_gender` | `stg_meta_age_gender` | **The only Meta demographic source with `campaign_id`.** Appeared 2026-10-02. Rolling 7-day windows, not days; staging keeps Monday starts only. Does not follow the `demographics_*` naming, so probably a hand-built Weld model. |
+| `age_gender` | `stg_meta_age_gender` | **The only Meta demographic source with `campaign_id`.** Appeared 2026-10-02 as rolling 7-day windows; switched to daily 2026-10-12. Does not follow the `demographics_*` naming, so probably a hand-built Weld model and able to change again. |
 | `account` | `stg_meta_account` | Meta and Google Ads each have one. For Google Ads it is the only source of `currency_code` and of the manager / test_account flags. |
 | `ad` | `stg_meta_ad` | Meta and TikTok each have one, and they are unrelated tables. |
 | `ad_roas_insight` | `assert_meta_spend_reconciliation`, `stg_meta_ad_insight` | Meta backbone — ad x day metrics. |
@@ -679,7 +714,7 @@ fails.
 
 ### `google_ads` — Weld → Google Ads
 
-13 declared, 13 required. **Every stats table here must filter
+18 declared, 18 required. **Every stats table here must filter
 `_weld_deleted_at IS NULL`** — Google Ads is the only source in this project
 that soft-deletes rows.
 
@@ -697,6 +732,11 @@ that soft-deletes rows.
 | `ad_stats` | `stg_gads_ad_daily` | The only stats table with `video_views` at ad level. |
 | `ad_group_criterion` | `stg_gads_keyword` | Keywords and the full Quality Score: score, expected CTR, ad relevance, landing page. |
 | `audience_stats` | `stg_gads_audience_daily` | Keyed on `criterion_id`. The audience NAME needs `user_list` / `user_interest` / `topic`, none declared. |
+| `ad_group_bidding_strategy` | `stg_gads_ad_group_bidding` | 63k rows. Ad-group bid overrides plus the EFFECTIVE target and whether it was set here or inherited from the campaign. No date. |
+| `ad_group_country_stats` | `stg_gads_geo_daily` | 404k rows. **The only geography in the Google Ads stack.** Carries `location_type`. |
+| `geo_target` | `stg_gads_geo_target` | 274k rows. Global location reference list — the name behind every geo id. |
+| `search_term_stats` | `stg_gads_search_term` | 5.8M rows. The actual queries, the matched keyword, and whether each is added or negated. **All metrics arrive as FLOAT64**, cost_micros included. |
+| `keyword_stats` | `stg_gads_keyword_daily` | 969k rows. Keyword performance by day — the history `ad_group_criterion` has never had. **Every id column is STRING here**, unlike every other google_ads table. |
 | `youtube_ads` | `stg_gads_campaign_network_daily` | **The name is wrong.** Campaign × day × network across all seven channel types. Read ONLY for the video quartiles, `video_trueview_views`, `engagements` and `all_conversions`. Its `cost_micros` duplicates `campaign_stats` exactly and is not staged. |
 
 ### What is deliberately excluded

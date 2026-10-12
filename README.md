@@ -152,7 +152,7 @@ number is wrong:
 
 | Assertion | Fires when |
 |---|---|
-| `assert_source_freshness` | a channel stopped delivering |
+| `assert_source_freshness` | any FEED stopped delivering — one row per mart, not per channel, because a connector can drop one table while the backbone keeps flowing |
 | `assert_dv360_creative_coverage` | creative spend drops below the known ~85% |
 | `assert_cm360_hourly_grain` | the base grain gained duplicate rows |
 | `assert_cm360_campaign_reconciliation` | CM360's two reports disagree on impressions |
@@ -321,6 +321,31 @@ either asserted on or surfaced in `v_data_gaps`.
   delivery and mislabels the money. `reporting.v_ad_performance_daily` will
   happily add them, so this needs an answer before it goes on a dashboard.
 
+**CM360**
+
+- **Moved dataset on 2026-10-12.** The `kebooladv` CM360 tables were dropped and
+  recreated in **`keboola_cm360`**. This broke the three staging views in one
+  run, which is how it was found. It was not a cosmetic move — the extract had
+  been frozen since 2026-09-28 in the old location and is fresh daily in the
+  new one, with roughly seven times the rows:
+  `cm360_hourly` 11,804 → 82,413, `cm360_reach` 136 → 439,
+  `cm360_floodlights` 23 → 2,026, plus `cm360_united` at 235,821.
+  `cm360_standard_table` is gone.
+- **`cm360_united` is new and changes two long-standing gaps.** It is daily
+  rather than hourly and is the first CM360 source to carry **names** —
+  advertiser, campaign, site, placement, ad, creative — on the same row as the
+  metrics. `seed_site` was only ever needed because no table had a site name; it
+  is now a fallback, contributing `channel_group` and `is_premium` and nothing
+  else. It also carries **country and city**, the first CM360 geography here.
+- **`cm360_floodlights` replaces `cm360_standard_table` as the conversion
+  source, and is far richer.** The old table gave one collapsed
+  `totalConversions`. This one has activity and activity group, revenue, and the
+  **view-through / click-through split**. It also carries `advertiserId`, which
+  the old one did not — that absence is the entire reason
+  `stg_cm360_advertiser_bridge` exists.
+- Everything else about CM360 is unchanged, including the **unresolved
+  `media_cost`** question. Moving dataset did not change what that column means.
+
 **Meta**
 
 - Weld lands ~137 tables; 14 are declared and the rest are ignored.
@@ -332,24 +357,52 @@ either asserted on or surfaced in `v_data_gaps`.
 - Three of the five breakdowns have no `ad_id`, so those rows cannot be labelled
   below account level. Sized in `v_data_gaps`.
 - **`facebook_ads_weld.age_gender` is the one demographic source with a campaign
-  key**, and it arrived on 2026-10-02. It does not follow the connector's
+  key**, and `meta_reporting.v_age_gender_daily` is the only Meta demographic
+  view that can be labelled with a campaign. It does not follow the connector's
   `demographics_*` naming, which suggests a hand-built Weld model rather than a
-  standard sync — treat it as something that can change without notice.
-  It publishes **rolling 7-day windows, not days**: no `date` column, every row
-  spans `date_start..date_stop` = 6 days, and a new window opens every day. All
-  723,638 rows overlap six of their neighbours, so an unfiltered `SUM(spend)`
-  returns 28.3M against a true figure near 3.8M. `stg_meta_age_gender` keeps
-  only Monday starts, which tile the calendar exactly once. The numbers
-  themselves are exact — verified 2026-10-02 over Sep 2-29 against
-  `ad_roas_insight`, every campaign ratio 1.000 and diff 0.00. The consequence
-  is grain, not accuracy: weekly rows cannot roll up to calendar months and
-  cannot carry `spend_eur`, because `dim_fx_rate` is keyed on month and a week
-  can straddle two. **The fix is `time_increment: 1` on the Weld model.** When
-  that lands, `assert_meta_age_gender_grain` goes red on the first daily row —
-  that is the signal to rewrite the view at daily grain, not a failure.
+  standard sync — treat it as something that can change without notice, because
+  it already has twice.
+  - **2026-10-02:** arrived as **rolling 7-day windows**. No `date` column, every
+    row spanning `date_start..date_stop` = 6 days, a new window opening every
+    day, so each day appeared in seven rows. An unfiltered `SUM(spend)` returned
+    29.2M against a true ~4M. Staging kept only Monday starts, which tile the
+    calendar exactly once — a reduction, not a sample. The numbers themselves
+    were exact: verified over Sep 2-29 against `ad_roas_insight`, every campaign
+    ratio 1.000 and diff 0.00.
+  - **2026-10-12:** Weld switched it to `time_increment: 1`. The schema changed
+    with it — `date_start` and `date_stop` gone, replaced by a single `date`.
+    Verified: 600,800 rows, 105 days from 2026-06-30, spend 4,456,568.88, about
+    42k/day against the 37,867 measured for one September day. The Monday filter
+    and the weekly mart are gone, and the view now rolls up to calendar months
+    and carries `spend_eur` — neither of which weekly grain allowed.
+  - If it ever reverts, `date_start`/`date_stop` reappear and
+    `stg_meta_age_gender` fails on a missing column, which is louder than any
+    assertion. `assert_meta_age_gender_grain` now watches for duplicates instead.
 
 **Google Ads**
 
+- **Geography landed 2026-10-12.** `v_geo_daily` carries `location_type`, and
+  the two values are NOT symmetric — measured from 2026-09-01,
+  `LOCATION_OF_PRESENCE` is 5,189,208.84 across 88 places while
+  `AREA_OF_INTEREST` is 372,461.32 across 50, i.e. 6.7%. Presence is where the
+  user physically was and covers all delivery; interest exists only where the
+  query named a place, which most do not. **Default to presence.** Summing both
+  overstates by ~7%; charting interest alone shows 7% of spend while looking
+  like a complete map. Names resolve through `geo_target`, a 274k-row global
+  reference list; `dim_gads_geo` is built from delivery instead so only places
+  that actually ran appear, and unresolved ids surface as `gads_geo_without_name`.
+- **Ad-group bid settings** are now folded into `dim_gads_ad_group`, with the
+  same caveat as campaign bidding: no date, so it is today's setting stamped on
+  every historical row. `effective_target_cpa_source` says whether a target was
+  set on the ad group or inherited from the campaign.
+- **Search terms and keyword history landed 2026-10-12.** Both tables had been
+  syncing daily and sitting unread until a source audit found them — the same
+  way `youtube_ads` turned up. `gads_reporting.v_search_terms` answers what
+  people actually typed and flags terms nobody has added or negated
+  (`needs_decision`, sized in `v_data_gaps` as `gads_search_term_undecided`).
+  `gads_reporting.v_keyword_daily` gives keyword performance over time with
+  Quality Score attached as a **label** — filter on it, never chart it over
+  date. The score has no history, so today's value is stamped on every past row.
 - **`google_ads.youtube_ads` is not a YouTube table.** It is campaign x day x
   `ad_network_type` across all seven channel types — SEARCH, PERFORMANCE_MAX,
   DEMAND_GEN, VIDEO, DISPLAY, MULTI_CHANNEL, SHOPPING. YouTube is only where
