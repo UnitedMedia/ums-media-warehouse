@@ -1,0 +1,43 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.meta_marts,
+  name: "fct_meta_age_gender_daily",
+  tags: ["meta", "marts"],
+  description: "Meta delivery at day x campaign x age x gender. The ONLY Meta demographic fact with a campaign key. Daily since 2026-10-12, so it rolls up to calendar months and carries euros.",
+  bigquery: {
+    partitionBy: "date",
+    clusterBy: ["campaign_id", "age", "gender"]
+  },
+  assertions: {
+    uniqueKey: ["date", "campaign_id", "age", "gender"],
+    nonNull: ["date", "campaign_id"]
+  },
+  columns: {
+    age: "Meta's own bucket: 13-17, 18-24, 25-34, 35-44, 45-54, 55-64, 65+, unknown.",
+    clicks_all: "ALL-INTERACTION clicks. The source has no link clicks, so rates derived here will NOT match v_ad_daily.",
+    spend: "Account currency. v_age_gender_daily converts it."
+  }
+}
+
+-- Replaces fct_meta_age_gender_weekly, which existed only because the
+-- source published rolling 7-day windows. Weld switched it to
+-- time_increment: 1 on 2026-10-12 and the weekly workaround is gone.
+--
+-- NO reach, NO link clicks, NO conversions: the source carries three
+-- metrics. fct_meta_demographic_action_daily has age x gender conversions
+-- but only at ACCOUNT grain, so the two cannot be joined -- that would be
+-- the fan-out this table exists to avoid.
+
+SELECT
+  date,
+  account_id,
+  campaign_id,
+  age,
+  gender,
+  SUM(spend)       AS spend,
+  SUM(impressions) AS impressions,
+  SUM(clicks_all)  AS clicks_all
+FROM ${ref("stg_meta_age_gender")}
+WHERE date IS NOT NULL
+  AND campaign_id IS NOT NULL
+GROUP BY 1, 2, 3, 4, 5

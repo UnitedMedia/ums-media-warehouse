@@ -56,6 +56,10 @@ WITH latest AS (
   SELECT '${constants.CHANNEL.meta}', 'demographics', MAX(date)
   FROM ${ref("fct_meta_demographic_daily")}
 
+  UNION ALL
+  SELECT '${constants.CHANNEL.meta}', 'age x gender', MAX(date)
+  FROM ${ref("fct_meta_age_gender_daily")}
+
   -- TikTok ---------------------------------------------------------------
   UNION ALL
   SELECT '${constants.CHANNEL.tiktok}', 'campaign daily', MAX(date)
@@ -82,10 +86,6 @@ WITH latest AS (
   SELECT '${constants.CHANNEL.gads}', 'audience daily', MAX(date)
   FROM ${ref("fct_gads_audience_daily")}
 )
-
--- meta_marts.fct_meta_age_gender_weekly is deliberately absent: it is
--- WEEKLY, so its newest date is up to seven days behind by construction
--- and would read as stale every day of the week but one.
 
 SELECT
   channel,

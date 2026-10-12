@@ -3,39 +3,33 @@ config {
   schema: constants.SCHEMAS.meta_staging,
   name: "stg_meta_age_gender",
   tags: ["meta", "staging"],
-  description: "Meta age x gender at CAMPAIGN grain, reduced from overlapping rolling windows to disjoint ISO weeks. The only Meta demographic source carrying campaign_id. Weekly, not daily — see the WHERE clause for why.",
+  description: "Meta age x gender at CAMPAIGN x DAY. The only Meta demographic source carrying campaign_id — every demographics_* table stops at account level.",
   columns: {
-    week_start_date: "Monday. The source's date_start, kept only where it falls on a Monday.",
-    week_end_date: "Sunday, six days after week_start_date. The source's date_stop.",
-    campaign_id: "What makes this table worth having. Every other Meta demographic breakdown stops at account level.",
-    clicks_all: "ALL-INTERACTION clicks, Meta's `clicks`. NOT link clicks — the source carries no inline_link_clicks, so CTR and CPC from this table are NOT comparable with v_ad_daily, which uses link_clicks."
+    campaign_id: "What makes this table worth having. No demographics_* table has it.",
+    clicks_all: "ALL-INTERACTION clicks, Meta's `clicks`. NOT link clicks — the source carries no inline_link_clicks, so CTR and CPC here are NOT comparable with v_ad_daily, which uses link_clicks."
   }
 }
 
--- WHY THE MONDAY FILTER
+-- DAILY SINCE 2026-10-12. Weld switched this custom report to
+-- time_increment: 1 and the schema changed with it: date_start and
+-- date_stop are gone, replaced by a single `date`.
 --
--- The source has no `date` column. Every row spans date_start..date_stop,
--- which is always a 7-day window, and a new window opens EVERY DAY. So a
--- given day's spend appears in seven separate rows and the raw table is
--- non-additive: SUM(spend) over all 723,638 rows returns 28.3M against a
--- true figure near 3.8M.
+-- What it used to be, and why the old code looked the way it did: every
+-- row was a ROLLING 7-DAY WINDOW, with a new window starting every day, so
+-- each day's spend appeared in seven rows. SUM(spend) over the whole table
+-- returned 29.2M against a true figure near 4M. Staging kept only Monday
+-- starts, which tile the calendar exactly once.
 --
--- Monday starts are exactly 7 days apart and each window is exactly 7 days
--- long, so they tile the calendar once, with no gap and no overlap. The
--- filter is a reduction, not a sample: nothing is dropped except the
--- duplicate views of days already counted.
+-- None of that is needed now. Verified 2026-10-12: 600,800 rows, 105 days
+-- from 2026-06-30, spend 4,456,568.88 -- about 42k/day, consistent with the
+-- 37,867 measured for a single day in September.
 --
--- Verified 2026-10-02 over Sep 2-29 against ad_roas_insight: every campaign
--- returned ratio 1.000 and diff 0.00.
---
--- IF WELD EVER SETS time_increment: 1, this filter becomes WRONG — it would
--- silently keep one day in seven. assert_meta_age_gender_grain fires on the
--- first row whose window is not 6 days, which is the signal to rewrite this
--- view at daily grain and rename the mart.
+-- assert_meta_age_gender_grain now watches for duplicates instead of for
+-- window length. If Weld ever reverts, date_start/date_stop come back and
+-- this view fails on a missing column, which is loud enough.
 
 SELECT
-  DATE(date_start)             AS week_start_date,
-  DATE(date_stop)              AS week_end_date,
+  DATE(date)                   AS date,
   CAST(account_id  AS STRING)  AS account_id,
   CAST(campaign_id AS STRING)  AS campaign_id,
   campaign_name                AS campaign_name_raw,
@@ -45,9 +39,7 @@ SELECT
   CAST(impressions AS INT64)   AS impressions,
   CAST(clicks      AS INT64)   AS clicks_all
 FROM ${ref({ schema: constants.DATASETS.meta, name: "age_gender" })}
-WHERE EXTRACT(DAYOFWEEK FROM DATE(date_start)) = 2   -- 1 = Sunday, 2 = Monday
-  AND DATE_DIFF(DATE(date_stop), DATE(date_start), DAY) = 6
 QUALIFY ROW_NUMBER() OVER (
-  PARTITION BY DATE(date_start), CAST(campaign_id AS STRING), age, gender
+  PARTITION BY DATE(date), CAST(campaign_id AS STRING), age, gender
   ORDER BY _weld_synced DESC
 ) = 1
