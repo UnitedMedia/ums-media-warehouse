@@ -28,4 +28,4 @@ SELECT
 
   impressions AS impressions,
   clicks      AS clicks
-FROM ${ref({ schema: constants.DATASETS.kebooladv, name: "cm360_reach" })}
+FROM ${ref({ schema: constants.DATASETS.cm360, name: "cm360_reach" })}

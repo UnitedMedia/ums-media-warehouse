@@ -26,12 +26,35 @@ const KEBOOLA_TABLES = [
                                   // TrueView views. Declared so the
                                   // graph shows we know it is there.
 
-  // CM360
-  "cm360_hourly",                 // backbone — every CM360 dimension
-  "cm360_standard_table",         // thin; only source of totalConversions
-  "cm360_reach",                  // NON-ADDITIVE; also the only table
-                                  // carrying advertiserId and advertiser
-                                  // name on the same row
+];
+
+// ---------------------------------------------------------------------
+// keboola_cm360 — Keboola extraction for CM360
+//
+// CM360 lived in kebooladv until 2026-10-12, when those tables were
+// DROPPED and recreated here. The move was not cosmetic: the extract had
+// been frozen since 2026-09-28 in the old location and is fresh daily in
+// this one, with roughly seven times the rows.
+//
+//   cm360_hourly         11,804 -> 82,413
+//   cm360_reach             136 -> 439
+//   cm360_floodlights        23 -> 2,026
+//   cm360_united              — -> 235,821   (new)
+//   cm360_standard_table     42 -> gone
+// ---------------------------------------------------------------------
+const CM360_TABLES = [
+  "cm360_hourly",      // backbone. Column names unchanged from the old
+                       // location, so staging needed only a repoint.
+  "cm360_united",      // NEW and the largest. Daily rather than hourly, and
+                       // the first CM360 source to carry NAMES — advertiser,
+                       // campaign, site, placement, ad, creative — plus
+                       // country and city. Replaces the seed_site lookup and
+                       // the advertiser-name bridge.
+  "cm360_floodlights", // replaces cm360_standard_table as the conversion
+                       // source, and is far richer: activity and activity
+                       // group, revenue, and the view-through / click-through
+                       // split that the old table collapsed into one number.
+  "cm360_reach",       // NON-ADDITIVE unique reach.
 ];
 
 // ---------------------------------------------------------------------
@@ -250,6 +273,14 @@ GOOGLE_ADS_TABLES.forEach(name => {
   declare({
     database: constants.RAW_PROJECT,
     schema: constants.DATASETS.gads,
+    name: name,
+  });
+});
+
+CM360_TABLES.forEach(name => {
+  declare({
+    database: constants.RAW_PROJECT,
+    schema: constants.DATASETS.cm360,
     name: name,
   });
 });

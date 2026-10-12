@@ -1,0 +1,56 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.cm360_staging,
+  name: "stg_cm360_floodlight",
+  tags: ["cm360", "staging"],
+  description: "CM360 Floodlight conversions at activity x placement x ad x creative x day. Replaces the old cm360_standard_table, which gave a single collapsed totalConversions and nothing else.",
+  columns: {
+    activity: "The Floodlight activity name — what the conversion actually was. The old standard report had no equivalent; every conversion was one undifferentiated number.",
+    view_through_conversions: "Conversions credited to an IMPRESSION with no click. A separate path from click-through — never add the two and call it total, use total_conversions.",
+    click_through_conversions: "Conversions credited to a CLICK.",
+    total_conversions: "Google's own total. Not necessarily view_through + click_through — let it be the total rather than deriving one."
+  }
+}
+
+-- Arrived 2026-10-12 with the move to keboola_cm360, where it jumped from
+-- 23 rows to 2,026. The README and CATALOG both describe CM360 floodlight
+-- data as empty; that is no longer true.
+--
+-- Unlike cm360_standard_table this carries advertiserId, so the advertiser
+-- name no longer has to be bridged through cm360_reach.
+
+SELECT
+  CAST(profileId AS STRING)         AS profile_id,
+  profileName                       AS profile_name,
+  ${metrics.parseCm360Date("date")} AS date,
+
+  CAST(advertiserId AS STRING)      AS advertiser_id,
+  NULLIF(TRIM(advertiser), '')      AS advertiser_name,
+  CAST(campaignId   AS STRING)      AS campaign_id,
+  NULLIF(TRIM(campaign), '')        AS campaign_name,
+  CAST(siteId       AS STRING)      AS site_id,
+  NULLIF(TRIM(site), '')            AS site_name,
+  CAST(placementId  AS STRING)      AS placement_id,
+  NULLIF(TRIM(placement), '')       AS placement_name,
+  CAST(adId         AS STRING)      AS ad_id,
+  NULLIF(TRIM(ad), '')              AS ad_name,
+  CAST(creativeId   AS STRING)      AS creative_id,
+  NULLIF(TRIM(creative), '')        AS creative_name,
+
+  CAST(activityId      AS STRING)   AS activity_id,
+  NULLIF(TRIM(activity), '')        AS activity,
+  CAST(activityGroupId AS STRING)   AS activity_group_id,
+  NULLIF(TRIM(activityGroup), '')   AS activity_group,
+  CAST(floodlightConfigId AS STRING) AS floodlight_config_id,
+
+  totalConversions                  AS total_conversions,
+  totalConversionsRevenue           AS total_conversions_revenue,
+  activityViewThroughConversions    AS view_through_conversions,
+  activityClickThroughConversions   AS click_through_conversions,
+  activityViewThroughRevenue        AS view_through_revenue,
+  activityClickThroughRevenue       AS click_through_revenue,
+
+  -- stored ratios, audit only
+  activityPerClick                  AS src_activity_per_click,
+  activityPerThousandImpressions    AS src_activity_per_thousand_impressions
+FROM ${ref({ schema: constants.DATASETS.cm360, name: "cm360_floodlights" })}

@@ -14,7 +14,8 @@ config {
   },
   columns: {
     first_active_date: "DERIVED from delivery, NOT the CM360 Placement Start Date field — that field is not in the report. A placement booked but not yet delivering has no row here at all. Substituting this for a real flight date is wrong for pacing.",
-    is_site_unmapped: "TRUE where seed_site has no row for this site_id. assert_cm360_site_mapping watches the spend behind these."
+    is_site_unmapped: "TRUE where NEITHER the source nor seed_site supplied a name. Since 2026-10-12 cm360_united carries site_name directly, so this should now be rare — seed_site is a fallback, not the primary route.",
+    placement_name: "From cm360_united. No CM360 source carried a placement NAME before 2026-10-12; placements were ids only."
   }
 }
 
@@ -27,7 +28,22 @@ config {
 -- from it alone would reset every night. That fact carries
 -- requirePartitionFilter, hence the explicit date predicate.
 
-WITH activity AS (
+-- NAMES NOW COME FROM THE SOURCE. Until 2026-10-12 no CM360 table carried
+-- a site name, which is why seed_site exists and why 69 rows had to be
+-- typed in by hand. cm360_united carries site, placement, ad and creative
+-- names on the delivery row itself, so seed_site drops to a fallback and
+-- gains channel_group / is_premium as its only unique contribution.
+
+WITH names AS (
+  SELECT
+    placement_id,
+    ANY_VALUE(site_name)      AS site_name_src,
+    ANY_VALUE(placement_name) AS placement_name
+  FROM ${ref("stg_cm360_united")}
+  WHERE placement_id IS NOT NULL
+  GROUP BY placement_id
+),
+activity AS (
   SELECT
     placement_id,
     MIN(date) AS first_active_date,
@@ -39,7 +55,9 @@ WITH activity AS (
 SELECT
   h.placement_id,
   h.site_id,
-  COALESCE(s.site_name, CONCAT('site_', h.site_id))     AS site_name,
+  COALESCE(n.site_name_src, s.site_name,
+           CONCAT('site_', h.site_id))                  AS site_name,
+  n.placement_name,
   s.channel_group,
   s.is_premium,
   h.campaign_id,
@@ -49,10 +67,11 @@ SELECT
   a.first_active_date,
   a.last_active_date,
   DATE_DIFF(a.last_active_date, a.first_active_date, DAY) + 1 AS active_day_span,
-  (s.site_name IS NULL)                                 AS is_site_unmapped
+  (n.site_name_src IS NULL AND s.site_name IS NULL)     AS is_site_unmapped
 FROM ${ref("stg_cm360_hourly")} h
 LEFT JOIN ${ref("seed_site")} s USING (site_id)
 LEFT JOIN ${ref("dim_cm360_campaign")} c USING (campaign_id)
 LEFT JOIN activity a USING (placement_id)
+LEFT JOIN names    n USING (placement_id)
 WHERE h.placement_id IS NOT NULL
-GROUP BY 1,2,3,4,5,6,7,8,9,10,11,13
+GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,14

@@ -1,0 +1,53 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.cm360_staging,
+  name: "stg_cm360_united",
+  tags: ["cm360", "staging"],
+  description: "CM360 delivery at DAY x placement x ad x creative x country x city, WITH NAMES. The first CM360 source carrying advertiser, campaign, site, placement, ad and creative names on the same row as the metrics — and the first with geography.",
+  columns: {
+    site_name: "Direct from the source. seed_site exists only because no earlier CM360 table had this; 69 rows of hand-maintained lookup are no longer the only route to a site name.",
+    country: "CM360 geography, which did not exist in this warehouse before 2026-10-12.",
+    city: "Finer than country. Expect a long tail and a lot of nulls.",
+    media_cost: "Still the same unresolved column as everywhere else in CM360 — see the README. Moving dataset did not change what it means."
+  }
+}
+
+-- Arrived 2026-10-12 with the move to keboola_cm360, 235,821 rows and the
+-- largest CM360 table. DAILY, not hourly: use cm360_hourly for dayparting
+-- and this for everything else.
+--
+-- SAME SPEND, DIFFERENT CUT. This is cm360_hourly rolled to day and split
+-- by country and city instead of hour. Never union the two, and never join
+-- them on date alone.
+
+SELECT
+  CAST(profileId AS STRING)         AS profile_id,
+  profileName                       AS profile_name,
+  ${metrics.parseCm360Date("date")} AS date,
+
+  CAST(advertiserId AS STRING)      AS advertiser_id,
+  NULLIF(TRIM(advertiser), '')      AS advertiser_name,
+  CAST(campaignId   AS STRING)      AS campaign_id,
+  NULLIF(TRIM(campaign), '')        AS campaign_name,
+  CAST(siteId       AS STRING)      AS site_id,
+  NULLIF(TRIM(site), '')            AS site_name,
+  CAST(placementId  AS STRING)      AS placement_id,
+  NULLIF(TRIM(placement), '')       AS placement_name,
+  CAST(adId         AS STRING)      AS ad_id,
+  NULLIF(TRIM(ad), '')              AS ad_name,
+  CAST(creativeId   AS STRING)      AS creative_id,
+  NULLIF(TRIM(creative), '')        AS creative_name,
+  NULLIF(TRIM(landingPageUrl), '')  AS landing_page_url,
+
+  NULLIF(TRIM(country), '')         AS country,
+  NULLIF(TRIM(city), '')            AS city,
+
+  impressions                       AS impressions,
+  clicks                            AS clicks,
+  activeViewViewableImpressions     AS viewable_impressions,
+  richMediaVideoViews               AS video_views,
+  mediaCost                         AS media_cost,
+
+  activeViewPercentageViewableImpressions AS src_pct_viewable,
+  effectiveCpm                            AS src_effective_cpm
+FROM ${ref({ schema: constants.DATASETS.cm360, name: "cm360_united" })}

@@ -3,17 +3,61 @@ config {
   schema: constants.SCHEMAS.cm360_staging,
   name: "stg_cm360_campaign_daily",
   tags: ["cm360", "staging"],
-  description: "The thin CM360 'standard' report. Its only unique contribution is total_conversions. It carries an advertiser NAME but no advertiserId — which is why stg_cm360_advertiser_bridge exists."
+  description: "CM360 at campaign x day: delivery from cm360_united, conversions from cm360_floodlights. Rebuilt 2026-10-12 — its old source, cm360_standard_table, was dropped in the move to keboola_cm360.",
+  columns: {
+    total_conversions: "Summed across Floodlight activities. The old standard report gave one collapsed number; stg_cm360_floodlight now has the per-activity detail behind this total.",
+    advertiser_name: "Now carried on the fact itself. The old source had an advertiser NAME but no advertiserId, which is the entire reason stg_cm360_advertiser_bridge exists."
+  }
 }
 
+-- REBUILT, not repointed. cm360_standard_table no longer exists.
+--
+-- It was the only source of totalConversions, and it carried no
+-- advertiserId and no conversion detail. Its replacement is two tables:
+--   * cm360_united      -> impressions and clicks, daily, with names
+--   * cm360_floodlights -> conversions, by activity, with revenue and the
+--                          view-through / click-through split
+--
+-- Conversions are summed across activities here because that is what the
+-- old column meant. Anyone wanting the breakdown should read
+-- stg_cm360_floodlight directly rather than taking this apart.
+
+WITH delivery AS (
+  SELECT
+    date,
+    campaign_id,
+    ANY_VALUE(profile_id)      AS profile_id,
+    ANY_VALUE(profile_name)    AS profile_name,
+    ANY_VALUE(campaign_name)   AS campaign_name,
+    ANY_VALUE(advertiser_id)   AS advertiser_id,
+    ANY_VALUE(advertiser_name) AS advertiser_name,
+    SUM(impressions)           AS impressions,
+    SUM(clicks)                AS clicks
+  FROM ${ref("stg_cm360_united")}
+  WHERE campaign_id IS NOT NULL
+  GROUP BY date, campaign_id
+),
+conversions AS (
+  SELECT
+    date,
+    campaign_id,
+    SUM(total_conversions)         AS total_conversions,
+    SUM(total_conversions_revenue) AS total_conversions_revenue
+  FROM ${ref("stg_cm360_floodlight")}
+  WHERE campaign_id IS NOT NULL
+  GROUP BY date, campaign_id
+)
 SELECT
-  CAST(profileId AS STRING)         AS profile_id,
-  profileName                       AS profile_name,
-  ${metrics.parseCm360Date("date")} AS date,
-  CAST(campaignId AS STRING)        AS campaign_id,
-  NULLIF(TRIM(campaign), '')        AS campaign_name,
-  NULLIF(TRIM(advertiser), '')      AS advertiser_name,
-  impressions                       AS impressions,
-  clicks                            AS clicks,
-  totalConversions                  AS total_conversions
-FROM ${ref({ schema: constants.DATASETS.kebooladv, name: "cm360_standard_table" })}
+  d.profile_id,
+  d.profile_name,
+  d.date,
+  d.campaign_id,
+  d.campaign_name,
+  d.advertiser_id,
+  d.advertiser_name,
+  d.impressions,
+  d.clicks,
+  c.total_conversions,
+  c.total_conversions_revenue
+FROM delivery d
+LEFT JOIN conversions c USING (date, campaign_id)

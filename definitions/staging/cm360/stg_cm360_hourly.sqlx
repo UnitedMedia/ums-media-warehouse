@@ -46,7 +46,7 @@ SELECT
   activeViewPercentageViewableImpressions                    AS src_pct_viewable,
   effectiveCpm                                               AS src_effective_cpm
 
-FROM ${ref({ schema: constants.DATASETS.kebooladv, name: "cm360_hourly" })}
+FROM ${ref({ schema: constants.DATASETS.cm360, name: "cm360_hourly" })}
 
 -- If the source ever starts delivering duplicate rows at this grain,
 -- add:

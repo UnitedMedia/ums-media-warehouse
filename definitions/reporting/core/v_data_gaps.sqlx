@@ -32,7 +32,7 @@ WITH gaps AS (
     '${constants.CHANNEL.cm360}',
     'cm360_unmapped_site',
     p.site_id,
-    'No row in seed_site, so the dashboard shows site_<id>. Populate from CM360 Admin > Sites.',
+    'Neither cm360_united nor seed_site supplied a site name, so the dashboard shows site_<id>. Since 2026-10-12 the source carries site_name directly, so this should be rare — seed_site is now only needed for channel_group and is_premium.',
     COUNT(*),
     CAST(SUM(f.media_cost) AS FLOAT64)
   FROM ${ref("fct_cm360_placement_daily")} f

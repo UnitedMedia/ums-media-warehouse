@@ -23,7 +23,18 @@ config {
 -- stg_cm360_hourly is ONE DAY wide (confirmed 2026-10-05), so anything
 -- derived from it alone would reset every night. That table carries
 -- requirePartitionFilter, hence the explicit date predicate.
-WITH activity AS (
+-- cm360_united and cm360_floodlights both carry advertiserId AND the
+-- advertiser name on the same row, which no CM360 source did before
+-- 2026-10-12. The reach bridge stays as a fallback for advertisers that
+-- appear only in cm360_reach.
+
+WITH united_names AS (
+  SELECT advertiser_id, ANY_VALUE(advertiser_name) AS advertiser_name_src
+  FROM ${ref("stg_cm360_united")}
+  WHERE advertiser_id IS NOT NULL AND advertiser_name IS NOT NULL
+  GROUP BY advertiser_id
+),
+activity AS (
   SELECT advertiser_id, MIN(date) AS first_active_date, MAX(date) AS last_active_date
   FROM ${ref("fct_cm360_placement_hourly")}
   WHERE ${constants.allPartitions()}
@@ -31,12 +42,14 @@ WITH activity AS (
 )
 SELECT
   h.advertiser_id,
-  COALESCE(b.advertiser_name, CONCAT('advertiser_', h.advertiser_id)) AS advertiser_name,
-  (b.advertiser_name IS NULL)                                         AS is_name_missing,
+  COALESCE(u.advertiser_name_src, b.advertiser_name,
+           CONCAT('advertiser_', h.advertiser_id))                    AS advertiser_name,
+  (u.advertiser_name_src IS NULL AND b.advertiser_name IS NULL)       AS is_name_missing,
   a.first_active_date,
   a.last_active_date
 FROM ${ref("stg_cm360_hourly")} h
 LEFT JOIN ${ref("stg_cm360_advertiser_bridge")} b USING (advertiser_id)
 LEFT JOIN activity a USING (advertiser_id)
+LEFT JOIN united_names u USING (advertiser_id)
 WHERE h.advertiser_id IS NOT NULL
 GROUP BY 1, 2, 3, 4, 5
