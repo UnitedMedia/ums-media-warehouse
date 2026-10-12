@@ -1,0 +1,22 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.gads_staging,
+  name: "stg_gads_geo_target",
+  tags: ["gads", "staging"],
+  description: "Google's location reference list. The name lookup behind every geo id. No date, no account — a global constant table shared by every advertiser.",
+  columns: {
+    canonical_name: "The full path, e.g. 'Bucharest,Bucuresti,Romania'. Use this when a bare name is ambiguous — there are a lot of places called Springfield.",
+    target_type: "Country, Region, City, Postal Code, Airport and so on. Filter on it to pick a geographic resolution."
+  }
+}
+
+SELECT
+  CAST(id AS STRING)  AS geo_target_id,
+  name                AS geo_name,
+  canonical_name,
+  country_code,
+  target_type         AS geo_target_type,
+  status              AS geo_status,
+  parent_geo_target
+FROM ${ref({ schema: constants.DATASETS.gads, name: "geo_target" })}
+QUALIFY ROW_NUMBER() OVER (PARTITION BY id ORDER BY _weld_synced DESC) = 1

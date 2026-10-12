@@ -1,0 +1,32 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.gads_staging,
+  name: "stg_gads_ad_group_bidding",
+  tags: ["gads", "staging"],
+  description: "Google Ads bid settings per AD GROUP. CURRENT STATE — no date column, same as the campaign-level table. The effective_* columns are the useful ones.",
+  columns: {
+    effective_target_cpa: "The target actually in force, whether set here or inherited from the campaign. effective_target_cpa_source says which.",
+    effective_target_cpa_source: "AD_GROUP or CAMPAIGN. Without this you cannot tell a deliberate ad-group target from an inherited one.",
+    cpc_bid: "Manual CPC bid. NULL under an automated strategy, which is most campaigns."
+  }
+}
+
+SELECT
+  CAST(ad_group_id AS STRING)                     AS adgroup_id,
+  CAST(account_id  AS STRING)                     AS account_id,
+
+  ${metrics.micros("cpc_bid_micros")}             AS cpc_bid,
+  ${metrics.micros("cpm_bid_micros")}             AS cpm_bid,
+  ${metrics.micros("cpv_bid_micros")}             AS cpv_bid,
+  ${metrics.micros("percent_cpc_bid_micros")}     AS percent_cpc_bid,
+
+  ${metrics.micros("target_cpa_micros")}          AS target_cpa,
+  ${metrics.micros("target_cpm_micros")}          AS target_cpm,
+  target_roas,
+
+  ${metrics.micros("effective_target_cpa_micros")} AS effective_target_cpa,
+  effective_target_cpa_source,
+  effective_target_roas,
+  effective_target_roas_source
+FROM ${ref({ schema: constants.DATASETS.gads, name: "ad_group_bidding_strategy" })}
+QUALIFY ROW_NUMBER() OVER (PARTITION BY ad_group_id ORDER BY _weld_synced DESC) = 1

@@ -1,0 +1,41 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.gads_staging,
+  name: "stg_gads_geo_daily",
+  tags: ["gads", "staging"],
+  description: "Google Ads delivery by location: ad group x geo target x location type x device x network x day. The only source of geography anywhere in the Google Ads stack.",
+  columns: {
+    geo_target_id: "Google's numeric location id. Meaningless alone — dim_gads_geo resolves it to a name through geo_target.",
+    location_type: "PART OF THE GRAIN, and the thing people get wrong. LOCATION_OF_PRESENCE is where the user actually was; AREA_OF_INTEREST is a place they were searching about. The same click can appear under both, so summing across location_type DOUBLE COUNTS."
+  }
+}
+
+-- location_type is not an attribute, it is a second lens on the same
+-- delivery. Google reports a search for 'hotels in Paris' made from
+-- Bucharest under BOTH Romania (presence) and France (interest). Always
+-- filter to one, exactly like Meta's breakdown_type.
+--
+-- _weld_deleted_at IS NULL is NOT optional, as everywhere in google_ads.
+
+SELECT
+  DATE(date)                        AS date,
+  CAST(account_id AS STRING)        AS account_id,
+  account_descriptive_name          AS account_name,
+  CAST(campaign_id AS STRING)       AS campaign_id,
+  campaign_name,
+  CAST(ad_group_id AS STRING)       AS adgroup_id,
+  ad_group_name                     AS adgroup_name,
+  CAST(country_criterion_id AS STRING) AS geo_target_id,
+  location_type,
+  device,
+  ad_network_type,
+
+  impressions,
+  clicks,
+  interactions,
+  conversions,
+  conversions_value,
+  view_through_conversions,
+  ${metrics.micros("cost_micros")}  AS spend
+FROM ${ref({ schema: constants.DATASETS.gads, name: "ad_group_country_stats" })}
+WHERE _weld_deleted_at IS NULL

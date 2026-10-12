@@ -1,0 +1,41 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.gads_marts,
+  name: "fct_gads_geo_daily",
+  tags: ["gads", "marts"],
+  description: "Google Ads delivery by location: day x ad group x geo target x location type x device x network. NEVER sum across location_type — LOCATION_OF_PRESENCE and AREA_OF_INTEREST are two views of the same click.",
+  bigquery: {
+    partitionBy: "date",
+    clusterBy: ["account_id", "campaign_id", "geo_target_id"]
+  },
+  assertions: {
+    uniqueKey: ["date", "adgroup_id", "geo_target_id", "location_type", "device", "ad_network_type"],
+    nonNull: ["date", "geo_target_id"]
+  },
+  columns: {
+    location_type: "PART OF THE GRAIN. Summing across it double counts — a search for 'hotels in Paris' made from Bucharest is reported under Romania as presence AND France as interest.",
+    spend: "AD GROUP spend, so Performance Max is absent. Never total Google Ads money from here."
+  }
+}
+
+SELECT
+  date,
+  account_id,
+  campaign_id,
+  adgroup_id,
+  geo_target_id,
+  location_type,
+  device,
+  ad_network_type,
+
+  SUM(impressions)              AS impressions,
+  SUM(clicks)                   AS clicks,
+  SUM(interactions)             AS interactions,
+  SUM(conversions)              AS conversions,
+  SUM(conversions_value)        AS conversions_value,
+  SUM(view_through_conversions) AS view_through_conversions,
+  SUM(spend)                    AS spend
+FROM ${ref("stg_gads_geo_daily")}
+WHERE date IS NOT NULL
+  AND geo_target_id IS NOT NULL
+GROUP BY 1, 2, 3, 4, 5, 6, 7, 8

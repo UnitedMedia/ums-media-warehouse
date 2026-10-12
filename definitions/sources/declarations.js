@@ -197,6 +197,20 @@ const GOOGLE_ADS_TABLES = [
                        // table is a Quality Score snapshot with no date.
                        // Every id column is a STRING here, unlike every
                        // other google_ads table.
+
+  // PHASE 3b — geography and ad-group bidding. Both found unread in the
+  // 2026-10-12 source audit.
+  "ad_group_country_stats",    // 404k rows. Google Ads has NO geography in
+                               // this project without it. Carries
+                               // location_type, which separates where the
+                               // user WAS from what they were interested in.
+  "geo_target",                // 274k rows. The name lookup for
+                               // country_criterion_id. Without it geography
+                               // is a column of numeric ids.
+  "ad_group_bidding_strategy", // 63k rows. Ad-group bid overrides and the
+                               // EFFECTIVE target, which resolves whether a
+                               // target came from the ad group or was
+                               // inherited from the campaign.
 ];
 
 // ---------------------------------------------------------------------

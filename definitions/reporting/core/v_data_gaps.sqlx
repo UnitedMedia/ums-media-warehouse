@@ -203,6 +203,19 @@ WITH gaps AS (
 
   UNION ALL
 
+  -- Google Ads: locations that delivered but have no name in geo_target
+  SELECT
+    '${constants.CHANNEL.gads}',
+    'gads_geo_without_name',
+    geo_target_id,
+    'Delivered spend against a location id that google_ads.geo_target does not list, so it reads as geo_<id>. Usually a retired location code.',
+    1,
+    CAST(lifetime_spend AS FLOAT64)
+  FROM ${ref("dim_gads_geo")}
+  WHERE is_name_missing
+
+  UNION ALL
+
   -- TikTok: spend the ad-level report cannot attribute to a named ad
   SELECT
     '${constants.CHANNEL.tiktok}',

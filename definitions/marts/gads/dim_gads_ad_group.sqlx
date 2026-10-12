@@ -12,7 +12,10 @@ config {
     nonNull: ["adgroup_id", "campaign_id"]
   },
   columns: {
-    is_entity_missing: "TRUE where the ad group delivered but has no row in google_ads.ad_group, so its type, status and rotation mode are unknown. Names still resolve from the fact."
+    is_entity_missing: "TRUE where the ad group delivered but has no row in google_ads.ad_group, so its type, status and rotation mode are unknown. Names still resolve from the fact.",
+    effective_target_cpa: "The CPA target actually in force, set here or inherited from the campaign. CURRENT STATE — ad_group_bidding_strategy has no date, so this is today's setting on every historical row. Compare it against actual cpa in v_ad_group_daily; never chart it over time.",
+    effective_target_cpa_source: "AD_GROUP or CAMPAIGN — whether the target was set deliberately here or inherited. Without it you cannot tell the two apart.",
+    cpc_bid: "Manual CPC bid. NULL under an automated strategy, which is most campaigns."
   }
 }
 
@@ -37,6 +40,19 @@ SELECT
   g.ad_rotation_mode,
   COALESCE(g.campaign_id, d.campaign_id)           AS campaign_id,
   COALESCE(g.campaign_name, d.campaign_name_from_fact) AS campaign_name,
-  COALESCE(g.account_id, d.account_id)             AS account_id
+  COALESCE(g.account_id, d.account_id)             AS account_id,
+
+  -- Bid settings. CURRENT STATE, no date, same caveat as the campaign
+  -- bidding join in dim_gads_campaign: safe to filter on, wrong to trend.
+  b.cpc_bid,
+  b.cpm_bid,
+  b.cpv_bid,
+  b.target_cpa,
+  b.target_roas,
+  b.effective_target_cpa,
+  b.effective_target_cpa_source,
+  b.effective_target_roas,
+  b.effective_target_roas_source
 FROM delivered d
 LEFT JOIN ${ref("stg_gads_ad_group")} g ON g.adgroup_id = d.adgroup_id
+LEFT JOIN ${ref("stg_gads_ad_group_bidding")} b ON b.adgroup_id = d.adgroup_id

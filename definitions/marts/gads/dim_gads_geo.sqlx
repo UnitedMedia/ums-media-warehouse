@@ -1,0 +1,50 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.gads_marts,
+  name: "dim_gads_geo",
+  tags: ["gads", "marts"],
+  description: "One row per location that has actually delivered, with its resolved name. Delivery-driven rather than built from the full 274k-row geo_target list — the same lesson as dim_tiktok_campaign and dim_gads_campaign.",
+  bigquery: {
+    clusterBy: ["geo_target_id", "country_code"]
+  },
+  assertions: {
+    uniqueKey: ["geo_target_id"],
+    nonNull: ["geo_target_id"]
+  },
+  columns: {
+    geo_name: "Falls back to geo_<id> where geo_target has no row, so a chart never shows a blank.",
+    is_name_missing: "TRUE where the lookup failed. Sized in reporting.v_data_gaps.",
+    canonical_name: "Full path, e.g. 'Cluj-Napoca,Cluj,Romania'. The one to use when a bare name is ambiguous."
+  }
+}
+
+-- geo_target is a global constant list of 274k places. Only a few hundred
+-- ever appear in delivery, so building the dimension from the FACT keeps
+-- it small and keeps a missing name visible instead of hidden among
+-- 273,000 irrelevant rows.
+
+WITH delivered AS (
+  SELECT
+    geo_target_id,
+    MIN(date)        AS first_active_date,
+    MAX(date)        AS last_active_date,
+    SUM(impressions) AS lifetime_impressions,
+    SUM(spend)       AS lifetime_spend
+  FROM ${ref("stg_gads_geo_daily")}
+  WHERE geo_target_id IS NOT NULL
+  GROUP BY geo_target_id
+)
+SELECT
+  d.geo_target_id,
+  COALESCE(t.geo_name, CONCAT('geo_', d.geo_target_id)) AS geo_name,
+  (t.geo_target_id IS NULL)                             AS is_name_missing,
+  t.canonical_name,
+  t.country_code,
+  t.geo_target_type,
+  t.geo_status,
+  d.first_active_date,
+  d.last_active_date,
+  d.lifetime_impressions,
+  d.lifetime_spend
+FROM delivered d
+LEFT JOIN ${ref("stg_gads_geo_target")} t USING (geo_target_id)
