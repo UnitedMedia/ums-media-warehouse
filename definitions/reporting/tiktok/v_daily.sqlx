@@ -5,6 +5,8 @@ config {
   tags: ["tiktok", "reporting"],
   description: "Primary TikTok Looker Studio source. Ad x day with the full hierarchy and every calculated metric. Covers ~98.6% of spend — use v_campaign_daily for a complete total.",
   columns: {
+    avg_play_time_per_view: "NON-ADDITIVE. Set Looker aggregation to MAX, or rebuild as a calculated field. TikTok publishes per-view and per-user separately and they are different numbers.",
+    avg_play_time_per_user: "Same caveat, weighted by reach.",
     spend: "Advertiser currency, from dim_tiktok_ad. No TikTok report table carries a currency of its own.",
     results: "Counts whatever the campaign optimised for (objective_type). Two campaigns with different objectives have incomparable results — always show objective_type alongside.",
     reach: "NON-ADDITIVE above ad x day. Set aggregation to MAX in Looker, never SUM.",
@@ -59,6 +61,8 @@ SELECT
   f.video_views_p100,
   f.video_watched_2s,
   f.video_watched_6s,
+  f.avg_play_time_per_view,
+  f.avg_play_time_per_user,
   f.skan_conversions,
 
   ${metrics.cpm("f.spend", "f.impressions")}                       AS cpm,

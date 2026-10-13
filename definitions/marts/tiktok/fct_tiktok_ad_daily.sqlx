@@ -13,6 +13,8 @@ config {
     nonNull: ["date", "ad_id"]
   },
   columns: {
+    avg_play_time_per_view: "NON-ADDITIVE. An impression-weighted average of a per-row average — correct at this grain, approximate above it. Set Looker aggregation to MAX or rebuild as a calculated field.",
+    avg_play_time_per_user: "Same caveat, weighted by reach. TikTok publishes both per-view and per-user; they are different numbers.",
     reach: "NON-ADDITIVE above ad x day."
   }
 }
@@ -46,6 +48,14 @@ SELECT
   SUM(video_views_p100)            AS video_views_p100,
   SUM(video_watched_2s)            AS video_watched_2s,
   SUM(video_watched_6s)            AS video_watched_6s,
+
+  -- NON-ADDITIVE averages, weighted by the thing they average over.
+  -- Averaging an average is wrong; weighting is the least-wrong option
+  -- and the column docs say so.
+  SAFE_DIVIDE(SUM(src_average_video_play * video_play_actions),
+              NULLIF(SUM(video_play_actions), 0)) AS avg_play_time_per_view,
+  SAFE_DIVIDE(SUM(average_video_play_per_user * reach),
+              NULLIF(SUM(reach), 0))              AS avg_play_time_per_user,
   SUM(skan_conversion)             AS skan_conversions,
   SUM(skan_total_sales_lead)       AS skan_total_sales_leads,
   SUM(skan_total_sales_lead_value) AS skan_total_sales_lead_value

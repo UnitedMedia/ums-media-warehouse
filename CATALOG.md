@@ -399,31 +399,21 @@ every hierarchy level, every time grain and every breakdown. Eleven are used.
 
 ### Reporting views — `tiktok_reporting`
 
+**Four views.** `v_demographics_daily` and `v_platform_daily` were deleted on
+2026-10-13 — both were `v_breakdown_daily` with a `breakdown_type` filter
+hard-coded, so three views maintained one query.
+
 | View | Grain | Use it for |
 |---|---|---|
-| **`v_campaign_daily`** | campaign × day | **Any TikTok total.** Complete spend. Impressions, clicks, reach, conversions, results, purchases, video and engagement metrics, plus CPM/CTR/CPC/frequency/completion rate/ROAS. |
-| **`v_daily`** | ad × day | **The detail.** Everything above plus ad name, format, text, CTA, landing page and the full video quartile curve. Covers ~98.6% of spend. |
-| `v_hourly` | ad × hour | Dayparting. Its own data source — same money as `v_daily`. |
-| **`v_demographics_daily`** | ad × age × gender × day | Age and gender as named columns, with campaign labels. No reach or engagement — TikTok's demographic report carries neither. |
-| `v_platform_daily` | campaign × platform × day | **Device platform**: IPHONE, IPAD, ANDROID, WAP, UNKNOWN. Campaign level only, so it cannot be crossed with age or gender. |
-| `v_breakdown_daily` | slice × day | All four breakdowns in one shape. |
+| **`v_daily`** | ad × day | **The main one.** Every metric TikTok publishes at ad level, plus campaign, ad group and creative attributes. ~98.6% of spend — TikTok cannot attribute every impression to a named ad. |
+| **`v_campaign_daily`** | campaign × day | **COMPLETE spend.** The source of truth for TikTok money, and what `core` reads. |
+| **`v_breakdown_daily`** | ad × slice × day | Age/gender, country, language and platform. **Filter `breakdown_type`** — four cuts of the same spend. |
+| `v_hourly` | ad × hour | Dayparting. |
 
-**Caveats that matter:**
-
-- **`v_daily` is ~1.4% short of `v_campaign_daily`.** TikTok cannot attribute
-  every impression to a named ad. Compare ads with `v_daily`; total money with
-  `v_campaign_daily`. `assert_tiktok_ad_coverage` watches the ratio.
-- **`results` counts whatever the campaign optimised for** — its
-  `objective_type`. Two campaigns with different objectives have incomparable
-  results, so always show `objective_type` next to it.
-- **Always filter `v_breakdown_daily` to one `breakdown_type`.** Four slices of
-  the same spend; no filter means four times the real figure.
-- **`platform` is campaign-level only**, so those breakdown rows have no `ad_id`.
-- `reach` is non-additive. MAX in Looker, never SUM.
-- `skan_conversions` is iOS SKAdNetwork — a separate, privacy-limited
-  attribution path. Never add it to `conversions`.
-- Video has a full quartile curve: `video_views_p25` / `p50` / `p75` / `p100`,
-  plus `video_watched_2s` and `video_watched_6s`. `completion_rate` uses p100.
+**Play-time averages are non-additive.** `avg_play_time_per_view` and
+`avg_play_time_per_user` are weighted averages of a per-row average: correct at
+ad × day, approximate above it. TikTok publishes both and they mean different
+things — per view divides by plays, per user divides by reach.
 
 ### Marts — `tiktok_marts`
 
