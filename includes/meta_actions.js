@@ -68,6 +68,30 @@ const ACTION_TYPES = [
   ["click_to_call_native_20s_call_connect", "calls_connected_20s",   "calls", true, null],
   ["click_to_call_native_60s_call_connect", "calls_connected_60s",   "calls", true, null],
 
+  // ---- app --------------------------------------------------------
+  // Found unmapped on 2026-10-13 by listing every distinct action_type in
+  // ad_roas_insight_actions. APP_INSTALLS was documented in RESULT_TYPES as
+  // "Metric not present in current data" -- that was wrong. It is present,
+  // 2,472 rows, and had simply never been mapped.
+  ["mobile_app_install",                    "app_installs",        "app", true,  "2,472 rows. The seed previously claimed this did not exist."],
+  ["app_custom_event.fb_mobile_activate_app","app_activations",    "app", true,  "7,201 rows. An app OPEN, not an install -- never add the two."],
+  ["app_store_visit",                       "app_store_visits",    "app", true,  "3,631 rows. A tap through to the store, which is not an install."],
+  ["app_custom_event.fb_mobile_purchase",   "app_purchases",       "app", true,  "In-app purchase. SEPARATE from the web `purchase` action -- adding them double counts anyone who did both."],
+  ["app_custom_event.other",                "app_custom_events",   "app", true,  "Catch-all for app events the advertiser named themselves."],
+
+  // ---- registrations, wishlist, photo views -----------------------
+  ["complete_registration",                 "registrations",       "ecomm", true, "3,554 rows."],
+  ["add_to_wishlist",                       "adds_to_wishlist",    "ecomm", true, null],
+  ["photo_view",                            "photo_views",         "engagement", true, "6,676 rows. Someone expanded an image. Cheap signal, but it was invisible."],
+  ["onsite_conversion.lead_grouped",        "leads_grouped",       "leads", true, "4,667 rows. Meta's ROLL-UP of lead actions. Overlaps `leads` -- report one or the other, never the sum."],
+  ["onsite_conversion.lead",                "leads_onsite",        "leads", true, "On-Facebook lead, un-grouped."],
+
+  // ---- messaging ---------------------------------------------------
+  ["onsite_conversion.messaging_conversation_started_7d", "messaging_conversations_started", "engagement", true, null],
+  ["onsite_conversion.messaging_conversation_replied_7d", "messaging_replies",              "engagement", true, null],
+  ["onsite_conversion.messaging_first_reply",             "messaging_first_replies",        "engagement", true, null],
+  ["onsite_conversion.total_messaging_connection",        "messaging_connections",          "engagement", true, null],
+
   // ---- aliases: excluded from the mart, kept for documentation -------
   ["omni_purchase",                                 "purchases",            "ecomm",   false, "alias"],
   ["onsite_web_purchase",                           "purchases",            "ecomm",   false, "alias"],
@@ -93,6 +117,14 @@ const ACTION_TYPES = [
   ["onsite_web_lead",                               "leads",                "leads",   false, "alias"],
   ["offsite_conversion.fb_pixel_lead",              "leads",                "leads",   false, "alias"],
   ["call_confirm_grouped",                          "phone_calls_confirmed","calls",   false, "alias"],
+  ["omni_app_install",                              "app_installs",         "app",     false, "alias"],
+  ["omni_activate_app",                             "app_activations",      "app",     false, "alias"],
+  ["onsite_app_purchase",                           "app_purchases",        "app",     false, "alias"],
+  ["omni_custom",                                   "app_custom_events",    "app",     false, "alias"],
+  ["omni_complete_registration",                    "registrations",        "ecomm",   false, "alias"],
+  ["offsite_conversion.fb_pixel_complete_registration", "registrations",    "ecomm",   false, "alias"],
+  ["omni_add_to_wishlist",                          "adds_to_wishlist",     "ecomm",   false, "alias"],
+  ["offsite_conversion.fb_pixel_add_to_wishlist",   "adds_to_wishlist",     "ecomm",   false, "alias"],
 
   // ---- client-specific: never merge into the standard events --------
   ["offsite_purchase_add_20_s_calls",              "purchases_incl_20s_calls",      "client_custom", true, "One account counts a 20s phone call as a purchase"],
@@ -128,7 +160,7 @@ const RESULT_TYPES = [
   ["PAGE_LIKES",          "facebook_page_likes", null],
   ["THRUPLAY",            "views_3s",            "Approximation. True ThruPlay is not synced at ad level."],
   ["VIDEO_VIEWS",         "views_3s",            null],
-  ["APP_INSTALLS",        "app_installs",        "Metric not present in current data"],
+  ["APP_INSTALLS",        "app_installs",        "REAL after all. The note here used to say 'not present in current data'; listing every action_type on 2026-10-13 found mobile_app_install with 2,472 rows."],
   ["OFFSITE_CONVERSIONS", "purchases",           "DEFAULT ONLY. Real value depends on the pixel event per campaign."],
   ["VALUE",               "purchases",           null],
   ["REACH",               "reach",               "Comes from the fact table, not from actions"],

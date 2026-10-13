@@ -104,6 +104,8 @@ SELECT
   ${metrics.cpa("f.spend", "w.n_post_engagement")}      AS cost_per_post_engagement,
   ${metrics.cpa("f.spend", "w.n_facebook_page_likes")}  AS cost_per_page_like,
   ${metrics.cpa("f.spend", "w.n_interactions")}         AS cost_per_interaction,
+  ${metrics.cpa("f.spend", "w.n_app_installs")}         AS cost_per_app_install,
+  ${metrics.cpa("f.spend", "w.n_registrations")}        AS cost_per_registration,
   ${metrics.roas("w.val_purchases", "f.spend")}         AS purchase_roas
 
 FROM ${ref("fct_meta_ad_daily")} f

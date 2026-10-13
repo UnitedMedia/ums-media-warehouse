@@ -409,6 +409,18 @@ either asserted on or surfaced in `v_data_gaps`.
 **Meta**
 
 - Weld lands ~137 tables; 14 are declared and the rest are ignored.
+- **Fourteen action types were spending money unmapped until 2026-10-13.** They
+  were found by listing every distinct `action_type` in
+  `ad_roas_insight_actions` — 158 values, against 43 in the seed. The seed
+  claimed `APP_INSTALLS` was "not present in current data"; `mobile_app_install`
+  has **2,472 rows**. Also newly mapped: app activations (7,201), photo views
+  (6,676), grouped leads (4,667), app store visits (3,631), registrations
+  (3,554), in-app purchases, wishlist adds and four messaging actions. The
+  canonical metric list went 43 → 57, and `v_ad_daily` gained the columns
+  automatically because the pivot is generated from the same array.
+- **Three of the new ones OVERLAP existing metrics and must never be summed with
+  them**: `n_leads_grouped` with `n_leads`, `n_app_activations` with
+  `n_app_installs`, and `n_app_purchases` with `n_purchases` (in-app vs web).
 - Meta reports purchases under seven identical aliases. `seed_action_type` keeps
   one; `assert_meta_alias_leak` watches for the others getting through.
 - "Results" is not a field. It resolves from the ad set's `optimization_goal`
