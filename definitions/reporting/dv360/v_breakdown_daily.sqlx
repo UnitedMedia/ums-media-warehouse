@@ -1,0 +1,59 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.dv360_reporting,
+  name: "v_breakdown_daily",
+  tags: ["dv360", "reporting"],
+  description: "DV360 by geography, URL, time of day, audience or Floodlight activity — whichever you filter breakdown_type to. FIVE CUTS OF THE SAME SPEND: a chart with no breakdown_type filter reports five times the real figure and looks entirely plausible.",
+  columns: {
+    breakdown_type: "**Filter this on every chart.** geo / url / timeofday / audience / floodlight.",
+    breakdown_1: "Country · app URL · day of week · audience category · Floodlight activity.",
+    breakdown_2: "Region · app URL id · hour of day · (none) · Floodlight activity id.",
+    total_conversions: "floodlight only. Elsewhere use postclick + postview, and remember they are two paths, not one number split in half."
+  }
+}
+
+-- Replaces v_geo_daily, v_placement_daily, v_timeofday_daily and
+-- v_audience_daily. Same idea as meta_reporting.v_breakdown_daily, and the
+-- same hazard: Meta's five breakdowns reported 182,091 against a real
+-- 36,418 when nobody filtered.
+
+SELECT
+  f.date,
+  DATE_TRUNC(f.date, WEEK(MONDAY)) AS week,
+  DATE_TRUNC(f.date, MONTH)        AS month,
+
+  f.breakdown_type,
+  f.breakdown_1,
+  f.breakdown_2,
+
+  d.partner,
+  d.partner_id,
+  d.advertiser,
+  d.advertiser_id,
+  d.campaign,
+  d.campaign_id,
+  d.insertion_order,
+  d.insertion_order_id,
+  d.line_item,
+  d.line_item_id,
+  d.line_item_type,
+  f.advertiser_currency,
+
+  f.impressions,
+  f.clicks,
+  f.interactions,
+  f.complete_views,
+  f.postclick_conversions,
+  f.postview_conversions,
+  f.postclick_conversions + f.postview_conversions AS conversions_pc_pv,
+  f.total_conversions,
+  f.spend,
+
+  ${metrics.cpm("f.spend", "f.impressions")}                       AS cpm,
+  ${metrics.ctr("f.clicks", "f.impressions")}                      AS ctr,
+  ${metrics.interactionRate("f.interactions", "f.impressions")}    AS interaction_rate,
+  ${metrics.completionRate("f.complete_views", "f.impressions")}   AS completion_rate,
+  ${metrics.cpa("f.spend",
+     "f.postclick_conversions + f.postview_conversions")}          AS cpa
+FROM ${ref("fct_dv360_breakdown_daily")} f
+LEFT JOIN ${ref("dim_dv360_line_item")} d USING (line_item_id)

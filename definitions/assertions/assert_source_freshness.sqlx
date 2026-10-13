@@ -31,9 +31,8 @@ WITH latest AS (
   FROM ${ref("fct_dv360_daily")}
 
   UNION ALL
-  SELECT '${constants.CHANNEL.dv360}', 'placement daily', MAX(date)
-  -- qualified: kebooladv has a source table of the same name
-  FROM ${ref({ schema: constants.SCHEMAS.dv360_marts, name: "fct_dv360_placement_daily" })}
+  SELECT '${constants.CHANNEL.dv360}', 'breakdowns', MAX(date)
+  FROM ${ref("fct_dv360_breakdown_daily")}
 
   -- CM360 ----------------------------------------------------------------
   UNION ALL

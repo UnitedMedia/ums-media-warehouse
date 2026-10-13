@@ -1,0 +1,49 @@
+config {
+  type: "incremental",
+  schema: constants.SCHEMAS.dv360_marts,
+  name: "fct_dv360_breakdown_daily",
+  tags: ["dv360", "marts"],
+  description: "DV360's five single-dimension breakdowns in one table: geo, url, timeofday, audience, floodlight. ALWAYS filter to one breakdown_type — they are five cuts of the SAME spend and summing across them multiplies it by five.",
+  bigquery: {
+    partitionBy: "date",
+    clusterBy: ["breakdown_type", "advertiser_id", "line_item_id"]
+  },
+  assertions: {
+    uniqueKey: ["date", "breakdown_type", "line_item_id", "breakdown_1", "breakdown_2"],
+    nonNull: ["date", "breakdown_type"]
+  },
+  columns: {
+    breakdown_type: "PART OF THE GRAIN. Five values, five complete copies of the same delivery. One per chart, never a total across them.",
+    total_conversions: "floodlight only. The other breakdowns split conversions into postclick + postview."
+  }
+}
+
+-- Replaces fct_dv360_geo_daily, fct_dv360_placement_daily,
+-- fct_dv360_timeofday_daily and fct_dv360_audience_daily, plus a
+-- floodlight fact that was never built. Four marts and a gap, into one.
+--
+-- Incremental, append-only, like every DV360 mart.
+
+SELECT
+  date,
+  breakdown_type,
+  advertiser_id,
+  line_item_id,
+  advertiser_currency,
+  breakdown_1,
+  breakdown_2,
+
+  SUM(impressions)           AS impressions,
+  SUM(clicks)                AS clicks,
+  SUM(interactions)          AS interactions,
+  SUM(complete_views)        AS complete_views,
+  SUM(postclick_conversions) AS postclick_conversions,
+  SUM(postview_conversions)  AS postview_conversions,
+  SUM(total_conversions)     AS total_conversions,
+  SUM(spend)                 AS spend
+FROM ${ref("stg_dv360_breakdown")}
+WHERE date IS NOT NULL
+${when(incremental(),
+  `AND date NOT IN (SELECT DISTINCT date FROM ${self()}
+                    WHERE ${constants.allPartitions()})`)}
+GROUP BY 1, 2, 3, 4, 5, 6, 7

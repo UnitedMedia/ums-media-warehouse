@@ -198,27 +198,30 @@ Source: Keboola → `kebooladv.fct_dv360_*`.
 
 ### Reporting views — `dv360_reporting`
 
+**Five views from ten source tables.** Every DV360 breakdown is
+`line item × something × day` — the same spend cut differently — so the five
+single-dimension ones are collapsed into `v_breakdown_daily` with a
+`breakdown_type` column, exactly as Meta's five are.
+
 | View | Grain | Use it for |
 |---|---|---|
-| **`v_daily`** | line item × day | **The main one.** Spend, impressions, clicks, invalid clicks, interactions, complete views, TrueView views, total conversions, plus CPM, CTR, interaction rate, completion rate, TrueView view rate and CPA. Carries the full hierarchy: partner → advertiser → campaign → insertion order → line item. |
-| `v_creative_daily` | creative × day | Comparing creatives. Adds creative name, asset, size, ad type. |
-| `v_placement_daily` | app/URL × day | Where ads ran. Impressions, clicks, spend, CPM, CTR only — the source carries no video or conversions at this grain. |
-| `v_inventory_daily` | inventory context × day | Media type, device type, environment, exchange, inventory source, channel, ad position. These dimensions exist nowhere else. |
-| `v_geo_daily` | country × day | Country only. |
-| `v_timeofday_daily` | weekday × hour × day | Dayparting. Use `day_of_week_sort` to order weekdays, or Looker sorts them alphabetically. |
-| `v_reach_daily` | line item × day | Unique reach, on its own, deliberately. |
-| `v_metric_catalog` | — | One row per metric with its formula. |
-| `v_dimension_coverage` | — | Answers "can we split by X?" for 39 dimensions. |
+| **`v_daily`** | line item × day | **The backbone.** The only place with Invalid Clicks, TrueView Views, Total Conversions and USD spend. |
+| **`v_breakdown_daily`** | line item × slice × day | **Geography, URL, time of day, audience and Floodlight activity.** Filter `breakdown_type` to exactly one — five cuts of the same spend. |
+| `v_creative_daily` | line item × creative × day | Creative, Asset, Size, Ad Type. Partial spend coverage (~85%) by design. |
+| `v_inventory_daily` | line item × inventory context × day | Ad Position, Channel, Channel Type, Exchange, Media Type, Inventory Source, Device, Environment. |
+| `v_reach_daily` | line item × day | **NON-ADDITIVE.** Unique reach, isolated so it cannot be blended with delivery. |
 
-**Caveats that matter:**
+**`breakdown_type` values and what each slice holds:**
 
-- `v_creative_daily` covers about **85% of spend**. DV360 drops impressions it
-  cannot attribute to a named creative. Compare creatives with it; never total
-  money with it.
-- `v_inventory_daily` is backed by **one day** of source data.
-- `v_geo_daily` has roughly **61 rows a month**. Directional at best.
-- CPA in `v_daily` uses `Total_Conversions`. The breakdown views use post-click
-  + post-view instead. The two will not tie, and that is the platform, not a bug.
+| type | `breakdown_1` | `breakdown_2` | metrics |
+|---|---|---|---|
+| `geo` | Country | Region | full set |
+| `url` | App / URL | URL id | impressions, clicks, spend only |
+| `timeofday` | Day of week | Hour of day | full set |
+| `audience` | Audience category | — | impressions only |
+| `floodlight` | Floodlight activity | Activity id | `total_conversions` only |
+
+NULLs mean the source does not publish that metric at that grain — never zero.
 
 ### Marts — `dv360_marts`
 

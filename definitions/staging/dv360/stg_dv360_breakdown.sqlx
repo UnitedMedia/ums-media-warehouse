@@ -1,0 +1,95 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.dv360_staging,
+  name: "stg_dv360_breakdown",
+  tags: ["dv360", "staging"],
+  description: "All five single-dimension DV360 breakdowns normalised to one shape. breakdown_1 / breakdown_2 hold whatever the slice is. These are five different cuts of the SAME spend — never union any of them with fct_dv360_daily, and never total across breakdown_type.",
+  columns: {
+    breakdown_type: "geo / url / timeofday / audience / floodlight. ALWAYS filter to exactly one. Summing across types multiplies spend by five.",
+    breakdown_1: "First slice — country, app URL, day of week, audience category or Floodlight activity.",
+    breakdown_2: "Second slice — region, app URL id, hour of day or Floodlight activity id. NULL for one-dimensional breakdowns.",
+    total_conversions: "ONLY the floodlight breakdown carries it. Everywhere else conversions arrive split as postclick + postview, and those do not necessarily sum to it."
+  }
+}
+
+-- REPLACES five staging views, five marts and five reporting views
+-- (geo, placement, timeofday, audience, floodlight). Same pattern as
+-- stg_meta_breakdown: every DV360 breakdown is line item x <one or two
+-- things> x day, so one table with a type column says everything five
+-- said, without five of everything.
+--
+-- Creative and inventory are NOT here. Creative carries five attributes
+-- and inventory ten, which a breakdown_1 / breakdown_2 shape cannot hold.
+--
+-- EVERY BRANCH HAS A DIFFERENT METRIC SET, so NULLs are expected and
+-- meaningful: placement reports no conversions, audience reports only
+-- impressions, floodlight reports only conversions. A NULL here means the
+-- source does not publish that metric at that grain, never zero.
+--
+-- TYPE QUIRKS, all real and all in one place now:
+--   * geo.Revenue_Adv_Currency is STRING, FLOAT64 everywhere else
+--   * audience.Impressions is FLOAT64, INT64 everywhere else
+
+SELECT
+  'geo'                                       AS breakdown_type,
+  ${metrics.parseSlashDate("Date")}           AS date,
+  Advertiser_ID                               AS advertiser_id,
+  Line_Item_ID                                AS line_item_id,
+  Advertiser_Currency                         AS advertiser_currency,
+  Country                                     AS breakdown_1,
+  Region                                      AS breakdown_2,
+  CAST(Impressions AS INT64)                  AS impressions,
+  CAST(Clicks AS INT64)                       AS clicks,
+  CAST(Engagements AS INT64)                  AS interactions,
+  CAST(Complete_Views_Video AS INT64)         AS complete_views,
+  PostClick_Conversions                       AS postclick_conversions,
+  PostView_Conversions                        AS postview_conversions,
+  CAST(NULL AS FLOAT64)                       AS total_conversions,
+  SAFE_CAST(Revenue_Adv_Currency AS FLOAT64)  AS spend
+FROM ${ref({ schema: constants.DATASETS.kebooladv, name: "fct_dv360_geo" })}
+WHERE Date IS NOT NULL
+
+UNION ALL
+SELECT
+  'url', ${metrics.parseSlashDate("Date")}, Advertiser_ID, Line_Item_ID,
+  Advertiser_Currency, AppURL, AppURL_ID,
+  CAST(Impressions AS INT64), CAST(Clicks AS INT64),
+  CAST(NULL AS INT64), CAST(NULL AS INT64),
+  CAST(NULL AS FLOAT64), CAST(NULL AS FLOAT64), CAST(NULL AS FLOAT64),
+  Revenue_Adv_Currency
+FROM ${ref({ schema: constants.DATASETS.kebooladv, name: "fct_dv360_placement" })}
+WHERE Date IS NOT NULL
+
+UNION ALL
+SELECT
+  'timeofday', ${metrics.parseSlashDate("Date")}, Advertiser_ID, Line_Item_ID,
+  Advertiser_Currency, Day_of_Week, CAST(Time_of_Day AS STRING),
+  CAST(Impressions AS INT64), CAST(Clicks AS INT64),
+  CAST(Engagements AS INT64), CAST(Complete_Views_Video AS INT64),
+  PostClick_Conversions, PostView_Conversions, CAST(NULL AS FLOAT64),
+  Revenue_Adv_Currency
+FROM ${ref({ schema: constants.DATASETS.kebooladv, name: "fct_dv360_timeofday" })}
+WHERE Date IS NOT NULL
+
+UNION ALL
+SELECT
+  'audience', ${metrics.parseSlashDate("Date")}, Advertiser_ID, Line_Item_ID,
+  Advertiser_Currency, Category, CAST(NULL AS STRING),
+  CAST(Impressions AS INT64), CAST(NULL AS INT64),
+  CAST(NULL AS INT64), CAST(NULL AS INT64),
+  CAST(NULL AS FLOAT64), CAST(NULL AS FLOAT64), CAST(NULL AS FLOAT64),
+  CAST(NULL AS FLOAT64)
+FROM ${ref({ schema: constants.DATASETS.kebooladv, name: "fct_dv360_audience" })}
+WHERE Date IS NOT NULL
+
+UNION ALL
+SELECT
+  'floodlight', ${metrics.parseSlashDate("Date")}, Advertiser_ID, Line_Item_ID,
+  Advertiser_Currency, Floodlight_Activity_Name,
+  CAST(Floodlight_Activity_ID AS STRING),
+  CAST(NULL AS INT64), CAST(NULL AS INT64),
+  CAST(NULL AS INT64), CAST(NULL AS INT64),
+  CAST(NULL AS FLOAT64), CAST(NULL AS FLOAT64), Total_Conversions,
+  CAST(NULL AS FLOAT64)
+FROM ${ref({ schema: constants.DATASETS.kebooladv, name: "fct_dv360_floodlight" })}
+WHERE Date IS NOT NULL
