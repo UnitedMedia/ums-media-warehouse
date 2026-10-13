@@ -36,5 +36,5 @@ SELECT
   PostClick_Conversions                      AS postclick_conversions,
   PostView_Conversions                       AS postview_conversions,
   SAFE_CAST(Revenue_Adv_Currency AS FLOAT64) AS spend
-FROM ${ref({ schema: constants.DATASETS.kebooladv, name: "fct_dv360_geo_daily" })}
+FROM ${ref({ schema: constants.DATASETS.kebooladv, name: "fct_dv360_geo" })}
 WHERE Date IS NOT NULL

@@ -28,5 +28,5 @@ SELECT
   PostClick_Conversions AS postclick_conversions,
   PostView_Conversions  AS postview_conversions,
   Revenue_Adv_Currency  AS spend
-FROM ${ref({ schema: constants.DATASETS.kebooladv, name: "fct_dv360_creative_daily" })}
+FROM ${ref({ schema: constants.DATASETS.kebooladv, name: "fct_dv360_creative" })}
 WHERE Date IS NOT NULL

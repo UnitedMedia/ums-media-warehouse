@@ -18,5 +18,5 @@ SELECT
   Impressions           AS impressions,
   Clicks                AS clicks,
   Revenue_Adv_Currency  AS spend
-FROM ${ref({ schema: constants.DATASETS.kebooladv, name: "fct_dv360_placement_daily" })}
+FROM ${ref({ schema: constants.DATASETS.kebooladv, name: "fct_dv360_placement" })}
 WHERE Date IS NOT NULL

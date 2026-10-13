@@ -1,0 +1,50 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.dv360_reporting,
+  name: "v_audience_daily",
+  tags: ["dv360", "reporting"],
+  description: "DV360 impressions by audience segment, with campaign and partner resolved. The only named audience data in this warehouse. IMPRESSIONS ONLY — no spend, no clicks, so this cannot answer a cost question.",
+  columns: {
+    audience_category: "**Never total across this.** One impression can match several segments, so summing categories exceeds the line item's real impressions. Compare segments against each other, one chart at a time.",
+    share_of_line_item: "This segment's impressions as a share of the line item's own daily total. Because segments overlap, these shares SUM TO MORE THAN 1 — that is the source behaving correctly, not a bug.",
+    impressions: "The only metric available. The source carries no spend and no clicks."
+  }
+}
+
+-- Audience data arrived 2026-10-13 in kebooladv.fct_dv360_audience,
+-- with the new DV360 table set. Nothing
+-- equivalent exists for any other channel -- Google Ads gives criterion
+-- ids with no names, Meta and TikTok give nothing.
+--
+-- line_item_impressions comes from fct_dv360_daily, the backbone, so the
+-- share is against real delivery rather than against the sum of overlapping
+-- segments.
+
+WITH line_item_totals AS (
+  SELECT date, line_item_id, SUM(impressions) AS line_item_impressions
+  FROM ${ref("fct_dv360_daily")}
+  GROUP BY 1, 2
+)
+SELECT
+  f.date,
+  DATE_TRUNC(f.date, WEEK(MONDAY)) AS week,
+  DATE_TRUNC(f.date, MONTH)        AS month,
+
+  d.partner,
+  d.advertiser,
+  d.advertiser_id,
+  d.campaign,
+  d.campaign_id,
+  d.line_item,
+  d.line_item_id,
+  d.line_item_type,
+  d.advertiser_currency,
+
+  f.audience_category,
+  f.impressions,
+  t.line_item_impressions,
+  SAFE_DIVIDE(f.impressions, t.line_item_impressions) AS share_of_line_item
+FROM ${ref("fct_dv360_audience_daily")} f
+LEFT JOIN ${ref("dim_dv360_line_item")} d USING (line_item_id)
+LEFT JOIN line_item_totals t
+  ON t.date = f.date AND t.line_item_id = f.line_item_id

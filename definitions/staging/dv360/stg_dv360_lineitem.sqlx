@@ -37,5 +37,5 @@ SELECT
   PostView_Conversions  AS postview_conversions,
   Revenue_Adv_Currency  AS spend,
   Revenue_USD           AS spend_usd
-FROM ${ref({ schema: constants.DATASETS.kebooladv, name: "fct_dv360_lineitem_daily_v5" })}
+FROM ${ref({ schema: constants.DATASETS.kebooladv, name: "fct_dv360_lineitem" })}
 WHERE Date IS NOT NULL

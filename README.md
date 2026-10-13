@@ -347,6 +347,30 @@ either asserted on or surfaced in `v_data_gaps`.
   delivery and mislabels the money. `reporting.v_ad_performance_daily` will
   happily add them, so this needs an answer before it goes on a dashboard.
 
+**DV360**
+
+- **Repointed to a new table set on 2026-10-13.** Keboola created
+  `fct_dv360_lineitem`, `_creative`, `_geo`, `_inventory`, `_placement`,
+  `_timeofday`, `_reach`, `_floodlight` and `_youtube` alongside the old
+  `fct_dv360_*_daily` tables. **The schemas are identical** — every column name
+  and type matches — so repointing was one line per staging view.
+- **The old tables carried ONE day; the new ones carry FOURTEEN.** The backbone
+  went from 72 rows to 1,581, placement 12,584 → 119,123, inventory 1,047 →
+  308,362, and `fct_dv360_geo_daily` had literally **one row** against 37,198.
+  `fct_dv360_inventory_daily` had already stopped updating.
+- **A naming collision disappeared with it.** The old Keboola names were
+  identical to this project's own mart names — `dv360_marts.fct_dv360_placement_daily`
+  and `kebooladv.fct_dv360_placement_daily` — which is what forced six refs to
+  be dataset-qualified. The new names do not collide.
+- **`fct_dv360_audience` is new**, 529,923 rows, and has no equivalent in the
+  old set: audience Category by line item and day. It is the **only named
+  audience data in the warehouse** — Google Ads gives criterion ids with no
+  names, Meta and TikTok give nothing. **IMPRESSIONS ONLY**, no spend or clicks,
+  and **non-additive across categories**: one impression can match several
+  segments, so `v_audience_daily`'s shares sum to more than 1 by design.
+- `Impressions` is FLOAT64 in the audience table and INT64 in the others, so
+  staging casts it — the same trap the CM360 move sprang.
+
 **CM360**
 
 - **Moved dataset on 2026-10-12.** The `kebooladv` CM360 tables were dropped and

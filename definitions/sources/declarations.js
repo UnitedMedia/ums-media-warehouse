@@ -10,22 +10,41 @@
 // kebooladv — Keboola extractions for DV360 and CM360
 // ---------------------------------------------------------------------
 const KEBOOLA_TABLES = [
-  // DV360
-  "fct_dv360_lineitem_daily_v5",  // backbone — the only table with
-                                  // Partner, Campaign, Invalid_Clicks,
-                                  // Total_Conversions and Revenue_USD
-  "fct_dv360_creative_daily",
-  "fct_dv360_inventory_daily",    // ONE day of data as of 2026-08-25
-  "fct_dv360_placement_daily",
-  "fct_dv360_geo_daily",          // Country only, ~61 rows/month
-  "fct_dv360_timeofday_daily",
-  "fct_dv360_reach_daily",        // NON-ADDITIVE
-  "fct_dv360_floodlight_daily",   // currently EMPTY — see README
-  "fct_dv360_youtube_daily",      // deliberately not staged: it would be
-                                  // a second source of truth for
-                                  // TrueView views. Declared so the
-                                  // graph shows we know it is there.
+  // DV360. Keboola created this set on 2026-10-13 alongside the old
+  // fct_dv360_*_daily tables, with IDENTICAL schemas -- every column name
+  // and type matches -- and far more data:
+  //
+  //   lineitem     72 rows ->  1,581      placement  12,584 -> 119,123
+  //   geo           1 row  -> 37,198      inventory   1,047 -> 308,362
+  //   creative    379      ->  5,909      timeofday   1,647 ->  22,841
+  //
+  // The old tables carried ONE day; these carry FOURTEEN, 2026-09-28 to
+  // 2026-10-11. fct_dv360_inventory_daily had already stopped updating.
+  //
+  // A happy side effect: the old names collided with this project's own
+  // mart names (dv360_marts.fct_dv360_placement_daily and the Keboola
+  // table were both "fct_dv360_placement_daily"), which is what forced
+  // six refs to be dataset-qualified. The new names do not collide.
+  "fct_dv360_lineitem",    // backbone -- the only table with Partner,
+                           // Campaign, Invalid_Clicks, TrueView,
+                           // Total_Conversions and Revenue_USD
+  "fct_dv360_creative",
+  "fct_dv360_inventory",
+  "fct_dv360_placement",
+  "fct_dv360_geo",
+  "fct_dv360_timeofday",
+  "fct_dv360_reach",       // NON-ADDITIVE
+  "fct_dv360_floodlight",  // 15 rows over 10 days. The only DV360 table
+                           // that did NOT grow -- it is simply sparse.
+  "fct_dv360_youtube",     // deliberately not staged: a second source of
+                           // truth for TrueView views. Declared so the
+                           // graph records that we know it is there.
 
+  // NEW on 2026-10-13, no equivalent in the old set. Audience Category by
+  // line item and day, 529,923 rows. IMPRESSIONS ONLY -- no spend, no
+  // clicks -- so it answers "who saw this" and never "what did it cost".
+  // Note Impressions is FLOAT64 here and INT64 in fct_dv360_lineitem.
+  "fct_dv360_audience",
 ];
 
 // ---------------------------------------------------------------------

@@ -26,5 +26,5 @@ SELECT
   Floodlight_Activity_ID   AS floodlight_activity_id,
   Floodlight_Activity_Name AS floodlight_activity,
   Total_Conversions        AS total_conversions
-FROM ${ref({ schema: constants.DATASETS.kebooladv, name: "fct_dv360_floodlight_daily" })}
+FROM ${ref({ schema: constants.DATASETS.kebooladv, name: "fct_dv360_floodlight" })}
 WHERE Date IS NOT NULL
