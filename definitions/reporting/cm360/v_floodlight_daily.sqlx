@@ -1,0 +1,57 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.cm360_reporting,
+  name: "v_floodlight_daily",
+  tags: ["cm360", "reporting"],
+  description: "CM360 conversions by Floodlight activity, with the view-through / click-through split. No other channel in this warehouse separates the two attribution paths this way.",
+  columns: {
+    activity: "What the conversion was. Group by this before comparing anything — a page view and a purchase are both 'conversions' otherwise.",
+    view_through_conversions: "Credited to an impression with NO click. **Never add this to click_through_conversions** — use total_conversions, which is Google's own figure.",
+    view_through_share: "view_through / total. High values mean the activity is being credited mostly to people who never clicked, which is worth knowing before anyone celebrates it.",
+    revenue_per_conversion: "total_conversions_revenue / total_conversions. NULL where the activity carries no revenue, which is most of them."
+  }
+}
+
+-- WHY THIS EXISTS SEPARATELY FROM v_daily.
+-- Conversions are at ACTIVITY grain. Joining them onto the delivery fact
+-- would fan every placement-day out by its number of activities and
+-- multiply impressions. fct_cm360_campaign_daily carries the collapsed
+-- total for anyone who just wants one number.
+
+SELECT
+  f.date,
+  DATE_TRUNC(f.date, WEEK(MONDAY)) AS week,
+  DATE_TRUNC(f.date, MONTH)        AS month,
+
+  f.advertiser_id,
+  c.advertiser_name,
+  f.campaign_id,
+  c.campaign_name,
+  f.site_id,
+  p.site_name,
+  f.placement_id,
+  p.placement_name,
+  f.ad_id,
+  ac.ad_name,
+  f.creative_id,
+  ac.creative_name,
+
+  f.floodlight_config_id,
+  f.activity_group,
+  f.activity,
+
+  f.total_conversions,
+  f.view_through_conversions,
+  f.click_through_conversions,
+  f.total_conversions_revenue,
+  f.view_through_revenue,
+  f.click_through_revenue,
+
+  SAFE_DIVIDE(f.view_through_conversions,
+              NULLIF(f.total_conversions, 0))      AS view_through_share,
+  SAFE_DIVIDE(f.total_conversions_revenue,
+              NULLIF(f.total_conversions, 0))      AS revenue_per_conversion
+FROM ${ref("fct_cm360_floodlight_daily")} f
+LEFT JOIN ${ref("dim_cm360_campaign")}    c   USING (campaign_id)
+LEFT JOIN ${ref("dim_cm360_placement")}   p   USING (placement_id)
+LEFT JOIN ${ref("dim_cm360_ad_creative")} ac  USING (ad_id, creative_id)

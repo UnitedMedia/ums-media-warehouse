@@ -205,6 +205,10 @@ one-day mart — which is what had already happened: `fct_dv360_daily` and
 
 Two strategies, because facts and dimensions need different things:
 
+**The Keboola window is 14 days as of 2026-10-13** — DV360 and CM360 now match.
+CM360 started at 7 and was widened. Neither has anything before **2026-09-28**;
+that history is gone and only a Keboola backfill brings it back.
+
 **Facts append.** `type: "incremental"` with no `uniqueKey`, loading any date
 not already present:
 
@@ -487,11 +491,10 @@ either asserted on or surfaced in `v_data_gaps`.
 
 **TikTok**
 
-- **No longer the only live channel, and no longer live.** Measured 2026-10-05
-  by `assert_source_freshness`: TikTok 6 days stale (latest 2026-09-29), CM360 7
-  (2026-09-28), DV360 3 (2026-10-02). **Meta and Google Ads are the only current
-  channels** — neither appears in the assertion. TikTok going stale is new; it
-  had been delivering daily since 2026-08-03 and nobody changed anything here.
+- **Stopped 2026-09-29, resumed 2026-10-13**, backfilling the gap — 72 days to
+  today, nothing lost. Weld keeps full history, so an outage costs freshness
+  rather than data. Contrast DV360 and CM360, where a stalled Keboola extract
+  destroyed everything before 2026-09-28 permanently.
 - Weld lands 41 tables and **21 of them carry identical metrics** — the same
   money at every hierarchy level, every time grain and every breakdown. Eleven
   are declared; the rest are derivable and would each become a second source of

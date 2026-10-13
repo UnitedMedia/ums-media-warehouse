@@ -3,7 +3,11 @@ config {
   schema: constants.SCHEMAS.cm360_marts,
   name: "dim_cm360_ad_creative",
   tags: ["cm360", "marts"],
-  description: "One row per ad x creative pair, with its landing page. A landing page can change over a creative's life, so the most recently seen URL wins.",
+  description: "One row per ad x creative pair, with its NAMES and landing page. A landing page can change over a creative's life, so the most recently seen URL wins.",
+  columns: {
+    ad_name: "From cm360_united. No CM360 source carried an ad NAME before 2026-10-12 — ads were ids only.",
+    creative_name: "From cm360_united. Same story as ad_name."
+  },
   uniqueKey: ["ad_id", "creative_id"],
   bigquery: {
     clusterBy: ["ad_id", "creative_id", "placement_id"]
@@ -32,6 +36,18 @@ WITH activity AS (
   WHERE ${constants.allPartitions()}
   GROUP BY 1, 2
 ),
+-- cm360_united is the first CM360 source with ad and creative NAMES.
+-- Before 2026-10-12 this dimension could only ever report ids.
+names AS (
+  SELECT
+    ad_id,
+    creative_id,
+    ANY_VALUE(ad_name)       AS ad_name,
+    ANY_VALUE(creative_name) AS creative_name
+  FROM ${ref("stg_cm360_united")}
+  WHERE ad_id IS NOT NULL
+  GROUP BY 1, 2
+),
 latest AS (
   SELECT
     ad_id,
@@ -46,6 +62,8 @@ latest AS (
 SELECT
   l.ad_id,
   l.creative_id,
+  n.ad_name,
+  n.creative_name,
   l.placement_id,
   l.campaign_id,
   l.landing_page_url,
@@ -53,4 +71,5 @@ SELECT
   a.last_active_date
 FROM latest l
 LEFT JOIN activity a USING (ad_id, creative_id)
+LEFT JOIN names    n USING (ad_id, creative_id)
 WHERE l.rn = 1

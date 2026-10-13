@@ -1,0 +1,52 @@
+config {
+  type: "incremental",
+  schema: constants.SCHEMAS.cm360_marts,
+  name: "fct_cm360_geo_daily",
+  tags: ["cm360", "marts"],
+  description: "CM360 delivery by location: day x placement x country x city. The ONLY geography in the CM360 stack — nothing before cm360_united carried it.",
+  bigquery: {
+    partitionBy: "date",
+    clusterBy: ["campaign_id", "placement_id", "country"]
+  },
+  assertions: {
+    uniqueKey: ["date", "placement_id", "country", "city"],
+    nonNull: ["date", "placement_id"]
+  },
+  columns: {
+    country: "Arrived 2026-10-12 with cm360_united. CM360 had no geography at all before that.",
+    city: "Finer than country, with a long tail and plenty of NULLs. Filter to country for a stable picture.",
+    media_cost: "The same unresolved column as everywhere else in CM360 — see the README before putting it next to another channel's spend."
+  }
+}
+
+-- SAME SPEND, A DIFFERENT CUT. This is the delivery already in
+-- fct_cm360_placement_daily, split by country and city instead of summed.
+-- Never union the two and never join them on date alone.
+--
+-- Unlike Google's geo, there is no location_type here: CM360 reports one
+-- location per impression, so summing across country is safe.
+--
+-- Incremental, append-only, like every CM360 fact. The Keboola window is
+-- 14 days; this accumulates past it.
+
+SELECT
+  date,
+  advertiser_id,
+  campaign_id,
+  site_id,
+  placement_id,
+  country,
+  city,
+
+  SUM(impressions)          AS impressions,
+  SUM(clicks)               AS clicks,
+  SUM(viewable_impressions) AS viewable_impressions,
+  SUM(video_views)          AS video_views,
+  SUM(media_cost)           AS media_cost
+FROM ${ref("stg_cm360_united")}
+WHERE date IS NOT NULL
+  AND placement_id IS NOT NULL
+${when(incremental(),
+  `AND date NOT IN (SELECT DISTINCT date FROM ${self()}
+                    WHERE ${constants.allPartitions()})`)}
+GROUP BY 1, 2, 3, 4, 5, 6, 7

@@ -1,0 +1,43 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.cm360_reporting,
+  name: "v_geo_daily",
+  tags: ["cm360", "reporting"],
+  description: "CM360 delivery by country and city, with advertiser, campaign, site and placement names. CM360 had no geography at all before 2026-10-12.",
+  columns: {
+    country: "Safe to sum across, unlike Google's geo — CM360 reports one location per impression, with no presence/interest duplication.",
+    city: "Long tail with many NULLs. Filter to country for a stable picture.",
+    media_cost: "Not comparable with DV360, Meta, TikTok or Google spend. See the README."
+  }
+}
+
+SELECT
+  f.date,
+  DATE_TRUNC(f.date, WEEK(MONDAY)) AS week,
+  DATE_TRUNC(f.date, MONTH)        AS month,
+
+  f.advertiser_id,
+  c.advertiser_name,
+  f.campaign_id,
+  c.campaign_name,
+  f.site_id,
+  p.site_name,
+  p.channel_group,
+  f.placement_id,
+  p.placement_name,
+
+  f.country,
+  f.city,
+
+  f.impressions,
+  f.clicks,
+  f.viewable_impressions,
+  f.video_views,
+  f.media_cost,
+
+  ${metrics.ctr("f.clicks", "f.impressions")}                        AS click_rate,
+  ${metrics.cpm("f.media_cost", "f.impressions")}                    AS effective_cpm,
+  ${metrics.viewableRate("f.viewable_impressions", "f.impressions")} AS viewable_rate
+FROM ${ref("fct_cm360_geo_daily")} f
+LEFT JOIN ${ref("dim_cm360_campaign")}   c   USING (campaign_id)
+LEFT JOIN ${ref("dim_cm360_placement")}  p   USING (placement_id)

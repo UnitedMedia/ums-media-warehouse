@@ -10,7 +10,7 @@ SELECT
   f.date,
   f.hour,
   f.advertiser_id,
-  adv.advertiser_name,
+  c.advertiser_name,
   f.campaign_id,
   c.campaign_name,
   f.site_id,
@@ -28,7 +28,6 @@ SELECT
   ${metrics.cpm("f.media_cost", "f.impressions")}                    AS effective_cpm,
   ${metrics.viewableRate("f.viewable_impressions", "f.impressions")} AS viewable_rate
 FROM ${ref("fct_cm360_placement_hourly")} f
-LEFT JOIN ${ref("dim_cm360_advertiser")} adv USING (advertiser_id)
 LEFT JOIN ${ref("dim_cm360_campaign")}   c   USING (campaign_id)
 LEFT JOIN ${ref("dim_cm360_placement")}  p   USING (placement_id)
 WHERE ${constants.allPartitions("f")}   -- fct_cm360_placement_hourly requires a partition filter

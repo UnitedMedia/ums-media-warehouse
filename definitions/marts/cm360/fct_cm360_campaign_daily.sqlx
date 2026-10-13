@@ -37,15 +37,49 @@ config {
 -- this table once with FULL REFRESH and it rebuilds from whatever the
 -- source currently holds.
 
+
+-- WAS stg_cm360_campaign_daily -> fct_cm360_campaign_daily. Folded into one
+-- object on 2026-10-13: the staging view was not a source wrapper, it was a
+-- join of two other staging views, so it only added a name to the graph.
+--
+-- Delivery from cm360_united, conversions from cm360_floodlights. Its old
+-- source, cm360_standard_table, was dropped in the move to keboola_cm360.
+-- Conversions are summed across Floodlight activities because that is what
+-- the old column meant; fct_cm360_floodlight_daily has the detail.
+
+WITH delivery AS (
+  SELECT
+    date,
+    campaign_id,
+    ANY_VALUE(profile_id)      AS profile_id,
+    ANY_VALUE(profile_name)    AS profile_name,
+    ANY_VALUE(campaign_name)   AS campaign_name,
+    ANY_VALUE(advertiser_id)   AS advertiser_id,
+    ANY_VALUE(advertiser_name) AS advertiser_name,
+    SUM(impressions)           AS impressions,
+    SUM(clicks)                AS clicks
+  FROM ${ref("stg_cm360_united")}
+  WHERE campaign_id IS NOT NULL
+  GROUP BY date, campaign_id
+),
+conversions AS (
+  SELECT
+    date,
+    campaign_id,
+    SUM(total_conversions)         AS total_conversions,
+    SUM(total_conversions_revenue) AS total_conversions_revenue
+  FROM ${ref("stg_cm360_floodlight")}
+  WHERE campaign_id IS NOT NULL
+  GROUP BY date, campaign_id
+)
 SELECT
-  date,
-  campaign_id,
-  SUM(impressions)       AS impressions_check,
-  SUM(clicks)            AS clicks_check,
-  SUM(total_conversions) AS total_conversions
-FROM ${ref("stg_cm360_campaign_daily")}
-WHERE date IS NOT NULL
-${when(incremental(),
-  `AND date NOT IN (SELECT DISTINCT date FROM ${self()}
-                    WHERE ${constants.allPartitions()})`)}
-GROUP BY 1, 2
+  d.date,
+  d.campaign_id,
+  d.advertiser_id,
+  SUM(d.impressions)              AS impressions_check,
+  SUM(d.clicks)                   AS clicks_check,
+  ANY_VALUE(c.total_conversions)  AS total_conversions
+FROM delivery d
+LEFT JOIN conversions c USING (date, campaign_id)
+WHERE d.date IS NOT NULL
+GROUP BY 1, 2, 3

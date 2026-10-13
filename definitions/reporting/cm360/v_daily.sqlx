@@ -3,7 +3,7 @@ config {
   schema: constants.SCHEMAS.cm360_reporting,
   name: "v_daily",
   tags: ["cm360", "reporting"],
-  description: "Primary CM360 Looker Studio source. One row per date + placement + ad + creative, fully labelled. Ratios are computed here, never stored, which is what keeps them correct at every level Looker rolls them up to.",
+  description: "THE CM360 view. Delivery and conversions together at placement x ad x creative x day, with every name resolved. Three dimensions do not fit this grain and have their own views: Hour (v_hourly), Country/City (v_geo_daily), Floodlight activity detail (v_floodlight_daily). Primary CM360 Looker Studio source. One row per date + placement + ad + creative, fully labelled. Ratios are computed here, never stored, which is what keeps them correct at every level Looker rolls them up to.",
   columns: {
     viewable_rate: "NOT CM360's 'Active View: % Viewable Impressions'. That metric's denominator is Measurable Impressions, which is absent from the Keboola report, so this reads LOWER than the CM360 UI. Add activeViewMeasurableImpressions to the report to close the gap.",
     placement_first_active_date: "DERIVED from delivery, not the booked Placement Start Date. Do not use it for pacing."
@@ -15,15 +15,19 @@ SELECT
 
   -- dimensions, labelled
   f.advertiser_id,
-  adv.advertiser_name,
+  c.advertiser_name,
   f.campaign_id,
   c.campaign_name,
   f.site_id,
   p.site_name,
   p.channel_group,
+  p.is_premium,
   f.placement_id,
+  p.placement_name,
   f.ad_id,
+  ac.ad_name,
   f.creative_id,
+  ac.creative_name,
   ac.landing_page_url,
 
   -- placement flight window, DERIVED from delivery
@@ -37,6 +41,15 @@ SELECT
   f.video_views,
   f.media_cost,
 
+  -- conversions, summed across Floodlight activities. Safe to join here:
+  -- floodlight rolls up to exactly this grain, one row per placement x ad
+  -- x creative x day, so nothing fans out. v_floodlight_daily has the
+  -- per-activity breakdown and the Floodlight Configuration.
+  fl.total_conversions,
+  fl.view_through_conversions,
+  fl.click_through_conversions,
+  fl.total_conversions_revenue,
+
   -- derived ratios
   ${metrics.ctr("f.clicks", "f.impressions")}                          AS click_rate,
   ${metrics.cpm("f.media_cost", "f.impressions")}                      AS effective_cpm,
@@ -45,7 +58,16 @@ SELECT
   ${metrics.viewRate("f.video_views", "f.impressions")}                AS video_view_rate
 
 FROM ${ref("fct_cm360_placement_daily")} f
-LEFT JOIN ${ref("dim_cm360_advertiser")}   adv USING (advertiser_id)
 LEFT JOIN ${ref("dim_cm360_campaign")}     c   USING (campaign_id)
 LEFT JOIN ${ref("dim_cm360_placement")}    p   USING (placement_id)
 LEFT JOIN ${ref("dim_cm360_ad_creative")}  ac  USING (ad_id, creative_id)
+LEFT JOIN (
+  SELECT
+    date, placement_id, ad_id, creative_id,
+    SUM(total_conversions)         AS total_conversions,
+    SUM(view_through_conversions)  AS view_through_conversions,
+    SUM(click_through_conversions) AS click_through_conversions,
+    SUM(total_conversions_revenue) AS total_conversions_revenue
+  FROM ${ref("fct_cm360_floodlight_daily")}
+  GROUP BY 1, 2, 3, 4
+) fl USING (date, placement_id, ad_id, creative_id)

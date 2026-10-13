@@ -87,14 +87,28 @@ within it but must never add two breakdowns together.
 
 ## Read this before you total anything
 
-**Meta, Google Ads and CM360 are live. TikTok is not.**
+**All five channels are live** — measured 2026-10-13.
 
 **CM360 moved dataset on 2026-10-12**: its tables were dropped from `kebooladv`
 and recreated in **`keboola_cm360`**, fresh daily and about seven times larger.
 It had looked dead since 2026-09-28; it had in fact been relocated.
 
-**TikTok stopped on 2026-09-29** and has not resumed. DV360 still delivers but
-one day at a time.
+**TikTok stopped on 2026-09-29 and resumed on 2026-10-13**, backfilling the
+gap: 72 days to today.
+
+**DV360 and CM360 are 2 days behind and carry 14 days each.** Both are Keboola
+full loads of a rolling 14-day window, so the marts are incremental and
+accumulate past it. Nothing exists before **2026-09-28** for either channel —
+the earlier history was lost while the DV360 extract was truncated to one day,
+and only a Keboola backfill recovers it.
+
+| channel | tool | history | behind |
+|---|---|---|---|
+| Google Ads | Weld | 115 days | 0 |
+| Meta | Weld | 106 days | 0 |
+| TikTok | Weld | 72 days | 0 |
+| DV360 | Keboola | 14 days | 2 |
+| CM360 | Keboola | 14 days | 2 |
 
 **The Keboola extracts hold ONE DAY at a time.** Confirmed 2026-10-05:
 `fct_dv360_lineitem_daily_v5` and `cm360_hourly` each contained a single date.
@@ -235,6 +249,20 @@ conversions" rather than "no data", which is worse than nothing.
 ---
 
 ## CM360
+
+**Four source tables, six reporting views.** CM360 publishes the same spend at
+several grains, so the reporting layer is not a mirror of the sources — each
+view answers a different question and **they must never be unioned or joined on
+date alone**:
+
+| view | grain | answers |
+|---|---|---|
+| `v_daily` | placement × ad × creative × day | the main one. Delivery with every name resolved |
+| `v_hourly` | the same, × hour | dayparting |
+| `v_campaign_daily` | campaign × day | totals, with Floodlight conversions collapsed |
+| **`v_geo_daily`** | placement × country × city × day | **where delivery happened** |
+| **`v_floodlight_daily`** | activity × ad × creative × day | **what converted, split view-through vs click-through** |
+| `v_metric_catalog` | — | what each CM360 metric means |
 
 Source: Keboola → **`keboola_cm360`** (moved there from `kebooladv` on
 2026-10-12): `cm360_hourly`, `cm360_united`, `cm360_floodlights`, `cm360_reach`.

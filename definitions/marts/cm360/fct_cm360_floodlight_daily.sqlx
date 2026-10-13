@@ -1,0 +1,57 @@
+config {
+  type: "incremental",
+  schema: constants.SCHEMAS.cm360_marts,
+  name: "fct_cm360_floodlight_daily",
+  tags: ["cm360", "marts"],
+  description: "CM360 Floodlight conversions by ACTIVITY: day x placement x ad x creative x activity. fct_cm360_campaign_daily has the collapsed total; this is what it is made of.",
+  bigquery: {
+    partitionBy: "date",
+    clusterBy: ["campaign_id", "placement_id", "activity_id"]
+  },
+  assertions: {
+    uniqueKey: ["date", "placement_id", "ad_id", "creative_id", "activity_id"],
+    nonNull: ["date", "activity_id"]
+  },
+  columns: {
+    floodlight_config_id: "The Floodlight configuration the activity belongs to. One per advertiser normally, but an advertiser running several tags will have more.",
+    activity: "What the conversion actually was. The old cm360_standard_table gave one undifferentiated totalConversions and no way to tell a purchase from a page view.",
+    view_through_conversions: "Credited to an IMPRESSION with no click. A SEPARATE PATH from click-through — never add the two and call it the total. Use total_conversions.",
+    click_through_conversions: "Credited to a CLICK.",
+    total_conversions: "Google's own total. Not necessarily view_through + click_through, so take it as given rather than deriving it."
+  }
+}
+
+-- The view-through / click-through split exists in NO OTHER CHANNEL here.
+-- DV360 has postview and postclick, which is the same idea; Meta, TikTok
+-- and Google Ads give one attributed number and no path breakdown.
+--
+-- Incremental, append-only. 2,026 source rows over 10 days as of
+-- 2026-10-13 -- Floodlight is genuinely sparse, not broken.
+
+SELECT
+  date,
+  advertiser_id,
+  campaign_id,
+  site_id,
+  placement_id,
+  ad_id,
+  creative_id,
+  activity_id,
+  activity,
+  activity_group_id,
+  activity_group,
+  floodlight_config_id,
+
+  SUM(total_conversions)         AS total_conversions,
+  SUM(total_conversions_revenue) AS total_conversions_revenue,
+  SUM(view_through_conversions)  AS view_through_conversions,
+  SUM(click_through_conversions) AS click_through_conversions,
+  SUM(view_through_revenue)      AS view_through_revenue,
+  SUM(click_through_revenue)     AS click_through_revenue
+FROM ${ref("stg_cm360_floodlight")}
+WHERE date IS NOT NULL
+  AND activity_id IS NOT NULL
+${when(incremental(),
+  `AND date NOT IN (SELECT DISTINCT date FROM ${self()}
+                    WHERE ${constants.allPartitions()})`)}
+GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12

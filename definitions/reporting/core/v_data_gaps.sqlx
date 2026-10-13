@@ -42,19 +42,6 @@ WITH gaps AS (
 
   UNION ALL
 
-  -- CM360: advertisers the reach bridge never named
-  SELECT
-    '${constants.CHANNEL.cm360}',
-    'cm360_unnamed_advertiser',
-    advertiser_id,
-    'cm360_reach is the only source carrying advertiser_id and name on the same row, and this advertiser never appeared in it.',
-    COUNT(*),
-    CAST(NULL AS FLOAT64)
-  FROM ${ref("dim_cm360_advertiser")}
-  WHERE is_name_missing
-  GROUP BY advertiser_id
-
-  UNION ALL
 
   -- CM360: campaigns the hourly report never delivered. Without an hourly
   -- row there is no placement, site or creative detail and no media cost
