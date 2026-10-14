@@ -15,6 +15,11 @@ vars:
   # tuning change is a one-line edit here, not a hunt through SQL.
 
   # An extraction is stale after this many days without new rows.
+  # ONE threshold for every channel. There was briefly a second, looser one
+  # for Keboola's DV360 and CM360 because those two land ~2 days back -- that
+  # lag was assumed to be deliberate and it is not. Every source is expected
+  # to carry today's date; a channel that does not is a problem upstream, not
+  # a tolerance to encode here.
   freshnessThresholdDays: "2"
 
   # DV360 creative-level spend normally sits near 0.85 of backbone spend

@@ -152,7 +152,7 @@ number is wrong:
 
 | Assertion | Fires when |
 |---|---|
-| `assert_source_freshness` | any FEED stopped delivering — one row per mart, not per channel, because a connector can drop one table while the backbone keeps flowing |
+| `assert_source_freshness` | any FEED stopped delivering. ONE threshold, 2 days, for every channel. **Every source is expected to carry today's date.** DV360 and CM360 land ~2 days back and are therefore red — that is a Keboola problem to fix, not a lag to tolerate — one row per mart, not per channel, because a connector can drop one table while the backbone keeps flowing |
 | `assert_dv360_creative_coverage` | creative spend drops below the known ~85% |
 | `assert_cm360_hourly_grain` | the base grain gained duplicate rows |
 | `assert_cm360_campaign_reconciliation` | CM360's two reports disagree on impressions |

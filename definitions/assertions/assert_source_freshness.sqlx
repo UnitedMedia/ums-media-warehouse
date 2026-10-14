@@ -18,6 +18,12 @@ config {
 -- So: one branch per mart that is fed by its own source table. If a feed
 -- dies, the row naming it appears here.
 --
+-- ONE THRESHOLD for every channel. Every source is expected to carry today's
+-- date. DV360 and CM360 land about two days back; that was briefly treated
+-- as a designed lag and given its own looser threshold, which was wrong --
+-- nobody specified it, it was inferred from the data. It is a Keboola
+-- problem, and this assertion is how it stays visible.
+--
 -- FOUR marts carry requirePartitionFilter -- fct_meta_ad_daily,
 -- fct_meta_ad_action_daily, fct_meta_breakdown_daily and
 -- fct_cm360_placement_hourly. BigQuery rejects an unfiltered query against
@@ -27,70 +33,71 @@ config {
 WITH latest AS (
   -- DV360 ----------------------------------------------------------------
   SELECT '${constants.CHANNEL.dv360}' AS channel, 'line item daily' AS feed,
-         MAX(date) AS latest_date
+         MAX(date) AS latest_date,
+         ${dataform.projectConfig.vars.freshnessThresholdDays} AS threshold_days
   FROM ${ref("fct_dv360_daily")}
 
   UNION ALL
-  SELECT '${constants.CHANNEL.dv360}', 'breakdowns', MAX(date)
+  SELECT '${constants.CHANNEL.dv360}', 'breakdowns', MAX(date), ${dataform.projectConfig.vars.freshnessThresholdDays}
   FROM ${ref("fct_dv360_breakdown_daily")}
 
   -- CM360 ----------------------------------------------------------------
   UNION ALL
-  SELECT '${constants.CHANNEL.cm360}', 'placement hourly', MAX(date)
+  SELECT '${constants.CHANNEL.cm360}', 'placement hourly', MAX(date), ${dataform.projectConfig.vars.freshnessThresholdDays}
   FROM ${ref("fct_cm360_placement_daily")}
 
   UNION ALL
-  SELECT '${constants.CHANNEL.cm360}', 'campaign daily', MAX(date)
+  SELECT '${constants.CHANNEL.cm360}', 'campaign daily', MAX(date), ${dataform.projectConfig.vars.freshnessThresholdDays}
   FROM ${ref("fct_cm360_campaign_daily")}
 
   -- Meta -----------------------------------------------------------------
   UNION ALL
-  SELECT '${constants.CHANNEL.meta}', 'ad daily', MAX(date)
+  SELECT '${constants.CHANNEL.meta}', 'ad daily', MAX(date), ${dataform.projectConfig.vars.freshnessThresholdDays}
   FROM ${ref("fct_meta_ad_daily")}
   WHERE ${constants.allPartitions()}
 
   UNION ALL
-  SELECT '${constants.CHANNEL.meta}', 'ad actions', MAX(date)
+  SELECT '${constants.CHANNEL.meta}', 'ad actions', MAX(date), ${dataform.projectConfig.vars.freshnessThresholdDays}
   FROM ${ref("fct_meta_ad_action_daily")}
   WHERE ${constants.allPartitions()}
 
   UNION ALL
-  SELECT '${constants.CHANNEL.meta}', 'breakdowns', MAX(date)
+  SELECT '${constants.CHANNEL.meta}', 'breakdowns', MAX(date), ${dataform.projectConfig.vars.freshnessThresholdDays}
   FROM ${ref("fct_meta_breakdown_daily")}
   WHERE ${constants.allPartitions()}
 
   UNION ALL
-  SELECT '${constants.CHANNEL.meta}', 'demographics', MAX(date)
+  SELECT '${constants.CHANNEL.meta}', 'demographics', MAX(date), ${dataform.projectConfig.vars.freshnessThresholdDays}
   FROM ${ref("fct_meta_demographic_daily")}
 
   UNION ALL
-  SELECT '${constants.CHANNEL.meta}', 'age x gender', MAX(date)
+  SELECT '${constants.CHANNEL.meta}', 'age x gender', MAX(date), ${dataform.projectConfig.vars.freshnessThresholdDays}
   FROM ${ref("fct_meta_age_gender_daily")}
 
   -- TikTok ---------------------------------------------------------------
   UNION ALL
-  SELECT '${constants.CHANNEL.tiktok}', 'campaign daily', MAX(date)
+  SELECT '${constants.CHANNEL.tiktok}', 'campaign daily', MAX(date), ${dataform.projectConfig.vars.freshnessThresholdDays}
   FROM ${ref("fct_tiktok_campaign_daily")}
 
   UNION ALL
-  SELECT '${constants.CHANNEL.tiktok}', 'ad daily', MAX(date)
+  SELECT '${constants.CHANNEL.tiktok}', 'ad daily', MAX(date), ${dataform.projectConfig.vars.freshnessThresholdDays}
   FROM ${ref("fct_tiktok_ad_daily")}
 
   UNION ALL
-  SELECT '${constants.CHANNEL.tiktok}', 'breakdowns', MAX(date)
+  SELECT '${constants.CHANNEL.tiktok}', 'breakdowns', MAX(date), ${dataform.projectConfig.vars.freshnessThresholdDays}
   FROM ${ref("fct_tiktok_breakdown_daily")}
 
   -- Google Ads -----------------------------------------------------------
   UNION ALL
-  SELECT '${constants.CHANNEL.gads}', 'campaign daily', MAX(date)
+  SELECT '${constants.CHANNEL.gads}', 'campaign daily', MAX(date), ${dataform.projectConfig.vars.freshnessThresholdDays}
   FROM ${ref("fct_gads_campaign_daily")}
 
   UNION ALL
-  SELECT '${constants.CHANNEL.gads}', 'ad daily', MAX(date)
+  SELECT '${constants.CHANNEL.gads}', 'ad daily', MAX(date), ${dataform.projectConfig.vars.freshnessThresholdDays}
   FROM ${ref("fct_gads_ad_daily")}
 
   UNION ALL
-  SELECT '${constants.CHANNEL.gads}', 'audience daily', MAX(date)
+  SELECT '${constants.CHANNEL.gads}', 'audience daily', MAX(date), ${dataform.projectConfig.vars.freshnessThresholdDays}
   FROM ${ref("fct_gads_audience_daily")}
 )
 
@@ -98,8 +105,9 @@ SELECT
   channel,
   feed,
   latest_date,
-  DATE_DIFF(CURRENT_DATE(), latest_date, DAY) AS days_stale
+  DATE_DIFF(CURRENT_DATE(), latest_date, DAY) AS days_stale,
+  threshold_days
 FROM latest
 WHERE latest_date IS NULL
-   OR latest_date < DATE_SUB(CURRENT_DATE(), INTERVAL ${dataform.projectConfig.vars.freshnessThresholdDays} DAY)
+   OR DATE_DIFF(CURRENT_DATE(), latest_date, DAY) > threshold_days
 ORDER BY days_stale DESC
