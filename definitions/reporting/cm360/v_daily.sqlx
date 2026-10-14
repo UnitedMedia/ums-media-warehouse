@@ -70,4 +70,13 @@ LEFT JOIN (
     SUM(total_conversions_revenue) AS total_conversions_revenue
   FROM ${ref("fct_cm360_floodlight_daily")}
   GROUP BY 1, 2, 3, 4
-) fl USING (date, placement_id, ad_id, creative_id)
+) fl
+  -- Explicit ON, not USING. By this point placement_id, ad_id and
+  -- creative_id each exist TWICE on the left side -- once from the fact and
+  -- once from a dimension joined with USING, which merges only the column it
+  -- names. A second USING on any of them is ambiguous and BigQuery refuses
+  -- the query. Anchor every join to the fact instead.
+  ON  fl.date        = f.date
+  AND fl.placement_id = f.placement_id
+  AND fl.ad_id        = f.ad_id
+  AND fl.creative_id  = f.creative_id
