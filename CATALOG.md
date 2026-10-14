@@ -522,6 +522,14 @@ keywords and search terms follow.
   charting interest alone shows 7% of your spend while looking like a complete
   map. Use presence unless the question is specifically "which places were
   people searching *about*".
+- **`google_ads.youtube_ads` DUPLICATES ROWS since 2026-10-14.** Its sync was
+  switched to incremental and now inserts instead of replacing: 83
+  campaign-day-network keys arrived twice, from the 13 and 14 October runs,
+  with identical `cost_micros`. It was clean on 2026-10-02 — 142,678 rows,
+  142,678 keys. **Never query this table directly without de-duplicating.**
+  `stg_gads_campaign_network_daily` does it with a QUALIFY, so everything in
+  the warehouse is safe; `assert_gads_video_grain` watches the raw table and
+  stays red until Weld fixes the load.
 - **`google_ads.youtube_ads` is not a YouTube table, and its spend is a
   duplicate.** It covers all seven channel types, and its `cost_micros` matches
   `campaign_stats` to the cent (23,575 September campaign-days, zero differing,

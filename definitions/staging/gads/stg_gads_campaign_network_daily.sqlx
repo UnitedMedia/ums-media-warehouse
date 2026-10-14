@@ -61,3 +61,15 @@ SELECT
   video_quartile_p_100_rate
 FROM ${ref({ schema: constants.DATASETS.gads, name: "youtube_ads" })}
 WHERE _weld_deleted_at IS NULL
+-- DE-DUPLICATED since 2026-10-14. The source began inserting instead of
+-- replacing when its sync was switched to incremental: 83 campaign-day-network
+-- keys arrived twice, once from the 13 Oct run and once from the 14 Oct run,
+-- with IDENTICAL cost_micros. Summing them doubles those rows.
+--
+-- This QUALIFY is a defence, not a fix. assert_gads_video_grain now watches
+-- the RAW table rather than this view, so the sync problem still reports even
+-- though nothing downstream is affected by it.
+QUALIFY ROW_NUMBER() OVER (
+  PARTITION BY DATE(date), CAST(campaign_id AS STRING), ad_network_type
+  ORDER BY _weld_synced DESC
+) = 1

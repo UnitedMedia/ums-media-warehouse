@@ -1,31 +1,30 @@
 config {
   type: "assertion",
   tags: ["gads", "monitoring"],
-  description: "google_ads.youtube_ads must stay one row per date x campaign x ad_network_type. A duplicate here would put two different quartile rates on the same campaign-day-network and there would be no way to tell which is right."
+  description: "google_ads.youtube_ads must hold one row per date x campaign x ad_network_type. It does not as of 2026-10-14 — the sync inserts instead of replacing. Staging de-duplicates so nothing downstream breaks; this stays red until Weld fixes the load."
 }
 
--- THIS DELIBERATELY DOES NOT COMPARE SPEND against campaign_stats.
+-- WATCHES THE RAW TABLE, NOT STAGING.
 --
--- The first version did, with a one-cent tolerance, and it failed on good
--- data: 35 disagreeing campaign-days out of 28,015 (0.125%), worst 1.06,
--- total 7.59 across the whole lookback window. Both tables come from Google,
--- are synced minutes apart, and Google restates cost for weeks — so that
--- noise is permanent and self-healing, and no threshold separates it from a
--- real problem without eventually being wrong in one direction or the other.
+-- It used to watch stg_gads_campaign_network_daily. On 2026-10-14 that view
+-- gained a QUALIFY to survive the source duplicating rows — which would have
+-- made this assertion permanently green and permanently useless. Pointing it
+-- at the source keeps the signal where the problem is.
 --
--- That is the same trap assert_gads_account_reconciliation fell into, and
--- the README records the rule: if a check cannot be made to go green on
--- good data, it is the wrong check. The comparison now reports in
--- reporting.v_data_gaps as gads_youtube_ads_spend_drift, where it is
--- visible without turning the workflow red.
+-- What happened: the sync was switched to incremental and began INSERTING
+-- rather than REPLACING. 83 keys arrived twice, from the 13 and 14 October
+-- runs, with identical cost_micros. On 2026-10-02 the same table was clean:
+-- 142,678 rows, 142,678 keys.
 --
--- It costs nothing to be strict about the grain, though: fct_gads_campaign_video_daily
--- carries no spend, so duplicates here cannot corrupt money — only the funnel.
+-- Clean on 2026-10-02, broken by 2026-10-14. That is what an eleven-day-old
+-- grain check is for.
 
 SELECT
   'duplicate date + campaign + network'  AS problem,
-  CONCAT(CAST(date AS STRING), ' ', campaign_id, ' ', ad_network_type) AS detail,
+  CONCAT(CAST(DATE(date) AS STRING), ' ',
+         CAST(campaign_id AS STRING), ' ', ad_network_type) AS detail,
   COUNT(*)                               AS rows_affected
-FROM ${ref("stg_gads_campaign_network_daily")}
+FROM ${ref({ schema: constants.DATASETS.gads, name: "youtube_ads" })}
+WHERE _weld_deleted_at IS NULL
 GROUP BY 1, 2
 HAVING COUNT(*) > 1

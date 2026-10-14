@@ -161,7 +161,7 @@ number is wrong:
 | `assert_meta_results_coverage` | spend exists under an optimization goal with no Results definition |
 | `assert_meta_ad_daily_grain` | duplicate or null-keyed rows at Meta's base grain |
 | `assert_meta_age_gender_grain` | the `age_gender` source stopped publishing 7-day windows, so the Monday filter is now wrong |
-| `assert_gads_video_grain` | `youtube_ads` gained duplicate rows at campaign x day x network |
+| `assert_gads_video_grain` | `youtube_ads` holds duplicate rows at campaign x day x network. **RED since 2026-10-14** and correctly so — the sync inserts instead of replacing. Staging de-duplicates, so nothing downstream is wrong; this stays red until Weld fixes the load |
 | `assert_staging_date_parsing` | a channel's date or hour string stopped parsing |
 | `assert_tiktok_ad_coverage` | TikTok ad-level spend drops below the known ~98.6% of campaign-level |
 | `assert_tiktok_grain` | TikTok started delivering duplicate rows, so staging now needs de-duplication |
