@@ -189,6 +189,22 @@ WITH gaps AS (
 
   UNION ALL
 
+  -- Google Ads: youtube_ads duplicates rows since 2026-10-14. Its sync was
+  -- switched to incremental and now INSERTS instead of replacing. Staging
+  -- de-duplicates on _weld_synced, so nothing reported is affected -- this
+  -- row exists so the upstream defect stays visible while Weld fixes it.
+  SELECT
+    '${constants.CHANNEL.gads}',
+    'gads_youtube_ads_duplicate_rows',
+    CAST(NULL AS STRING),
+    'google_ads.youtube_ads holds more rows than distinct date+campaign+network keys. The load inserts rather than replaces. Clean on 2026-10-02 (142,678 rows, 142,678 keys). stg_gads_campaign_network_daily de-duplicates, so no reported number is wrong — but never query the raw table without a QUALIFY.',
+    (SELECT COUNT(*) - COUNT(DISTINCT FORMAT('%t|%t|%t', DATE(date), CAST(campaign_id AS STRING), ad_network_type))
+     FROM ${ref({ schema: constants.DATASETS.gads, name: "youtube_ads" })}
+     WHERE _weld_deleted_at IS NULL),
+    CAST(NULL AS FLOAT64)
+
+  UNION ALL
+
   -- TikTok: spend the ad-level report cannot attribute to a named ad
   SELECT
     '${constants.CHANNEL.tiktok}',

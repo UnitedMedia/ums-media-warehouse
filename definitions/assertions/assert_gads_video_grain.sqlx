@@ -1,30 +1,36 @@
 config {
   type: "assertion",
   tags: ["gads", "monitoring"],
-  description: "google_ads.youtube_ads must hold one row per date x campaign x ad_network_type. It does not as of 2026-10-14 — the sync inserts instead of replacing. Staging de-duplicates so nothing downstream breaks; this stays red until Weld fixes the load."
+  description: "stg_gads_campaign_network_daily must hold one row per date x campaign x ad_network_type. It de-duplicates a source that does not, so this is a check that the de-duplication still holds — not a check on the source."
 }
 
--- WATCHES THE RAW TABLE, NOT STAGING.
+-- WHAT THIS WATCHES, AND WHY IT MOVED TWICE.
 --
--- It used to watch stg_gads_campaign_network_daily. On 2026-10-14 that view
--- gained a QUALIFY to survive the source duplicating rows — which would have
--- made this assertion permanently green and permanently useless. Pointing it
--- at the source keeps the signal where the problem is.
+-- 1. It watched staging. Clean, until the source broke.
+-- 2. 2026-10-14: the source began inserting instead of replacing -- 83 keys
+--    arrived twice from consecutive runs, identical cost_micros. Staging
+--    gained a QUALIFY, and this assertion was pointed at the RAW table so
+--    the sync problem stayed visible.
+-- 3. Same day: moved back. Pointing it at the source made it permanently red
+--    over something that CANNOT affect any reported number -- staging
+--    de-duplicates and fct_gads_campaign_video_daily is clean. A blocking
+--    check on a harmless upstream defect is how people learn to ignore red.
 --
--- What happened: the sync was switched to incremental and began INSERTING
--- rather than REPLACING. 83 keys arrived twice, from the 13 and 14 October
--- runs, with identical cost_micros. On 2026-10-02 the same table was clean:
--- 142,678 rows, 142,678 keys.
+-- The duplication is now reported in reporting.v_data_gaps as
+-- gads_youtube_ads_duplicate_rows, sized, where it is visible without
+-- failing the workflow. That is the same treatment
+-- gads_account_spend_above_campaigns and gads_youtube_ads_spend_drift got,
+-- and the README's rule: a check that cannot go green on data nobody here
+-- can fix is the wrong check.
 --
--- Clean on 2026-10-02, broken by 2026-10-14. That is what an eleven-day-old
--- grain check is for.
+-- What remains worth blocking on: the de-duplication failing. If the source
+-- ever duplicates on a key this QUALIFY does not cover, rows reach the mart
+-- twice and spend doubles. That is this assertion.
 
 SELECT
-  'duplicate date + campaign + network'  AS problem,
-  CONCAT(CAST(DATE(date) AS STRING), ' ',
-         CAST(campaign_id AS STRING), ' ', ad_network_type) AS detail,
-  COUNT(*)                               AS rows_affected
-FROM ${ref({ schema: constants.DATASETS.gads, name: "youtube_ads" })}
-WHERE _weld_deleted_at IS NULL
+  'duplicate date + campaign + network AFTER de-duplication' AS problem,
+  CONCAT(CAST(date AS STRING), ' ', campaign_id, ' ', ad_network_type) AS detail,
+  COUNT(*)                                                   AS rows_affected
+FROM ${ref("stg_gads_campaign_network_daily")}
 GROUP BY 1, 2
 HAVING COUNT(*) > 1

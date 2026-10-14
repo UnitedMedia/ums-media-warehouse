@@ -161,7 +161,7 @@ number is wrong:
 | `assert_meta_results_coverage` | spend exists under an optimization goal with no Results definition |
 | `assert_meta_ad_daily_grain` | duplicate or null-keyed rows at Meta's base grain |
 | `assert_meta_age_gender_grain` | the `age_gender` source stopped publishing 7-day windows, so the Monday filter is now wrong |
-| `assert_gads_video_grain` | `youtube_ads` holds duplicate rows at campaign x day x network. **RED since 2026-10-14** and correctly so — the sync inserts instead of replacing. Staging de-duplicates, so nothing downstream is wrong; this stays red until Weld fixes the load |
+| `assert_gads_video_grain` | staging's de-duplication of `youtube_ads` stopped holding — rows would reach the mart twice and spend would double |
 | `assert_staging_date_parsing` | a channel's date or hour string stopped parsing |
 | `assert_tiktok_ad_coverage` | TikTok ad-level spend drops below the known ~98.6% of campaign-level |
 | `assert_tiktok_grain` | TikTok started delivering duplicate rows, so staging now needs de-duplication |
@@ -181,6 +181,18 @@ they will always disagree slightly. No threshold separated that from a real gap.
 It now reports in `reporting.v_data_gaps` as `gads_account_spend_above_campaigns`,
 where it is visible without turning the workflow red. If a check cannot be made
 to go green on good data, it is the wrong check.
+
+It claimed a third on 2026-10-14. `youtube_ads` started duplicating rows —
+its sync inserts rather than replaces — and `assert_gads_video_grain` was
+pointed at the raw table so the defect stayed visible. That made it
+permanently red over something that **cannot affect any reported number**,
+because staging de-duplicates and the mart is clean. It now watches the
+de-duplication instead, and the source defect reports as
+`gads_youtube_ads_duplicate_rows` in `v_data_gaps`.
+
+**The test is not "is this real?" but "can a red light here be acted on by
+whoever sees it?"** An upstream defect nobody in this repo can fix, with no
+downstream effect, belongs in the work list — not in the gate.
 
 The same rule claimed a second check on 2026-10-05. `assert_gads_video_grain`
 originally compared `youtube_ads` spend against `campaign_stats` with a one-cent
