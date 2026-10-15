@@ -205,6 +205,21 @@ WITH gaps AS (
 
   UNION ALL
 
+  -- CM360: the Keboola extraction duplicates rows since 2026-10-15. Staging
+  -- removes them with SELECT DISTINCT -- every duplicate pair is identical in
+  -- every column -- so nothing reported is affected. This row keeps the
+  -- upstream defect visible while Keboola fixes the load.
+  SELECT
+    '${constants.CHANNEL.cm360}',
+    'cm360_duplicate_rows',
+    CAST(NULL AS STRING),
+    'keboola_cm360 tables hold more rows than distinct grain keys: cm360_hourly 268,317 rows against 187,970 keys on 2026-10-15, cm360_floodlights 40% duplicated. The load inserts rather than replaces. Staging de-duplicates, so no reported number is wrong — but never query the raw tables without SELECT DISTINCT.',
+    (SELECT COUNT(*) - COUNT(DISTINCT FORMAT('%t|%t|%t|%t|%t', date, hour, placementId, adId, creativeId))
+     FROM ${ref({ schema: constants.DATASETS.cm360, name: "cm360_hourly" })}),
+    CAST(NULL AS FLOAT64)
+
+  UNION ALL
+
   -- TikTok: spend the ad-level report cannot attribute to a named ad
   SELECT
     '${constants.CHANNEL.tiktok}',

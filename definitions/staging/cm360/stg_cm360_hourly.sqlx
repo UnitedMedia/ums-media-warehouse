@@ -20,7 +20,26 @@ config {
 -- warehouse would end up storing counts as floats, which nothing else here
 -- does. media_cost stays FLOAT64: it is money, not a count.
 
-SELECT
+
+-- SELECT DISTINCT since 2026-10-15. The Keboola extraction began inserting
+-- instead of replacing: cm360_hourly went from 82,413 rows to 268,317, with
+-- 80,347 beyond its distinct date + hour + placement + ad + creative keys.
+-- cm360_floodlights is 40% duplicated, cm360_united 0.2%.
+--
+-- DISTINCT, not a QUALIFY, and the difference matters. Checked 2026-10-15:
+-- every duplicate pair is IDENTICAL in every column -- same impressions,
+-- cost, site, campaign and landing page. Identical rows are interchangeable,
+-- so removing one cannot lose anything.
+--
+-- These tables carry no sync timestamp, so there is no "newest wins" tiebreak
+-- available. A QUALIFY would have to pick arbitrarily, which is exactly what
+-- this file's own grain note warns against.
+--
+-- It also keeps the right failure mode: if the source ever duplicates rows
+-- that DIFFER, DISTINCT keeps both and assert_cm360_hourly_grain fires. The
+-- fix defends against the known problem without hiding a new one.
+
+SELECT DISTINCT
   CAST(profileId AS STRING)                                  AS profile_id,
   profileName                                                AS profile_name,
 
