@@ -248,6 +248,14 @@ anything derived from it alone would reset every night.
 `fct_cm360_placement_daily` stays a plain `table`: it reads
 `fct_cm360_placement_hourly`, so it inherits that table's history for free.
 
+**AND IT HAS TO BE DONE IN EVERY ENVIRONMENT.** On 2026-10-16 production
+failed on three CM360 views — `v_daily`, `v_geo_daily`, `v_floodlight_daily`
+— while dev passed. The dev workspace had been full-refreshed on the 13th and
+production never had, so production's dimensions still lacked `placement_name`,
+`ad_name`, `creative_name` and `floodlight_config_id`, and the views selecting
+them failed with `Unrecognized name`. `v_hourly` joins the same dimension and
+did NOT fail, because it never selects those columns — that was the tell.
+
 **ADDING A COLUMN TO AN INCREMENTAL MODEL NEEDS A FULL REFRESH.** An
 incremental run MERGEs or INSERTs into a table that already exists, and a
 column the target does not have is silently dropped. The run goes green, no

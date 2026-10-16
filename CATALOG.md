@@ -688,7 +688,7 @@ frozen since 2026-09-28 to fresh daily with ~7× the rows.
 |---|---|---|
 | `cm360_hourly` | `stg_cm360_hourly` | CM360 backbone, hourly. Column names unchanged from the old location — staging needed only a repoint. 11,804 → 82,413 rows. |
 | `cm360_united` | `stg_cm360_united`, `stg_cm360_campaign_daily` | **New, and the largest at 235,821 rows.** Daily rather than hourly, and the first CM360 source carrying **names** (advertiser, campaign, site, placement, ad, creative) plus **country and city**. |
-| `cm360_floodlights` | `stg_cm360_floodlight`, `stg_cm360_campaign_daily` | **Replaces `cm360_standard_table`.** Conversions by Floodlight activity, with revenue and the view-through / click-through split. Carries `advertiserId`, which the old table did not. 23 → 2,026 rows. |
+| `cm360_floodlights` | `stg_cm360_floodlight`, `fct_cm360_campaign_daily` | **Replaces `cm360_standard_table`.** Conversions by Floodlight activity, with revenue and the view-through / click-through split. Carries `advertiserId`, which the old table did not. Gained **`impressions`** on 2026-10-16 — Floodlight Impressions, one of the two CM360 metrics that had no source. Note it also ships `impressions_str`, the same value as STRING; staging uses the INTEGER. |
 | `cm360_reach` | `stg_cm360_reach` | Non-additive unique reach. 136 → 439 rows. |
 
 | `fct_dv360_creative_daily` | `stg_dv360_creative` |  |

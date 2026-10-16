@@ -14,6 +14,7 @@ config {
   },
   columns: {
     floodlight_config_id: "The Floodlight configuration the activity belongs to. One per advertiser normally, but an advertiser running several tags will have more.",
+    floodlight_impressions: "Impressions as the Floodlight report counts them. A DIFFERENT measure from the delivery impressions in fct_cm360_placement_daily — never put them in one total.",
     activity: "What the conversion actually was. The old cm360_standard_table gave one undifferentiated totalConversions and no way to tell a purchase from a page view.",
     view_through_conversions: "Credited to an IMPRESSION with no click. A SEPARATE PATH from click-through — never add the two and call it the total. Use total_conversions.",
     click_through_conversions: "Credited to a CLICK.",
@@ -42,6 +43,7 @@ SELECT
   activity_group,
   floodlight_config_id,
 
+  SUM(floodlight_impressions)    AS floodlight_impressions,
   SUM(total_conversions)         AS total_conversions,
   SUM(total_conversions_revenue) AS total_conversions_revenue,
   SUM(view_through_conversions)  AS view_through_conversions,

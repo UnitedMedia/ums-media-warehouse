@@ -5,6 +5,7 @@ config {
   tags: ["cm360", "reporting"],
   description: "CM360 conversions by Floodlight activity, with the view-through / click-through split. No other channel in this warehouse separates the two attribution paths this way.",
   columns: {
+    floodlight_impressions: "Impressions counted by the Floodlight report, available since 2026-10-16. NOT comparable with delivery impressions in v_daily — a different report counting a different thing.",
     activity: "What the conversion was. Group by this before comparing anything — a page view and a purchase are both 'conversions' otherwise.",
     view_through_conversions: "Credited to an impression with NO click. **Never add this to click_through_conversions** — use total_conversions, which is Google's own figure.",
     view_through_share: "view_through / total. High values mean the activity is being credited mostly to people who never clicked, which is worth knowing before anyone celebrates it.",
@@ -40,6 +41,7 @@ SELECT
   f.activity_group,
   f.activity,
 
+  f.floodlight_impressions,
   f.total_conversions,
   f.view_through_conversions,
   f.click_through_conversions,

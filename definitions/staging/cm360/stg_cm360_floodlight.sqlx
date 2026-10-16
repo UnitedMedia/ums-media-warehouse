@@ -5,6 +5,7 @@ config {
   tags: ["cm360", "staging"],
   description: "CM360 Floodlight conversions at activity x placement x ad x creative x day. Replaces the old cm360_standard_table, which gave a single collapsed totalConversions and nothing else.",
   columns: {
+    floodlight_impressions: "Impressions ATTRIBUTED WITHIN THE FLOODLIGHT REPORT. Not the same as delivery impressions in cm360_hourly or cm360_united — do not compare the two without knowing which question is being asked.",
     activity: "The Floodlight activity name — what the conversion actually was. The old standard report had no equivalent; every conversion was one undifferentiated number.",
     view_through_conversions: "Conversions credited to an IMPRESSION with no click. A separate path from click-through — never add the two and call it total, use total_conversions.",
     click_through_conversions: "Conversions credited to a CLICK.",
@@ -61,6 +62,12 @@ SELECT DISTINCT
   CAST(activityGroupId AS STRING)   AS activity_group_id,
   NULLIF(TRIM(activityGroup), '')   AS activity_group,
   CAST(floodlightConfigId AS STRING) AS floodlight_config_id,
+
+  -- Arrived 2026-10-16. "Floodlight Impressions" was one of the two CM360
+  -- metrics on the requested list and had no source until now. The source
+  -- also ships impressions_str, the same value as STRING; the INTEGER one
+  -- is used and the string ignored.
+  impressions                       AS floodlight_impressions,
 
   totalConversions                  AS total_conversions,
   totalConversionsRevenue           AS total_conversions_revenue,
