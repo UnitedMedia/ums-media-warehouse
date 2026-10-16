@@ -82,4 +82,16 @@ SELECT
 FROM delivery d
 LEFT JOIN conversions c USING (date, campaign_id)
 WHERE d.date IS NOT NULL
+-- THE INCREMENTAL PREDICATE. It was lost on 2026-10-13 when the staging view
+-- was folded in here and the body rewritten: the model stayed
+-- type: "incremental" but had neither this predicate nor a top-level
+-- uniqueKey, so every run appended the WHOLE source again. A full refresh
+-- cleaned it and the next ordinary run doubled it, which is why the uniqueKey
+-- assertion failed immediately after a successful refresh.
+--
+-- core.fct_ad_performance_daily reads this mart, so its own uniqueKey failed
+-- too -- one bug, two red assertions.
+${when(incremental(),
+  `AND d.date NOT IN (SELECT DISTINCT date FROM ${self()}
+                      WHERE ${constants.allPartitions()})`)}
 GROUP BY 1, 2, 3
