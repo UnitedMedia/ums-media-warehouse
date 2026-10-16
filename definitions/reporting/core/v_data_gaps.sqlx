@@ -220,6 +220,46 @@ WITH gaps AS (
 
   UNION ALL
 
+  -- CM360: rows that share the hourly grain key but carry DIFFERENT metrics.
+  -- Not duplicates -- SELECT DISTINCT already removed the byte-identical
+  -- ones. These are the extraction splitting one hour across two rows with
+  -- different numbers. fct_cm360_placement_hourly SUMs them, which is the
+  -- only sensible reading, so nothing reported is wrong.
+  SELECT
+    '${constants.CHANNEL.cm360}',
+    'cm360_hourly_split_rows',
+    CAST(NULL AS STRING),
+    'Rows sharing date + hour + placement + ad + creative with different impressions or media_cost. The mart sums them. Part of the extraction malfunction that began 2026-10-06 — see cm360_unreliable_since.',
+    COUNT(*),
+    CAST(NULL AS FLOAT64)
+  FROM (
+    SELECT 1 AS x
+    FROM ${ref("stg_cm360_hourly")}
+    GROUP BY date, hour, placement_id, ad_id, creative_id
+    HAVING COUNT(*) > 1
+  )
+
+  UNION ALL
+
+  -- CM360: the hourly and daily reports stopped agreeing on 2026-10-06.
+  -- Measured over 07-11 October: hourly 19,780,323 impressions against
+  -- united 21,237,014, a 6.9% gap. Over 01-05 October the same two reports
+  -- agreed to 144 impressions in 21.4 million.
+  --
+  -- This was an assertion until 2026-10-16. It is real and it is Keboola's
+  -- to fix; no change here makes it green, and a permanently red gate is one
+  -- people stop reading.
+  SELECT
+    '${constants.CHANNEL.cm360}',
+    'cm360_unreliable_since_2026_10_06',
+    CAST(NULL AS STRING),
+    'The CM360 extraction began duplicating rows, splitting hours and disagreeing with itself on 2026-10-06. cm360_hourly and cm360_united differ by ~7% for the same days where they previously agreed to 0.0007%. TREAT ALL CM360 NUMBERS FROM 2026-10-06 AS UNRELIABLE until Keboola fixes the job. Everything before that date is sound.',
+    (SELECT COUNT(DISTINCT date) FROM ${ref("stg_cm360_hourly")}
+     WHERE date >= DATE '2026-10-06'),
+    CAST(NULL AS FLOAT64)
+
+  UNION ALL
+
   -- TikTok: spend the ad-level report cannot attribute to a named ad
   SELECT
     '${constants.CHANNEL.tiktok}',

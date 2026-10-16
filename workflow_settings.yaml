@@ -41,9 +41,6 @@ vars:
   # and is excluded from that check.
   gadsAdGroupCoverageFloor: "0.98"
 
-  # Allowed relative divergence between two reports of the same
-  # delivery, e.g. CM360 hourly vs the standard campaign report.
-  reconciliationTolerance: "0.01"
 
   # Allowed absolute divergence in Meta spend between raw and mart, in
   # account currency. Anything above this means de-duplication changed

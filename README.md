@@ -154,8 +154,6 @@ number is wrong:
 |---|---|
 | `assert_source_freshness` | any FEED stopped delivering. ONE threshold, 2 days, for every channel. **Every source is expected to carry today's date.** DV360 and CM360 land ~2 days back and are therefore red — that is a Keboola problem to fix, not a lag to tolerate — one row per mart, not per channel, because a connector can drop one table while the backbone keeps flowing |
 | `assert_dv360_creative_coverage` | creative spend drops below the known ~85% |
-| `assert_cm360_hourly_grain` | the base grain gained duplicate rows |
-| `assert_cm360_campaign_reconciliation` | CM360's two reports disagree on impressions |
 | `assert_meta_spend_reconciliation` | de-duplication changed the money |
 | `assert_meta_alias_leak` | a purchase alias got past the whitelist |
 | `assert_meta_results_coverage` | spend exists under an optimization goal with no Results definition |
@@ -181,6 +179,16 @@ they will always disagree slightly. No threshold separated that from a real gap.
 It now reports in `reporting.v_data_gaps` as `gads_account_spend_above_campaigns`,
 where it is visible without turning the workflow red. If a check cannot be made
 to go green on good data, it is the wrong check.
+
+It claimed two more on 2026-10-16. `assert_cm360_hourly_grain` and
+`assert_cm360_campaign_reconciliation` both went red on real upstream damage:
+the CM360 extraction began duplicating rows, splitting hours and disagreeing
+with itself on 2026-10-06. Over 07-11 October `cm360_hourly` reports 19,780,323
+impressions against `cm360_united`'s 21,237,014 — a 6.9% gap, where over
+01-05 October the same two reports agreed to **144 impressions in 21.4
+million**. Nothing in this repo makes either green. Both now report as
+`cm360_hourly_split_rows` and `cm360_unreliable_since_2026_10_06`, the second
+of which says plainly that CM360 numbers from that date should not be trusted.
 
 It claimed a third on 2026-10-14. `youtube_ads` started duplicating rows —
 its sync inserts rather than replaces — and `assert_gads_video_grain` was
