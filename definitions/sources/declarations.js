@@ -69,10 +69,20 @@ const CM360_TABLES = [
                        // campaign, site, placement, ad, creative — plus
                        // country and city. Replaces the seed_site lookup and
                        // the advertiser-name bridge.
-  "cm360_floodlights", // replaces cm360_standard_table as the conversion
+  "cm360_floodlightsv2", // replaces cm360_standard_table as the conversion
                        // source, and is far richer: activity and activity
                        // group, revenue, and the view-through / click-through
                        // split that the old table collapsed into one number.
+                       //
+                       // RENAMED upstream on 2026-10-17: cm360_floodlights
+                       // was dropped and cm360_floodlightsv2 created in its
+                       // place, with no notice. Three days of runs failed at
+                       // stg_cm360_floodlight -- "Table ... was not found" --
+                       // and every downstream object, including the core
+                       // cross-channel fact, was skipped. v2 carries all 29
+                       // columns v1 did, plus placementStartDate and
+                       // placementEndDate; it dropped impressions_str, which
+                       // was never read. Duplication fell from 40% to 1.3%.
   "cm360_reach",       // NON-ADDITIVE unique reach.
 ];
 

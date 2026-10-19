@@ -213,7 +213,7 @@ WITH gaps AS (
     '${constants.CHANNEL.cm360}',
     'cm360_duplicate_rows',
     CAST(NULL AS STRING),
-    'keboola_cm360 tables hold more rows than distinct grain keys: cm360_hourly 268,317 rows against 187,970 keys on 2026-10-15, cm360_floodlights 40% duplicated. The load inserts rather than replaces. Staging de-duplicates, so no reported number is wrong — but never query the raw tables without SELECT DISTINCT.',
+    'keboola_cm360 tables hold more rows than distinct grain keys: cm360_hourly 268,317 rows against 187,970 keys on 2026-10-15, cm360_floodlightsv2 1.3% duplicated, down from 40% in the v1 table it replaced on 2026-10-17. The load inserts rather than replaces. Staging de-duplicates, so no reported number is wrong — but never query the raw tables without SELECT DISTINCT.',
     (SELECT COUNT(*) - COUNT(DISTINCT FORMAT('%t|%t|%t|%t|%t', date, hour, placementId, adId, creativeId))
      FROM ${ref({ schema: constants.DATASETS.cm360, name: "cm360_hourly" })}),
     CAST(NULL AS FLOAT64)

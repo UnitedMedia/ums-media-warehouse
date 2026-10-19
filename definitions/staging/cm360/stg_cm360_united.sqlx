@@ -33,7 +33,9 @@ config {
 -- SELECT DISTINCT since 2026-10-15. The Keboola extraction began inserting
 -- instead of replacing: cm360_hourly went from 82,413 rows to 268,317, with
 -- 80,347 beyond its distinct date + hour + placement + ad + creative keys.
--- cm360_floodlights is 40% duplicated, cm360_united 0.2%.
+-- cm360_united 0.2%. The floodlight table was 40% duplicated until
+-- cm360_floodlightsv2 replaced it on 2026-10-17; v2 is 1.3%
+-- (27 rows in 2,066). Better, not fixed -- DISTINCT stays.
 --
 -- DISTINCT, not a QUALIFY, and the difference matters. Checked 2026-10-15:
 -- every duplicate pair is IDENTICAL in every column -- same impressions,

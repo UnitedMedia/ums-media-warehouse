@@ -42,7 +42,8 @@ config {
 -- object on 2026-10-13: the staging view was not a source wrapper, it was a
 -- join of two other staging views, so it only added a name to the graph.
 --
--- Delivery from cm360_united, conversions from cm360_floodlights. Its old
+-- Delivery from cm360_united, conversions from cm360_floodlightsv2 (named
+-- cm360_floodlights until Keboola renamed it on 2026-10-17). Its old
 -- source, cm360_standard_table, was dropped in the move to keboola_cm360.
 -- Conversions are summed across Floodlight activities because that is what
 -- the old column meant; fct_cm360_floodlight_daily has the detail.
