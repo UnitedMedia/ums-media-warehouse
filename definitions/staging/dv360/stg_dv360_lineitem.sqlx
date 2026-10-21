@@ -39,3 +39,35 @@ SELECT
   Revenue_USD           AS spend_usd
 FROM ${ref({ schema: constants.DATASETS.kebooladv, name: "fct_dv360_lineitem" })}
 WHERE Date IS NOT NULL
+
+-- DE-DUPLICATION, 2026-10-21. The Keboola extract appends a new SNAPSHOT of
+-- a line-item-day instead of replacing the previous one. Confirmed on the
+-- raw table: line item 24349320935 on 2026-10-16 carries three rows with
+-- 19,305 / 19,310 / 19,313 impressions and revenue moving in lockstep --
+-- successive readings of one cumulative total, not fragments of it.
+--
+-- fct_dv360_daily groups by line_item_id and SUMS, so three snapshots became
+-- three times the spend while the uniqueKey assertion stayed green: one row
+-- out, the right key, the wrong number. It was invisible until the mart was
+-- compared against FINAL_TABLES.MASTER_TABLE, where DV360 campaigns came back
+-- at ratios of exactly 2.00 and 3.00.
+--
+-- SELECT DISTINCT -- the fix CM360 got on 2026-10-15 -- does NOT work here.
+-- Measured 2026-10-21: 3,066 rows, 2,201 distinct whole rows, 1,657 distinct
+-- date + line-item keys. Only 865 of the extras are byte-identical; the other
+-- 544 differ, so DISTINCT would have removed two thirds of the problem and
+-- hidden the rest.
+--
+-- QUALIFY keeps the LARGEST snapshot per key. Largest rather than "latest"
+-- because the extract carries no load timestamp; impressions, clicks and
+-- revenue all grow together, so the fullest row is the final one. If Keboola
+-- ever adds an extraction timestamp, order by it instead -- it is the thing
+-- actually being approximated here.
+--
+-- Damaged window: 2026-10-05 to 2026-10-17. Clean before and after, so the
+-- already-written partitions in fct_dv360_daily need repair separately --
+-- this view only fixes what loads from now on.
+QUALIFY ROW_NUMBER() OVER (
+  PARTITION BY Date, Line_Item_ID
+  ORDER BY Impressions DESC, Clicks DESC, Revenue_Adv_Currency DESC
+) = 1
