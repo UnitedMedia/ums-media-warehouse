@@ -78,11 +78,35 @@ SELECT DISTINCT
 
 FROM ${ref({ schema: constants.DATASETS.cm360, name: "cm360_hourly" })}
 
--- If the source ever starts delivering duplicate rows at this grain,
--- add:
---   QUALIFY ROW_NUMBER() OVER (
---     PARTITION BY date, hour, placementId, adId, creativeId
---     ORDER BY impressions DESC) = 1
--- Do NOT add it pre-emptively — an arbitrary tiebreak on a clean table
--- silently deletes legitimate rows. assert_cm360_hourly_grain is what
--- tells you whether you need it.
+-- QUALIFY ENABLED 2026-10-21, on evidence. This block sat here commented
+-- out with the instruction not to add it pre-emptively. That was right: an
+-- arbitrary tiebreak on a clean table silently deletes legitimate rows.
+-- The evidence arrived today.
+--
+-- The rows that share this grain key are SNAPSHOTS, not fragments. Measured
+-- on stg_cm360_hourly: placement 456459180 on 2026-10-13 hour 7 carries 189
+-- and 190 impressions; placement 416384049 hour 13 carries 3,194 / 3,195 /
+-- 3,196; placement 451090098 hour 22 carries 39 and 40. Each is a successive
+-- reading of one cumulative figure, so the largest is the complete one and
+-- SUMMING them inflates the hour.
+--
+-- This is the same defect found in DV360 the same day (see
+-- stg_dv360_lineitem) -- Keboola appending a new extract instead of
+-- replacing the old one -- and it is almost certainly the whole of the
+-- hourly-vs-daily disagreement recorded as cm360_unreliable_since_2026_10_06:
+-- fct_cm360_placement_hourly sums the snapshots, cm360_united does not, and
+-- the two reports drifted 6.9% apart from the day the duplication started.
+-- They had agreed to 144 impressions in 21.4 million before that.
+--
+-- SELECT DISTINCT above is now redundant -- QUALIFY already reduces each key
+-- to one row -- but it is kept: it costs nothing, and it documents that the
+-- byte-identical duplicates are a separate, earlier symptom of the same
+-- upstream fault.
+--
+-- Largest rather than latest, because the extract carries no load timestamp.
+-- If Keboola ever adds one, order by it instead: that is the thing this
+-- approximates.
+QUALIFY ROW_NUMBER() OVER (
+  PARTITION BY date, hour, placementId, adId, creativeId
+  ORDER BY impressions DESC, clicks DESC, mediaCost DESC
+) = 1
