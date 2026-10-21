@@ -59,3 +59,27 @@ SELECT DISTINCT
   CAST(impressions AS INT64) AS impressions,
   CAST(clicks      AS INT64) AS clicks
 FROM ${ref({ schema: constants.DATASETS.cm360, name: "cm360_reach" })}
+
+-- SNAPSHOT DE-DUPLICATION, 2026-10-21. Same Keboola defect as the other
+-- three CM360 sources and stg_dv360_lineitem: a new extract of a row is
+-- appended rather than replacing the old one. 545 rows above 1,393 keys --
+-- 39%, the worst of the four, because date + campaign_id is the ENTIRE
+-- grain here. There is no site, placement or geography for extra rows to
+-- legitimately come from.
+--
+-- ORDER BY impressions, NOT total_reach, and the distinction matters.
+-- Impressions climb monotonically across snapshots -- campaign 35649696 on
+-- 2026-10-09 runs 307,467 / 307,469 / 307,470 -- but total_reach WOBBLES:
+-- 110,946 / 110,940 / 110,940. Reach is a modelled estimate and revises
+-- DOWN as it refines. Ordering by total_reach would pick the earliest,
+-- crudest estimate. Ordering by impressions picks the latest snapshot and
+-- carries whatever reach belongs to it.
+--
+-- This matters more here than anywhere else in the project: total_reach is
+-- NON-ADDITIVE. Summing two reach figures for one campaign-day counts the
+-- same people twice, so the duplication was not merely inflating a total,
+-- it was producing a number with no meaning at all.
+QUALIFY ROW_NUMBER() OVER (
+  PARTITION BY date, campaignId
+  ORDER BY impressions DESC, clicks DESC
+) = 1
