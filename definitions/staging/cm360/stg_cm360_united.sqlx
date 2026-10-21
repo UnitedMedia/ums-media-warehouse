@@ -81,3 +81,27 @@ SELECT DISTINCT
   activeViewPercentageViewableImpressions AS src_pct_viewable,
   effectiveCpm                            AS src_effective_cpm
 FROM ${ref({ schema: constants.DATASETS.cm360, name: "cm360_united" })}
+
+-- SNAPSHOT DE-DUPLICATION, 2026-10-21. Keboola appends a new extract of a
+-- row instead of replacing the previous one, so rows sharing this grain key
+-- are successive readings of ONE cumulative figure, not fragments of it.
+-- Summing them inflates the number; the largest reading is the complete one.
+--
+-- Found the same day in stg_dv360_lineitem and stg_cm360_hourly. Evidence
+-- here:
+--   placement 446573887 on 2026-10-12 carries 4,458 and 4,459 impressions.
+--   placement 438622389 on 2026-10-11 carries four rows at 30 impressions
+--   whose mediaCost differs only in the sixth decimal -- delivery had
+--   plateaued, cost was still settling. 3,823 rows above 772,744 keys.
+--
+-- SELECT DISTINCT above is now redundant -- QUALIFY already reduces each key
+-- to one row -- but it is kept: it costs nothing and records that the
+-- byte-identical duplicates were an earlier symptom of the same fault.
+--
+-- Largest rather than latest, because the extract carries no load timestamp.
+-- If Keboola ever adds one, order by it instead: that is what this
+-- approximates.
+QUALIFY ROW_NUMBER() OVER (
+  PARTITION BY date, placementId, adId, creativeId, country, city, landingPageUrl
+  ORDER BY impressions DESC, clicks DESC, mediaCost DESC
+) = 1

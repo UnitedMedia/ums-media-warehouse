@@ -94,3 +94,29 @@ SELECT DISTINCT
   activityPerClick                  AS src_activity_per_click,
   activityPerThousandImpressions    AS src_activity_per_thousand_impressions
 FROM ${ref({ schema: constants.DATASETS.cm360, name: "cm360_floodlightsv2" })}
+
+-- SNAPSHOT DE-DUPLICATION, 2026-10-21. Keboola appends a new extract of a
+-- row instead of replacing the previous one, so rows sharing this grain key
+-- are successive readings of ONE cumulative figure, not fragments of it.
+-- Summing them inflates the number; the largest reading is the complete one.
+--
+-- Found the same day in stg_dv360_lineitem and stg_cm360_hourly. Evidence
+-- here:
+--   placement 422812836 on 2026-10-16 carries 50,026 / 50,039 / 50,136
+--   Floodlight impressions; placement 457327584 on 2026-10-12 carries
+--   4,123 and 4,124. Placement 458675511 runs 24,561 / 24,560 / 24,558 --
+--   slightly DOWN, so largest is not strictly latest here. The spread is
+--   3 in 24,561 (0.01%), which makes max a bounded, safe choice; summing
+--   would have tripled it. 76 rows above 2,254 keys.
+--
+-- SELECT DISTINCT above is now redundant -- QUALIFY already reduces each key
+-- to one row -- but it is kept: it costs nothing and records that the
+-- byte-identical duplicates were an earlier symptom of the same fault.
+--
+-- Largest rather than latest, because the extract carries no load timestamp.
+-- If Keboola ever adds one, order by it instead: that is what this
+-- approximates.
+QUALIFY ROW_NUMBER() OVER (
+  PARTITION BY date, placementId, adId, creativeId, activityId
+  ORDER BY impressions DESC, totalConversions DESC, totalConversionsRevenue DESC
+) = 1
