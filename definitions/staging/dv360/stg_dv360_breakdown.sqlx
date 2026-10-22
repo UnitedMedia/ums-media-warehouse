@@ -5,10 +5,10 @@ config {
   tags: ["dv360", "staging"],
   description: "All five single-dimension DV360 breakdowns normalised to one shape. breakdown_1 / breakdown_2 hold whatever the slice is. These are five different cuts of the SAME spend — never union any of them with fct_dv360_daily, and never total across breakdown_type.",
   columns: {
-    breakdown_type: "geo / url / timeofday / audience / floodlight. ALWAYS filter to exactly one. Summing across types multiplies spend by five.",
-    breakdown_1: "First slice — country, app URL, day of week, audience category or Floodlight activity.",
-    breakdown_2: "Second slice — region, app URL id, hour of day or Floodlight activity id. NULL for one-dimensional breakdowns.",
-    total_conversions: "ONLY the floodlight breakdown carries it. Everywhere else conversions arrive split as postclick + postview, and those do not necessarily sum to it."
+    breakdown_type: "geo / url / timeofday / audience / floodlight / targeting. ALWAYS filter to exactly one. Summing across types multiplies spend by six.",
+    breakdown_1: "First slice — country, app URL, day of week, audience category, Floodlight activity or targeted location.",
+    breakdown_2: "Second slice — region, app URL id, hour of day, Floodlight activity id or bid strategy type. NULL for one-dimensional breakdowns.",
+    total_conversions: "The floodlight and targeting breakdowns carry it. Everywhere else conversions arrive split as postclick + postview, and those do not necessarily sum to it."
   }
 }
 
@@ -92,4 +92,33 @@ SELECT
   CAST(NULL AS FLOAT64), CAST(NULL AS FLOAT64), Total_Conversions,
   CAST(NULL AS FLOAT64)
 FROM ${ref({ schema: constants.DATASETS.kebooladv, name: "fct_dv360_floodlight" })}
+WHERE Date IS NOT NULL
+
+-- TARGETING, added 2026-10-22. The sixth branch, and the second
+-- two-dimensional one after geo. Targeted Location x Bid Strategy Type.
+--
+-- It went here rather than into a table of its own precisely because this
+-- view exists: a sixth cut of the same spend costs one UNION ALL and one
+-- declaration, and arrives in fct_dv360_breakdown_daily and v_breakdown_daily
+-- with no new objects at all.
+--
+-- CAUTION, and it is the whole reason breakdown_type exists: this is the
+-- SAME spend as geo, url, timeofday and the backbone, sliced a sixth way.
+-- Joining it to fct_dv360_inventory on date + line_item_id -- the obvious
+-- thing to try -- fans out and multiplies spend by the number of inventory
+-- rows. Targeting AND inventory together has to come from DV360 as one
+-- report; it cannot be reconstructed by joining two breakdowns.
+--
+-- Targeted_location is 'Unknown' on every row seen so far. If it stays that
+-- way the dimension carries nothing and only Bid_Strategy_Type is useful --
+-- worth checking before anyone builds a geography view on top of it.
+UNION ALL
+SELECT
+  'targeting', ${metrics.parseSlashDate("Date")}, Advertiser_ID, Line_Item_ID,
+  Advertiser_Currency, Targeted_location, Bid_Strategy_Type,
+  CAST(Impressions AS INT64), CAST(Clicks AS INT64),
+  CAST(NULL AS INT64), CAST(Complete_Views_Video AS INT64),
+  PostClick_Conversions, PostView_Conversions, Total_Conversions,
+  SAFE_CAST(Revenue_Adv_Currency AS FLOAT64)
+FROM ${ref({ schema: constants.DATASETS.kebooladv, name: "fct_dv360_targetedbid" })}
 WHERE Date IS NOT NULL

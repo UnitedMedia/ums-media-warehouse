@@ -45,6 +45,17 @@ const KEBOOLA_TABLES = [
   // clicks -- so it answers "who saw this" and never "what did it cost".
   // Note Impressions is FLOAT64 here and INT64 in fct_dv360_lineitem.
   "fct_dv360_audience",
+
+  // NEW on 2026-10-22. Line item x Targeted Location x Bid Strategy Type
+  // x day -- the sixth branch of stg_dv360_breakdown. 1,881 rows, asked
+  // for 30 days, landed with the same two-day lag as every other Keboola
+  // feed.
+  //
+  // Note the lowercase l in Targeted_location: the only column in the
+  // DV360 set that does not follow Title_Case. Spelled as the source
+  // spells it, deliberately -- renaming it here would hide the fact that
+  // a future extract may "fix" the casing and break the ref.
+  "fct_dv360_targetedbid",
 ];
 
 // ---------------------------------------------------------------------
