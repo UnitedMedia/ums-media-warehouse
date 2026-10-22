@@ -30,6 +30,31 @@ config {
 --   * geo.Revenue_Adv_Currency is STRING, FLOAT64 everywhere else
 --   * audience.Impressions is FLOAT64, INT64 everywhere else
 
+-- SNAPSHOT DE-DUPLICATION ON EVERY BRANCH, 2026-10-22. Keboola appends a
+-- new extract of a row instead of replacing the old one, so rows sharing a
+-- grain key are successive readings of one cumulative figure. Summing them
+-- inflates the number; the largest reading is the complete one.
+--
+-- Measured on the raw tables today -- rows against distinct grain keys:
+--   geo          80,535 / 62,170      placement  187,394 / 156,036
+--   timeofday    49,204 / 37,930      audience 1,358,935 / 827,241
+--   targetedbid   1,881 /  1,828
+--
+-- Every one. The same defect already fixed in stg_dv360_lineitem and all
+-- four CM360 sources.
+--
+-- HOW IT HID: geo, url and timeofday totalled 157,795 / 156,461 / 158,704 --
+-- within 1.5% of each other -- which reads as three independent cuts of the
+-- same spend reconciling. They were agreeing because they were inflated by
+-- the SAME duplication. Three equally wrong numbers agreeing proves nothing.
+-- What exposed it was the targeting branch, whose source landed after
+-- Keboola stopped duplicating: it sat flat at 1,200-2,000 a day while geo
+-- swung between 2,141 and 22,927 for the same delivery.
+--
+-- Largest rather than latest, because no extract carries a load timestamp.
+-- Ordered on Impressions where the branch has them; floodlight reports only
+-- conversions, so it orders on those.
+
 SELECT
   'geo'                                       AS breakdown_type,
   ${metrics.parseSlashDate("Date")}           AS date,
@@ -48,6 +73,10 @@ SELECT
   SAFE_CAST(Revenue_Adv_Currency AS FLOAT64)  AS spend
 FROM ${ref({ schema: constants.DATASETS.kebooladv, name: "fct_dv360_geo" })}
 WHERE Date IS NOT NULL
+QUALIFY ROW_NUMBER() OVER (
+  PARTITION BY Date, Line_Item_ID, Country, Region
+  ORDER BY Impressions DESC, Clicks DESC
+) = 1
 
 UNION ALL
 SELECT
@@ -59,6 +88,10 @@ SELECT
   Revenue_Adv_Currency
 FROM ${ref({ schema: constants.DATASETS.kebooladv, name: "fct_dv360_placement" })}
 WHERE Date IS NOT NULL
+QUALIFY ROW_NUMBER() OVER (
+  PARTITION BY Date, Line_Item_ID, AppURL_ID
+  ORDER BY Impressions DESC, Clicks DESC
+) = 1
 
 UNION ALL
 SELECT
@@ -70,6 +103,10 @@ SELECT
   Revenue_Adv_Currency
 FROM ${ref({ schema: constants.DATASETS.kebooladv, name: "fct_dv360_timeofday" })}
 WHERE Date IS NOT NULL
+QUALIFY ROW_NUMBER() OVER (
+  PARTITION BY Date, Line_Item_ID, Day_of_Week, Time_of_Day
+  ORDER BY Impressions DESC, Clicks DESC
+) = 1
 
 UNION ALL
 SELECT
@@ -81,6 +118,10 @@ SELECT
   CAST(NULL AS FLOAT64)
 FROM ${ref({ schema: constants.DATASETS.kebooladv, name: "fct_dv360_audience" })}
 WHERE Date IS NOT NULL
+QUALIFY ROW_NUMBER() OVER (
+  PARTITION BY Date, Line_Item_ID, Category
+  ORDER BY Impressions DESC
+) = 1
 
 UNION ALL
 SELECT
@@ -93,6 +134,10 @@ SELECT
   CAST(NULL AS FLOAT64)
 FROM ${ref({ schema: constants.DATASETS.kebooladv, name: "fct_dv360_floodlight" })}
 WHERE Date IS NOT NULL
+QUALIFY ROW_NUMBER() OVER (
+  PARTITION BY Date, Line_Item_ID, Floodlight_Activity_ID
+  ORDER BY Total_Conversions DESC
+) = 1
 
 -- TARGETING, added 2026-10-22. The sixth branch, and the second
 -- two-dimensional one after geo. Targeted Location x Bid Strategy Type.
@@ -122,3 +167,7 @@ SELECT
   SAFE_CAST(Revenue_Adv_Currency AS FLOAT64)
 FROM ${ref({ schema: constants.DATASETS.kebooladv, name: "fct_dv360_targetedbid" })}
 WHERE Date IS NOT NULL
+QUALIFY ROW_NUMBER() OVER (
+  PARTITION BY Date, Line_Item_ID, Targeted_location, Bid_Strategy_Type
+  ORDER BY Impressions DESC, Clicks DESC
+) = 1
