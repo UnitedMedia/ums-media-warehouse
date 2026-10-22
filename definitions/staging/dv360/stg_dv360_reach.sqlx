@@ -26,3 +26,31 @@ SELECT
        AS INT64)         AS unique_reach
 FROM ${ref({ schema: constants.DATASETS.kebooladv, name: "fct_dv360_reach" })}
 WHERE Date IS NOT NULL
+-- SNAPSHOT DE-DUPLICATION, 2026-10-22. Keboola appends a new extract of a
+-- row rather than replacing the previous one, so rows sharing this grain key
+-- are successive readings of one cumulative figure. Summing them inflates
+-- the number; the largest reading is the complete one. Measured today:
+-- 1,564 rows against 1,179 distinct keys.
+--
+-- Twelfth table with this defect, after stg_dv360_lineitem, the six branches
+-- of stg_dv360_breakdown and all four CM360 sources. Largest rather than
+-- latest, because no extract carries a load timestamp.
+-- THIS ONE IS DIFFERENT, AND WEAKER. The other eleven order on Impressions,
+-- which climbs monotonically across snapshots and so reliably identifies the
+-- last one. This report has no impressions column at all -- only the reach
+-- figure -- so it has to order on the very value it is trying to pick.
+--
+-- Unique reach is a MODELLED ESTIMATE and revises in both directions: the
+-- CM360 equivalent runs 110,946 / 110,940 / 110,940 for one campaign-day.
+-- Taking the largest can therefore keep an early over-estimate rather than
+-- the final figure. It is still far better than the alternative, because
+-- unique_reach is NON-ADDITIVE -- summing two reach figures for one
+-- line-item-day counts the same people twice and yields a number with no
+-- meaning at all. One plausible estimate beats a meaningless sum.
+--
+-- If this extract ever gains Impressions or a load timestamp, order by that
+-- instead. That is what this is approximating.
+QUALIFY ROW_NUMBER() OVER (
+  PARTITION BY Date, Line_Item_ID
+  ORDER BY SAFE_CAST(REPLACE(Unique_Reach_Total_Reach, ',', '') AS FLOAT64) DESC
+) = 1

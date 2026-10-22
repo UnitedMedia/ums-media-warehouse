@@ -35,3 +35,18 @@ SELECT
   Revenue_Adv_Currency  AS spend
 FROM ${ref({ schema: constants.DATASETS.kebooladv, name: "fct_dv360_inventory" })}
 WHERE Date IS NOT NULL
+-- SNAPSHOT DE-DUPLICATION, 2026-10-22. Keboola appends a new extract of a
+-- row rather than replacing the previous one, so rows sharing this grain key
+-- are successive readings of one cumulative figure. Summing them inflates
+-- the number; the largest reading is the complete one. Measured today:
+-- 618,340 rows against 365,819 distinct keys -- 69% inflation, the worst in
+-- the DV360 set.
+--
+-- Twelfth table with this defect, after stg_dv360_lineitem, the six branches
+-- of stg_dv360_breakdown and all four CM360 sources. Largest rather than
+-- latest, because no extract carries a load timestamp.
+QUALIFY ROW_NUMBER() OVER (
+  PARTITION BY Date, Line_Item_ID, Media_Type, Device_Type, Environment, Exchange_ID,
+               Channel_ID, Ad_Position
+  ORDER BY Impressions DESC, Clicks DESC
+) = 1
