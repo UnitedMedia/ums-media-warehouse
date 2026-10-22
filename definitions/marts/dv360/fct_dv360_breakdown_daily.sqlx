@@ -3,7 +3,7 @@ config {
   schema: constants.SCHEMAS.dv360_marts,
   name: "fct_dv360_breakdown_daily",
   tags: ["dv360", "marts"],
-  description: "DV360's five single-dimension breakdowns in one table: geo, url, timeofday, audience, floodlight. ALWAYS filter to one breakdown_type — they are five cuts of the SAME spend and summing across them multiplies it by five.",
+  description: "DV360's breakdowns in one table: geo, url, timeofday, audience, floodlight, targeting. ALWAYS filter to one breakdown_type — they are six cuts of the SAME spend and summing across them multiplies it by six.",
   bigquery: {
     partitionBy: "date",
     clusterBy: ["breakdown_type", "advertiser_id", "line_item_id"]
@@ -13,8 +13,8 @@ config {
     nonNull: ["date", "breakdown_type"]
   },
   columns: {
-    breakdown_type: "PART OF THE GRAIN. Five values, five complete copies of the same delivery. One per chart, never a total across them.",
-    total_conversions: "floodlight only. The other breakdowns split conversions into postclick + postview."
+    breakdown_type: "PART OF THE GRAIN, and part of the incremental load key. Six values, six complete copies of the same delivery. One per chart, never a total across them.",
+    total_conversions: "floodlight and targeting only. The other breakdowns split conversions into postclick + postview."
   }
 }
 
@@ -43,7 +43,24 @@ SELECT
   SUM(spend)                 AS spend
 FROM ${ref("stg_dv360_breakdown")}
 WHERE date IS NOT NULL
+-- THE PREDICATE IS KEYED ON date + breakdown_type, NOT date ALONE, and the
+-- difference is not theoretical. It was `date NOT IN (...)` until
+-- 2026-10-22, when the sixth breakdown -- targeting -- was added and loaded
+-- SEVEN days: 09-21 to 09-27, the only dates the other five had not already
+-- written. Every targeting row from 09-28 onward was silently skipped,
+-- because a date already in the table is a date this predicate will never
+-- load again, no matter which breakdown_type is missing from it.
+--
+-- The table is one row per date PER TYPE, so the load key has to be both.
+-- A new breakdown added tomorrow now backfills its full history on the
+-- first run instead of landing with a hole exactly as wide as the table's
+-- existing date range.
+--
+-- Concatenated rather than a tuple IN: BigQuery has no (a,b) NOT IN (...)
+-- form, and NOT EXISTS against a partitioned self-reference is harder to
+-- read than this.
 ${when(incremental(),
-  `AND date NOT IN (SELECT DISTINCT date FROM ${self()}
-                    WHERE ${constants.allPartitions()})`)}
+  `AND FORMAT('%t|%t', date, breakdown_type) NOT IN (
+     SELECT DISTINCT FORMAT('%t|%t', date, breakdown_type) FROM ${self()}
+     WHERE ${constants.allPartitions()})`)}
 GROUP BY 1, 2, 3, 4, 5, 6, 7
