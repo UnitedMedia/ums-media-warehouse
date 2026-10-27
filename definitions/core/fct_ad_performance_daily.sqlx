@@ -15,8 +15,8 @@ config {
   columns: {
     client_name: "Canonical client, resolved through seed_client_name_map. Falls back to the channel's own spelling when the seed has no row — group on THIS, never on advertiser_raw_name.",
     advertiser_raw_name: "Exactly what the channel calls the advertiser. Kept so an unmapped client can be traced back and added to the seed.",
-    currency: "NULL for CM360: the Keboola report carries no currency column. Do not add CM360 spend to another channel's without first deciding what currency you are in.",
-    spend_eur: "spend converted to euros at the month's rate. NULL where no rate exists — CM360 has no currency at all, and PLN has no rate until someone fills core_seeds.seed_fx_rate_manual. NULL means not convertible; it never silently means zero.",
+    currency: "EUR for CM360 by assertion, not from the source -- the Keboola report has no currency column and the account owner confirmed on 2026-10-27 that it bills only in euros. Every other channel reads its own.",
+    spend_eur: "spend converted to euros at the month's rate. NULL where no rate exists — PLN has none until someone fills core_seeds.seed_fx_rate_manual. NULL means not convertible; it never silently means zero. CM360 converted from 2026-10-27, when its currency was confirmed as EUR.",
     fx_rate_to_eur: "The rate actually used, carried on the row so any euro figure can be traced back. 1.0 for EUR.",
     is_fx_converted: "FALSE where spend_eur is NULL. Filter on this before presenting a euro total, or sum only the rows that converted and say so.",
     conversions: "Each channel's OWN headline conversion count. These are NOT like for like — read conversions_definition on the same row before adding or comparing them.",
@@ -61,7 +61,8 @@ WITH dv360 AS (
   GROUP BY f.date, f.campaign_id, f.advertiser_currency
 ),
 
--- CM360 has no line item concept and no currency column. Its money
+-- CM360 has no line item concept, and no currency column either -- the
+-- currency is asserted as EUR below. Its money
 -- lives at placement grain and its conversions at campaign grain, so
 -- the two are rolled up separately and joined rather than summed.
 cm360_delivery AS (
@@ -82,7 +83,14 @@ cm360 AS (
     c.advertiser_id                       AS advertiser_id,
     c.campaign_name                       AS campaign_name,
     x.campaign_id                         AS campaign_id,
-    CAST(NULL AS STRING)                  AS currency,
+    -- EUR, confirmed 2026-10-27 by the CM360 account owner: this account
+    -- bills in euros and only in euros. The Keboola report carries no
+    -- currency column at all, so this is asserted here rather than read
+    -- from the source -- it is the one fact in this file that cannot be
+    -- verified from the data. If a non-EUR advertiser is ever added to the
+    -- CM360 account, this line silently converts their spend at 1.0 and
+    -- nothing will complain.
+    'EUR'                                 AS currency,
     x.impressions,
     x.clicks,
     CAST(NULL AS INT64)                   AS interactions,

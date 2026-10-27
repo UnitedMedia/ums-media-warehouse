@@ -7,7 +7,7 @@ config {
   columns: {
     spend: "The channel's own currency, and CM360 does not say which one. Break out by currency before summing across channels.",
     cpa: "Computed against a conversions figure that means something different per channel — always show conversions_definition next to it.",
-    spend_eur: "The ONLY column safe to total across channels. spend mixes RON, EUR and PLN. NULL where no rate exists — CM360 has no currency, PLN has no rate yet.",
+    spend_eur: "The ONLY column safe to total across channels. spend mixes RON, EUR and PLN. NULL where no rate exists — PLN has no rate yet. CM360 converts from 2026-10-27, its currency confirmed as EUR.",
     is_fx_converted: "Filter on this before showing a euro total, or you are summing a column that is NULL for part of your spend.",
     cpm_eur: "Euro CPM. The plain cpm mixes currencies and is only meaningful filtered to one.",
     cpc_eur: "CORRECT FOR THIS ROW, WRONG IF LOOKER AGGREGATES IT. Measured 2026-10-08 over September: the true SUM(spend_eur)/SUM(clicks) is 0.157, while averaging this column across rows gives roughly 0.76 — close enough to the unconverted mixed-currency 0.648 to look like a broken conversion when it is not. Build SUM(spend_eur)/SUM(clicks) as a calculated field instead.",
