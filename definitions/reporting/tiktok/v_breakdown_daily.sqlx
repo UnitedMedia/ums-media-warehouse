@@ -6,7 +6,10 @@ config {
   description: "TikTok breakdowns for Looker Studio: age/gender, country, language and platform. ALWAYS filter to exactly one breakdown_type — all four cover the same spend, so a chart without that filter reports four times the real figure.",
   columns: {
     ad_id: "NULL for the platform breakdown, which TikTok publishes at campaign level only.",
-    campaign_id: "Comes from the breakdown itself for platform, and from dim_tiktok_ad for the other three."
+    campaign_id: "Comes from the breakdown itself for platform, and from dim_tiktok_ad for the other three.",
+    campaign_name: "Resolved through dim_tiktok_ad where the row has an ad_id, and through dim_tiktok_campaign where it does not. Before 2026-10-28 this was NULL on every platform row.",
+    advertiser_name: "Same two-step resolution as campaign_name.",
+    currency: "Same two-step resolution as campaign_name. The advertiser's billing currency, not a converted figure."
   }
 }
 
@@ -18,12 +21,13 @@ SELECT
   b.breakdown_1,
   b.breakdown_2,
   b.advertiser_id,
-  COALESCE(b.campaign_id, d.campaign_id) AS campaign_id,
-  d.campaign_name,
-  d.objective_type,
+  COALESCE(b.campaign_id, d.campaign_id)         AS campaign_id,
+  COALESCE(d.campaign_name, c.campaign_name)     AS campaign_name,
+  COALESCE(d.advertiser_name, c.advertiser_name) AS advertiser_name,
+  COALESCE(d.objective_type, c.objective_type)   AS objective_type,
   b.ad_id,
   d.ad_name,
-  d.currency,
+  COALESCE(d.currency, c.currency)               AS currency,
   b.impressions,
   b.clicks,
   b.spend,
@@ -34,4 +38,25 @@ SELECT
   ${metrics.cpc("b.spend", "b.clicks")}       AS cpc,
   ${metrics.cpa("b.spend", "b.conversions")}  AS cost_per_conversion
 FROM ${ref("fct_tiktok_breakdown_daily")} b
-LEFT JOIN ${ref("dim_tiktok_ad")} d ON b.ad_id = d.ad_id
+
+-- Two joins, because the four breakdowns do not share a grain.
+--
+-- age_gender, country and language carry an ad_id, so dim_tiktok_ad
+-- resolves the whole hierarchy for them in one hop.
+--
+-- platform does NOT. TikTok publishes it at campaign level only, so
+-- every platform row has campaign_id and a NULL ad_id. Joining on ad_id
+-- alone meant the join never matched and campaign_name, advertiser_name,
+-- currency and objective_type came back NULL on 100% of platform rows --
+-- the one breakdown where a campaign name is the only label a reader has.
+-- Found 2026-10-28. campaign_id was already handled by the COALESCE
+-- above; the names were not.
+--
+-- dim_tiktok_campaign is keyed on campaign_id and is driven by delivery
+-- rather than by the entity sync, so it still carries a name (falling
+-- back to campaign_<id>) for campaigns TikTok reports but never returns
+-- as entities.
+LEFT JOIN ${ref("dim_tiktok_ad")} d
+  ON d.ad_id = b.ad_id
+LEFT JOIN ${ref("dim_tiktok_campaign")} c
+  ON c.campaign_id = COALESCE(b.campaign_id, d.campaign_id)
