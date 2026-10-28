@@ -6,7 +6,10 @@ config {
   description: "TikTok campaign x day. COMPLETE spend — use this for any TikTok total. v_daily is ~1.4% lower because TikTok cannot attribute every impression to a named ad.",
   columns: {
     spend: "The complete TikTok figure, in advertiser currency.",
-    reach: "NON-ADDITIVE. Set aggregation to MAX in Looker."
+    reach: "NON-ADDITIVE. Set aggregation to MAX in Looker.",
+    video_watched_2s: "TikTok's own definition of a video VIEW for the Video Views objective. This, not video_plays, is the number a client sees in the TikTok interface.",
+    video_watched_6s: "The stricter view definition. Campaigns bought on 6-second views optimise against this one.",
+    video_plays: "Times the video STARTED. Always the largest of the video numbers and the least comparable to what TikTok reports as views."
   }
 }
 
@@ -41,7 +44,12 @@ SELECT
   f.follows,
   f.profile_visits,
   f.video_plays,
+  f.video_views_p25,
+  f.video_views_p50,
+  f.video_views_p75,
   f.video_views_p100,
+  f.video_watched_2s,
+  f.video_watched_6s,
   f.skan_conversions,
 
   ${metrics.cpm("f.spend", "f.impressions")}                       AS cpm,
@@ -49,6 +57,10 @@ SELECT
   ${metrics.cpc("f.spend", "f.clicks")}                            AS cpc,
   ${metrics.frequency("f.impressions", "f.reach")}                 AS frequency,
   ${metrics.completionRate("f.video_views_p100", "f.impressions")} AS completion_rate,
+  ${metrics.viewRate("f.video_views_p25", "f.impressions")}        AS view_rate_p25,
+  ${metrics.viewRate("f.video_views_p50", "f.impressions")}        AS view_rate_p50,
+  ${metrics.viewRate("f.video_views_p75", "f.impressions")}        AS view_rate_p75,
+  ${metrics.cpa("f.spend", "f.video_watched_6s")}                  AS cost_per_6s_view,
   ${metrics.interactionRate("f.likes + f.comments + f.shares", "f.impressions")} AS engagement_rate,
   ${metrics.cpa("f.spend", "f.conversions")}                       AS cost_per_conversion,
   ${metrics.cpa("f.spend", "f.results")}                           AS cost_per_result,
