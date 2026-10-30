@@ -482,18 +482,21 @@ WITH gaps AS (
 
   UNION ALL
 
-  -- Teads: two money columns, and which one is the client-facing figure
-  -- was INFERRED, not documented. Over 2026-09-30 to 10-29 against
-  -- MASTER_TABLE: delivered 34,051.35 (1.019), MASTER_TABLE 33,414.24,
-  -- spent 32,651.36 (0.977). MASTER_TABLE sits between the two and
-  -- matches neither. We report delivered, on a 0.4pp margin that had
-  -- been 1.8pp the day before -- which is drift, not evidence. Every
-  -- row where the two columns disagree is money resting on that guess.
+  -- Teads: budget_spent diverging from budget_delivered.
+  --
+  -- WHICH COLUMN IS SPEND IS SETTLED. Day by day against MASTER_TABLE,
+  -- budget_delivered matches EXACTLY, to the cent, on all 15 days from
+  -- 2026-10-01 to 10-15; budget_spent matches on 8 and runs 6-10% low
+  -- over 10-09 to 10-15. Delivered is the billed figure.
+  --
+  -- This row is therefore no longer a decision to make. It sizes a real
+  -- divergence between two real measurements, so that if spent ever
+  -- starts tracking delivered -- or stops -- somebody sees it.
   SELECT
     '${constants.CHANNEL.teads}',
     'teads_budget_columns_disagree',
     CAST(NULL AS STRING),
-    'budget_delivered <> budget_spent. We report budget_delivered as spend on a reconciliation that does not clearly favour it — MASTER_TABLE falls between the two columns. spend_affected is the absolute gap. Settle this with the Teads account team and the inference goes away.',
+    'budget_delivered <> budget_spent. Delivered is the billed figure, confirmed against MASTER_TABLE day by day. spend_affected is how far spent sits from it — around 6-10% on the days it diverges, zero on the days it does not. Informational: nothing reported uses budget_spent.',
     COUNT(*),
     CAST(SUM(ABS(spend - budget_spent)) AS FLOAT64)
   FROM ${ref("fct_teads_creative_daily")}

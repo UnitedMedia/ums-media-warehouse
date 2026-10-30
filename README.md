@@ -621,15 +621,24 @@ either asserted on or surfaced in `v_data_gaps`.
   turns on the tiebreak being *arbitrary* and `extracted_at` is not. On a clean
   table the QUALIFY is provably a no-op. `v_data_gaps.teads_duplicate_rows`
   shows zero today and is how a relapse becomes visible.
-- **Two money columns and no documentation of which is which.** Over
-  2026-09-30 to 10-29 against `MASTER_TABLE`: `budget_delivered` 34,051.35
-  (1.019), `MASTER_TABLE` 33,414.24, `budget_spent` 32,651.36 (0.977).
-  **MASTER_TABLE falls between the two and matches neither.** Delivered is
-  reported as `spend` on a 0.4pp margin that had been 1.8pp the day before —
-  drift, not evidence. Spent is carried beside it for audit and the gap is
-  sized in `v_data_gaps` as `teads_budget_columns_disagree`. **This is an
-  inference, not a definition** — someone should settle it with the Teads
-  account team.
+- **Two money columns, and which one is spend is settled.**
+  `budget_delivered` equals `MASTER_TABLE` **exactly, to the cent, on all 15
+  days from 2026-10-01 to 10-15**; `budget_spent` matches on 8 of those and
+  runs 6-10% low from 10-09 to 10-15. Delivered is reported as `spend`. Spent
+  is a real but different measurement, carried for audit and sized in
+  `v_data_gaps` as `teads_budget_columns_disagree`.
+- **The 30-day total nearly got this wrong.** Summed over the window the two
+  columns came out at 1.019 and 0.977 against `MASTER_TABLE` — a 0.4pp margin
+  that looked like a coin flip. The day-by-day view showed 15 exact matches.
+  **Reconcile a new source day by day before you reconcile it in total**; a
+  constant daily offset and a percentage error are indistinguishable once
+  they are added up.
+- **`MASTER_TABLE` is missing ~46 EUR/day of Teads since 2026-10-16.** From
+  that date `budget_delivered` runs above `MASTER_TABLE` by a near-constant
+  45-48 EUR — a fixed amount, not a rate. The daily differences sum to 637.11,
+  which is the entire 34,051.35 vs 33,414.24 gap. Something that started on 16
+  October is in the Teads feed and not in `MASTER_TABLE`. Not this repo's
+  table to fix, but it is this repo that found it.
 - **`campaign_currency` arrived 2026-10-30.** Before that the channel had no
   currency column at all, the same position CM360 is still in. It is read from
   the source, not asserted. Measured over the full window: one value, EUR.

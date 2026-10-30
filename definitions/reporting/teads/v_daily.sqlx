@@ -5,7 +5,7 @@ config {
   tags: ["teads", "reporting"],
   description: "Teads day x creative. The Looker Studio surface for the channel — roll it up to line item, campaign or advertiser in the dashboard. Every ratio here is computed over the sums, so it stays correct at whatever level Looker aggregates to.",
   columns: {
-    spend: "budget_delivered, in campaign currency. The figure that reconciles closest to the billing sheet; see stg_teads_daily.",
+    spend: "budget_delivered, in campaign currency. The billed figure — it equals MASTER_TABLE to the cent on every day from 2026-10-01 to 10-15.",
     completion_rate: "video_completes / video_STARTS. The real VTR, because Teads delivers the start count. This is NOT the same measurement as the completion_rate in the DV360 or TikTok views, which divide by impressions because their sources give no start count.",
     viewable_rate: "viewable / MEASURABLE impressions. The true Moat viewability rate. The CM360 view's column of the same name divides by impressions and therefore reads lower; they are not comparable.",
     measurable_rate: "How much of delivery Moat could measure at all. A low value makes viewable_rate unreliable, so read it first."
@@ -45,8 +45,8 @@ SELECT
   ${metrics.viewableRate("f.viewable_impressions", "f.measurable_impressions")} AS viewable_rate,
   ${metrics.cpa("f.spend", "f.video_completes")}                          AS cost_per_completed_view,
 
-  -- Audit only, and not next to spend. Teads reports two money columns
-  -- and this is the one we did NOT pick; it is here so the choice can be
-  -- checked against a client invoice without going back to the source.
+  -- Audit only, and not next to spend. Teads' second money column,
+  -- confirmed NOT to be the billed one. Kept so the divergence stays
+  -- checkable without going back to the source.
   f.budget_spent                                                          AS src_budget_spent
 FROM ${ref("fct_teads_creative_daily")} f

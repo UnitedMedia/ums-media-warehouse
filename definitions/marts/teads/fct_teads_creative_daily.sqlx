@@ -13,8 +13,8 @@ config {
     nonNull: ["date", "campaign_id", "creative_id"]
   },
   columns: {
-    spend: "budget_delivered, in campaign currency. See stg_teads_daily for why this column and not budget_spent.",
-    budget_spent: "Teads' second money column, audit only. Never add it to spend.",
+    spend: "budget_delivered, in campaign currency. Confirmed as the billed figure: it equals MASTER_TABLE to the cent on every day from 2026-10-01 to 10-15. See stg_teads_daily.",
+    budget_spent: "Teads' second money column — a different measurement, running 6-10% below spend on the days it diverges. Audit only. Never add it to spend.",
     video_completes: "The video played to the end. The same measurement as DV360 Complete_Views_Video and TikTok video_views_p100, which is why this one is allowed into the cross-channel fact's complete_views.",
     viewable_impressions: "Moat valid-and-viewable. Divide by measurable_impressions, NOT by impressions — Teads gives the real denominator, so the viewability rate here is the true one and reads higher than the CM360 equivalent.",
     measurable_impressions: "Impressions Moat could measure at all. The denominator of viewable_rate."

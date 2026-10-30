@@ -5,8 +5,8 @@ config {
   tags: ["teads", "staging"],
   description: "Teads delivery at day x creative. De-duplicated on extracted_at — the Keboola extract APPENDS a new read beside the old one rather than replacing it, so the raw table grows a fresh copy of every open day on every run.",
   columns: {
-    spend: "budget_delivered. See the note in the body: Teads reports two money columns and this is the one that reconciles to the billing sheet.",
-    budget_spent: "The OTHER money column, carried for audit. Do not sum it next to spend and do not report it without reading the note below.",
+    spend: "budget_delivered. Teads reports two money columns; this is the one that equals MASTER_TABLE to the cent on every day 2026-10-01 to 10-15. See the note in the body.",
+    budget_spent: "The OTHER money column. A real and different measurement, not a duplicate — it runs 6-10% below delivered across 2026-10-09 to 10-15. Audit only. Never sum it next to spend.",
     currency: "campaign_currency, read from the source. Added by the extractor on 2026-10-30; before that the channel had no currency column at all."
   }
 }
@@ -48,24 +48,24 @@ config {
 -- is provably a no-op, because there is nothing to choose between.
 --
 -- WHICH MONEY COLUMN IS SPEND ------------------------------------------
--- Teads delivers budget_delivered and budget_spent. They are equal on
--- most rows and not on all. Reconciled 2026-10-30 over the full window
--- 2026-09-30 to 2026-10-29 against MASTER_TABLE, the client-facing
--- billing figure:
---   budget_delivered  34,051.35   ratio 1.019
---   MASTER_TABLE      33,414.24
---   budget_spent      32,651.36   ratio 0.977
+-- Teads delivers budget_delivered and budget_spent.
+-- SETTLED 2026-10-30, day by day against MASTER_TABLE rather than on a
+-- 30-day total. budget_delivered equals MASTER_TABLE EXACTLY, to the
+-- cent, on all 15 days from 2026-10-01 to 10-15. budget_spent matches
+-- on 8 of those and runs 6-10% low across 10-09 to 10-15. There is no
+-- reading of that in which spent is the billed figure.
 --
--- MASTER_TABLE sits BETWEEN the two and matches NEITHER. Delivered is
--- marginally the closer and is carried as spend; budget_spent is kept
--- beside it so the choice can be revisited without re-reading the
--- source.
+-- From 2026-10-16 delivered runs ABOVE MASTER_TABLE by a near-constant
+-- 45-48 EUR A DAY -- a fixed amount, not a percentage, which is the
+-- signature of something MASTER_TABLE is missing rather than a column
+-- measuring the wrong thing. Those daily differences sum to 637.11,
+-- which is the whole of the 34,051.35 vs 33,414.24 gap. The 30-day
+-- total hid that completely and made the choice look like a coin flip.
 --
--- Do not read that margin as evidence. An earlier run on 2026-10-29
--- gave 1.015 and 0.967, so the gap between the two candidates has
--- halved in a day — which is what a window-alignment artefact looks
--- like, not a definition. This is an INFERENCE. Someone should get the
--- definition from the Teads account team and check it against this.
+-- So: budget_delivered is spend, and it is now evidence, not an
+-- inference. budget_spent is kept beside it because it is a real and
+-- different measurement -- see v_data_gaps.teads_budget_columns_disagree
+-- for how much it diverges and when.
 
 SELECT
   -- SAFE_CAST rather than a parse helper: it is correct whether the

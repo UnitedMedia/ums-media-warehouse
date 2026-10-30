@@ -258,8 +258,9 @@ teads AS (
     CAST(SUM(f.video_completes) AS INT64)     AS complete_views,
     CAST(NULL AS FLOAT64)                     AS conversions,
     CAST(NULL AS STRING)                      AS conversions_definition,
-    -- budget_delivered, chosen over budget_spent on a 30-day
-    -- reconciliation against MASTER_TABLE. See stg_teads_daily.
+    -- budget_delivered. Equals MASTER_TABLE to the cent on every day
+    -- from 2026-10-01 to 10-15; budget_spent does not. See
+    -- stg_teads_daily.
     CAST(SUM(f.spend)           AS FLOAT64)   AS spend
   FROM ${ref("fct_teads_creative_daily")} f
   GROUP BY f.date, f.campaign_id, f.currency

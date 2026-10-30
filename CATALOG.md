@@ -76,7 +76,7 @@ correct no matter how Looker rolls it up; a ratio stored in a table does not.
 | TikTok | `spend` | `tiktok_reporting.v_campaign_daily` | **Complete.** Advertiser currency |
 | TikTok | `spend` | `tiktok_reporting.v_daily` | Ad level — only ~98.6% of the above |
 | Google Ads | `spend` | `gads_reporting.v_daily` | **Complete**, incl. Performance Max. Account currency, from `cost_micros` |
-| Teads | `spend` | `teads_reporting.v_daily` | `budget_delivered`, campaign currency. Picked over `budget_spent` on a reconciliation, **not** on a definition from Teads — see below |
+| Teads | `spend` | `teads_reporting.v_daily` | `budget_delivered`, campaign currency. **Confirmed billed** — equals `MASTER_TABLE` to the cent on every day 2026-10-01 to 10-15 |
 
 ### Where the impressions are
 
@@ -645,13 +645,13 @@ table in the warehouse answers "how many impressions did this creative get".
    measurable denominator, so this is viewable ÷ **measurable**, the true rate.
    The CM360 column divides by impressions and reads lower. Check
    `measurable_rate` first — a low one makes the viewability figure unreliable.
-3. **Which money column is spend was inferred, and the inference is weak.**
-   Over 2026-09-30 to 10-29: `budget_delivered` 34,051.35, `MASTER_TABLE`
-   33,414.24, `budget_spent` 32,651.36. **MASTER_TABLE falls between the two
-   and matches neither** — delivered is +1.9%, spent is −2.3%. We report
-   delivered on that 0.4pp margin, which had been 1.8pp the day before. Spent
-   is carried as `src_budget_spent` and the gap is sized in `v_data_gaps` as
-   `teads_budget_columns_disagree`. **Nobody at Teads has confirmed this.**
+3. **There are two money columns and `spend` is the right one.**
+   `budget_delivered` equals `MASTER_TABLE` to the cent on all 15 days from
+   2026-10-01 to 10-15; `budget_spent` matches on 8 and runs 6-10% low from
+   10-09. `src_budget_spent` carries the other column for audit. Note that
+   from **2026-10-16** `spend` runs ~46 EUR/day above `MASTER_TABLE` — that is
+   `MASTER_TABLE` missing something, not this column being wrong, and it
+   accounts for the whole 637.11 difference over the window.
 4. **No conversions at all.** The feed has delivery, money and viewability and
    nothing attributed, so `conversions` is NULL in `core`. `billable_events` is
    a billing count, not a conversion, and is deliberately not promoted.
