@@ -633,12 +633,22 @@ either asserted on or surfaced in `v_data_gaps`.
   **Reconcile a new source day by day before you reconcile it in total**; a
   constant daily offset and a percentage error are indistinguishable once
   they are added up.
-- **`MASTER_TABLE` is missing ~46 EUR/day of Teads since 2026-10-16.** From
-  that date `budget_delivered` runs above `MASTER_TABLE` by a near-constant
-  45-48 EUR — a fixed amount, not a rate. The daily differences sum to 637.11,
-  which is the entire 34,051.35 vs 33,414.24 gap. Something that started on 16
-  October is in the Teads feed and not in `MASTER_TABLE`. Not this repo's
-  table to fix, but it is this repo that found it.
+- **`MASTER_TABLE` does not have line item `1492085`, and that is the whole
+  gap.** From 2026-10-16 `budget_delivered` runs above `MASTER_TABLE` by a
+  near-constant 45-48 EUR a day — a fixed amount, not a rate. Those
+  differences sum to 635.96; line item 1492085 across its three creatives,
+  2026-10-16 to 10-29, totals **635.97**. One cent of rounding apart.
+- **It is probably a name-matching failure, and it is NOT settled that
+  `MASTER_TABLE` is wrong.** 1492085 is spelled `Feed Singe Image`, missing an
+  `l`; its sibling 1492086 `Article Single Image` started the same day on the
+  same campaign and IS in `MASTER_TABLE`. But a Feed placement appearing
+  alongside an Article placement is also what added value looks like, and if
+  1492085 is not billable then `MASTER_TABLE` excluding it is correct and this
+  warehouse is the side overstating client spend. **Ask whoever owns the
+  campaign whether 1492085 is billable before calling it a bug.**
+- Either way, **Teads spend here reads ~46 EUR/day above Teads spend in
+  `MASTER_TABLE` from 16 October.** Anyone putting both on one slide will see
+  it.
 - **`campaign_currency` arrived 2026-10-30.** Before that the channel had no
   currency column at all, the same position CM360 is still in. It is read from
   the source, not asserted. Measured over the full window: one value, EUR.
