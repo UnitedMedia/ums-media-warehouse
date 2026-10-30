@@ -635,9 +635,11 @@ either asserted on or surfaced in `v_data_gaps`.
   they are added up.
 - **`MASTER_TABLE` does not have line item `1492085`, and that is the whole
   gap.** From 2026-10-16 `budget_delivered` runs above `MASTER_TABLE` by a
-  near-constant 45-48 EUR a day — a fixed amount, not a rate. Those
-  differences sum to 635.96; line item 1492085 across its three creatives,
-  2026-10-16 to 10-29, totals **635.97**. One cent of rounding apart.
+  near-constant 45-48 EUR a day — a fixed amount, not a rate. Checked day by
+  day against that line item's own spend over all 14 days it ran, 2026-10-16
+  to 10-29: **the residual is 0.00 on every single day**, including the
+  partial 29th. It is not most of the difference, it is all of it, and
+  nothing else contributes on any day.
 - **It is probably a name-matching failure, and it is NOT settled that
   `MASTER_TABLE` is wrong.** 1492085 is spelled `Feed Singe Image`, missing an
   `l`; its sibling 1492086 `Article Single Image` started the same day on the

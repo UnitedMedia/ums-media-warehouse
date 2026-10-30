@@ -650,10 +650,11 @@ table in the warehouse answers "how many impressions did this creative get".
    2026-10-01 to 10-15; `budget_spent` matches on 8 and runs 6-10% low from
    10-09. `src_budget_spent` carries the other column for audit. Note that
    from **2026-10-16** `spend` runs ~46 EUR/day above `MASTER_TABLE` — that is
-   `MASTER_TABLE` missing **line item 1492085** — its three creatives total
-   635.97 from 10-16 to 10-29 against a 635.96 cumulative difference. Whether
-   that is a `MASTER_TABLE` bug or a non-billable placement is **unresolved**;
-   see the Teads section of README.md before quoting either figure.
+   `MASTER_TABLE` missing **line item 1492085**. Verified day by day over all
+   14 days it ran: subtract that line item's spend from the daily difference
+   and the residual is 0.00 every day. Whether that is a `MASTER_TABLE` bug or
+   a non-billable placement is **unresolved** — see the Teads section of
+   README.md before quoting either figure.
 4. **No conversions at all.** The feed has delivery, money and viewability and
    nothing attributed, so `conversions` is NULL in `core`. `billable_events` is
    a billing count, not a conversion, and is deliberately not promoted.
