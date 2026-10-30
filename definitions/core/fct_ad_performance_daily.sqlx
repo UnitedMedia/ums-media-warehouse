@@ -20,10 +20,10 @@ config {
     fx_rate_to_eur: "The rate actually used, carried on the row so any euro figure can be traced back. 1.0 for EUR.",
     is_fx_converted: "FALSE where spend_eur is NULL. Filter on this before presenting a euro total, or sum only the rows that converted and say so.",
     conversions: "Each channel's OWN headline conversion count. These are NOT like for like — read conversions_definition on the same row before adding or comparing them.",
-    conversions_definition: "What produced the conversions figure on this row. Exists so nobody has to remember which channel means what.",
+    conversions_definition: "What produced the conversions figure on this row. Exists so nobody has to remember which channel means what. NULL on Teads, the one channel here that reports no attributed conversion at all — its billable_events is a billing count and is deliberately not promoted into conversions.",
     clicks: "Clicks to the destination, on every channel. DV360, CM360 and TikTok count only those natively; for Meta this is inline_link_clicks, NOT its `clicks` field, which also counts likes, comments and profile taps and would overstate Meta against the rest.",
-    interactions: "NULL for CM360, which does not measure it. NULL means not measured; 0 would mean measured as zero.",
-    complete_views: "DV360 and TikTok only. DV360 gives Complete_Views_Video, TikTok gives video_views_p100 — both mean the video played to the end. CM360 video_views and Meta views_3s do NOT, so they stay NULL rather than being silently equated."
+    interactions: "NULL for CM360 and Teads, neither of which measures it. NULL means not measured; 0 would mean measured as zero.",
+    complete_views: "DV360, TikTok and Teads only. DV360 gives Complete_Views_Video, TikTok video_views_p100, Teads video_completes — all three mean the video played to the end. CM360 video_views and Meta views_3s do NOT, so they stay NULL rather than being silently equated."
   }
 }
 
@@ -231,6 +231,40 @@ gads AS (
   GROUP BY f.date, f.campaign_id
 ),
 
+-- Teads. The only channel here with no conversion metric at all: the
+-- Keboola feed carries delivery, money and Moat viewability, and
+-- nothing attributed. conversions stays NULL rather than being filled
+-- with billable_events, which is a billing count and would read as
+-- performance next to the other five channels.
+--
+-- complete_views IS filled. Teads video_completes means the video
+-- played to the end, the same measurement as DV360
+-- Complete_Views_Video and TikTok video_views_p100.
+--
+-- Rolled up from creative to campaign. Currency is grouped on, not
+-- ANY_VALUE'd, because it is part of this table's unique key.
+teads AS (
+  SELECT
+    f.date,
+    '${constants.CHANNEL.teads}'              AS channel,
+    ANY_VALUE(f.advertiser_name)              AS advertiser_raw_name,
+    ANY_VALUE(f.advertiser_id)                AS advertiser_id,
+    ANY_VALUE(f.campaign_name)                AS campaign_name,
+    f.campaign_id                             AS campaign_id,
+    f.currency                                AS currency,
+    CAST(SUM(f.impressions)     AS INT64)     AS impressions,
+    CAST(SUM(f.clicks)          AS INT64)     AS clicks,
+    CAST(NULL AS INT64)                       AS interactions,
+    CAST(SUM(f.video_completes) AS INT64)     AS complete_views,
+    CAST(NULL AS FLOAT64)                     AS conversions,
+    CAST(NULL AS STRING)                      AS conversions_definition,
+    -- budget_delivered, chosen over budget_spent on a 30-day
+    -- reconciliation against MASTER_TABLE. See stg_teads_daily.
+    CAST(SUM(f.spend)           AS FLOAT64)   AS spend
+  FROM ${ref("fct_teads_creative_daily")} f
+  GROUP BY f.date, f.campaign_id, f.currency
+),
+
 unioned AS (
   SELECT * FROM dv360
   UNION ALL
@@ -241,6 +275,8 @@ unioned AS (
   SELECT * FROM tiktok
   UNION ALL
   SELECT * FROM gads
+  UNION ALL
+  SELECT * FROM teads
 )
 
 SELECT

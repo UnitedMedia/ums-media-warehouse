@@ -1,0 +1,107 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.teads_staging,
+  name: "stg_teads_daily",
+  tags: ["teads", "staging"],
+  description: "Teads delivery at day x creative. De-duplicated on extracted_at — the Keboola extract APPENDS a new read beside the old one rather than replacing it, so the raw table grows a fresh copy of every open day on every run.",
+  columns: {
+    spend: "budget_delivered. See the note in the body: Teads reports two money columns and this is the one that reconciles to the billing sheet.",
+    budget_spent: "The OTHER money column, carried for audit. Do not sum it next to spend and do not report it without reading the note below.",
+    currency: "campaign_currency, read from the source. Added by the extractor on 2026-10-30; before that the channel had no currency column at all."
+  }
+}
+
+-- DE-DUPLICATION -------------------------------------------------------
+-- This is the first source in the project that can be de-duplicated
+-- CORRECTLY, and it is worth being explicit about why.
+--
+-- Keboola appends. Every extraction writes a complete new copy of its
+-- window into the same table, so a day that is still open accumulates
+-- one row per extraction, all with the same grain key and different
+-- numbers. SELECT DISTINCT does not help: the rows are not identical,
+-- they are successive readings of the same counter.
+--
+-- Everywhere else in this repo that is handled by keeping the LARGEST
+-- reading, because no Keboola table carries a load timestamp and the
+-- counters only go up. That is a workaround, and it is wrong whenever a
+-- platform revises a number DOWNWARD.
+--
+-- teads_daily carries extracted_at. So this keeps the NEWEST reading,
+-- which is what the warehouse actually wants. A restatement that lowers
+-- a figure is now handled; on every other channel it still is not.
+--
+-- impressions DESC is only a tiebreak for two rows written by the same
+-- extraction. It should never fire.
+--
+-- IS THE APPEND REAL? Unsettled. Two measurements, two days apart:
+--   2026-10-29  teads_uv_daily  4,880 rows / 2,972 keys / 3 extractions
+--   2026-10-30  teads_uv_daily  2,851 / 2,851 / 1
+--               teads_daily     3,175 / 3,175 / 1
+-- Both clean now. The load may have been switched to replace, or the
+-- 29th may have been a backfill. Nobody has told us.
+--
+-- The QUALIFY stays regardless, and that is a deliberate exception to
+-- this repo's rule against pre-emptive de-duplication (see
+-- stg_tiktok_campaign_daily, which has none). That rule exists because
+-- an ARBITRARY tiebreak on a clean table deletes real rows. This
+-- tiebreak is not arbitrary: on a table with one extraction per key it
+-- is provably a no-op, because there is nothing to choose between.
+--
+-- WHICH MONEY COLUMN IS SPEND ------------------------------------------
+-- Teads delivers budget_delivered and budget_spent. They are equal on
+-- most rows and not on all. Reconciled 2026-10-30 over the full window
+-- 2026-09-30 to 2026-10-29 against MASTER_TABLE, the client-facing
+-- billing figure:
+--   budget_delivered  34,051.35   ratio 1.019
+--   MASTER_TABLE      33,414.24
+--   budget_spent      32,651.36   ratio 0.977
+--
+-- MASTER_TABLE sits BETWEEN the two and matches NEITHER. Delivered is
+-- marginally the closer and is carried as spend; budget_spent is kept
+-- beside it so the choice can be revisited without re-reading the
+-- source.
+--
+-- Do not read that margin as evidence. An earlier run on 2026-10-29
+-- gave 1.015 and 0.967, so the gap between the two candidates has
+-- halved in a day — which is what a window-alignment artefact looks
+-- like, not a definition. This is an INFERENCE. Someone should get the
+-- definition from the Teads account team and check it against this.
+
+SELECT
+  -- SAFE_CAST rather than a parse helper: it is correct whether the
+  -- extractor types `day` as DATE, TIMESTAMP or a 'YYYY-MM-DD' STRING,
+  -- and Keboola has changed a date type under us before (see
+  -- metrics.parseCm360Date, which exists only because of that).
+  SAFE_CAST(day AS DATE)              AS date,
+
+  CAST(seat_id        AS STRING)      AS seat_id,
+  CAST(advertiser_id  AS STRING)      AS advertiser_id,
+  advertiser_name,
+  CAST(campaign_id    AS STRING)      AS campaign_id,
+  campaign_name,
+  CAST(line_item_id   AS STRING)      AS line_item_id,
+  line_item_name,
+  CAST(creative_id    AS STRING)      AS creative_id,
+  creative_name,
+  campaign_currency                   AS currency,
+
+  -- additive
+  CAST(impressions     AS INT64)      AS impressions,
+  CAST(clicks          AS INT64)      AS clicks,
+  CAST(video_starts    AS INT64)      AS video_starts,
+  CAST(video_completes AS INT64)      AS video_completes,
+  CAST(budget_delivered AS FLOAT64)   AS spend,
+  CAST(budget_spent     AS FLOAT64)   AS budget_spent,
+
+  -- Moat viewability. Unlike CM360, Teads delivers the MEASURABLE
+  -- denominator, so the real viewability rate is computable here and
+  -- does not have to be approximated against impressions.
+  CAST(moat_in_view_measurable_impressions  AS INT64) AS measurable_impressions,
+  CAST(moat_valid_and_viewable_impressions  AS INT64) AS viewable_impressions,
+
+  extracted_at
+FROM ${ref({ schema: constants.DATASETS.teads, name: "teads_daily" })}
+QUALIFY ROW_NUMBER() OVER (
+  PARTITION BY day, seat_id, advertiser_id, campaign_id, line_item_id, creative_id
+  ORDER BY extracted_at DESC, impressions DESC
+) = 1

@@ -1,0 +1,56 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.teads_staging,
+  name: "stg_teads_uv",
+  tags: ["teads", "staging"],
+  description: "Teads unique viewers at day x creative x billable event. NOTHING ELSE. The source also carries impressions, video_starts and video_completes, which are the same numbers stg_teads_daily already has — they are dropped here on purpose so nobody can reach a second, slightly different copy of the delivery figures.",
+  columns: {
+    unique_viewers: "NON-ADDITIVE. De-duplicated by Teads within a day; summing it across days, creatives or billable events counts the same person many times.",
+    billable_event: "Part of the grain. Measured 2026-10-30: no creative-day carries more than one value, so today it adds no rows. It stays in the key anyway — drop it and the day Teads starts reporting two billable models per line item, two unique_viewers figures get summed silently.",
+    billable_events: "What Teads actually charged for on this line item, under the model named in line_item_billable_event. Not a conversion."
+  }
+}
+
+-- Same de-duplication as stg_teads_daily — read the note there for why
+-- it stays on a table that is currently clean.
+--
+-- This is the table the whole question came from. On 2026-10-29 it held
+-- 4,880 rows for 2,972 distinct grain keys across 3 extractions, 39%
+-- inflation. On 2026-10-30 it held 2,851 rows for 2,851 keys with one
+-- extraction. Unexplained, and worth a look if it ever inflates again.
+--
+-- unique_viewers DESC is the tiebreak within one extraction only.
+--
+-- WHY THE DELIVERY COLUMNS ARE NOT CARRIED.
+-- teads_uv_daily repeats impressions, video_starts and video_completes
+-- at a grain one column finer than teads_daily. Staging both copies
+-- means two tables in the warehouse answer "how many impressions did
+-- this creative get", they will disagree the moment one extraction lags
+-- the other, and whoever finds the disagreement has to work out which
+-- is authoritative. One number, one place. The unique columns here are
+-- unique_viewers and billable_events; those are what this view is for.
+
+SELECT
+  SAFE_CAST(day AS DATE)             AS date,
+
+  CAST(seat_id       AS STRING)      AS seat_id,
+  CAST(advertiser_id AS STRING)      AS advertiser_id,
+  advertiser_name,
+  CAST(campaign_id   AS STRING)      AS campaign_id,
+  campaign_name,
+  CAST(line_item_id  AS STRING)      AS line_item_id,
+  line_item_name,
+  CAST(creative_id   AS STRING)      AS creative_id,
+  creative_name,
+  line_item_billable_event           AS billable_event,
+
+  CAST(unique_viewers  AS INT64)     AS unique_viewers,
+  CAST(billable_events AS INT64)     AS billable_events,
+
+  extracted_at
+FROM ${ref({ schema: constants.DATASETS.teads, name: "teads_uv_daily" })}
+QUALIFY ROW_NUMBER() OVER (
+  PARTITION BY day, seat_id, advertiser_id, campaign_id, line_item_id,
+               creative_id, line_item_billable_event
+  ORDER BY extracted_at DESC, unique_viewers DESC
+) = 1

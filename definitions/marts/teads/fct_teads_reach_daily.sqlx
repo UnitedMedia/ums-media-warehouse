@@ -1,0 +1,50 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.teads_marts,
+  name: "fct_teads_reach_daily",
+  tags: ["teads", "marts"],
+  description: "Teads unique viewers. ISOLATED BY DESIGN: no impression, click or money column belongs in here. unique_viewers is non-additive — summing it across days or creatives overstates reach, and joining it to fct_teads_creative_daily multiplies impressions by the number of billable-event rows that match.",
+  bigquery: {
+    partitionBy: "date",
+    clusterBy: ["advertiser_id", "campaign_id"]
+  },
+  assertions: {
+    uniqueKey: ["date", "seat_id", "advertiser_id", "campaign_id", "line_item_id", "creative_id", "billable_event"],
+    nonNull: ["date", "campaign_id"]
+  },
+  columns: {
+    unique_viewers: "NON-ADDITIVE. Valid only at exactly this grain. In Looker Studio set the aggregation to MAX, never SUM.",
+    billable_events: "What Teads charged for under this line item's billable model. Additive, but it is a billing count, not a conversion."
+  }
+}
+
+-- The same quarantine as fct_dv360_reach_daily and
+-- fct_cm360_reach_daily: keeping a non-additive metric in a table that
+-- holds nothing additive is the only structural defence against someone
+-- writing SUM(unique_viewers) next to SUM(impressions) and getting a
+-- number that looks entirely plausible.
+--
+-- A full rebuild, not incremental. The DV360 reach fact has to be
+-- incremental because its Keboola extract holds one day at a time;
+-- this one holds the whole window, so rebuilding it is both correct
+-- and cheap.
+
+SELECT
+  date,
+  seat_id,
+  advertiser_id,
+  campaign_id,
+  line_item_id,
+  creative_id,
+  billable_event,
+
+  ANY_VALUE(advertiser_name) AS advertiser_name,
+  ANY_VALUE(campaign_name)   AS campaign_name,
+  ANY_VALUE(line_item_name)  AS line_item_name,
+  ANY_VALUE(creative_name)   AS creative_name,
+
+  SUM(unique_viewers)        AS unique_viewers,
+  SUM(billable_events)       AS billable_events
+FROM ${ref("stg_teads_uv")}
+WHERE date IS NOT NULL
+GROUP BY 1, 2, 3, 4, 5, 6, 7

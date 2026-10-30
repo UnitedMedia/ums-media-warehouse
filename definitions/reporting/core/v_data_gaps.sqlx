@@ -448,6 +448,59 @@ WITH gaps AS (
 
   UNION ALL
 
+  -- Teads: on 2026-10-29 the extraction had appended rather than
+  -- replaced -- teads_uv_daily held 4,880 rows for 2,972 distinct grain
+  -- keys, 39% inflation across 3 extractions, the same defect
+  -- cm360_duplicate_rows and gads_youtube_duplicate_rows describe.
+  -- On 2026-10-30 both tables were exactly clean, one extraction each.
+  --
+  -- So these two rows are usually ZERO, and the view filters
+  -- rows_affected > 0, which means they are invisible until it happens
+  -- again. That is the point: staging de-duplicates either way, so the
+  -- only symptom of a relapse would be this row appearing.
+  SELECT
+    '${constants.CHANNEL.teads}',
+    'teads_duplicate_rows',
+    'teads_uv_daily',
+    'Rows beyond the distinct grain count. Zero on 2026-10-30; 1,908 on 2026-10-29. If this is non-zero the extraction has gone back to inserting instead of replacing. Staging de-duplicates on extracted_at either way, so nothing reported is wrong — but never query the raw table without de-duplicating.',
+    (SELECT COUNT(*) - COUNT(DISTINCT FORMAT('%t|%t|%t|%t|%t|%t|%t',
+       day, seat_id, advertiser_id, campaign_id, line_item_id, creative_id, line_item_billable_event))
+     FROM ${ref({ schema: constants.DATASETS.teads, name: "teads_uv_daily" })}),
+    CAST(NULL AS FLOAT64)
+
+  UNION ALL
+
+  SELECT
+    '${constants.CHANNEL.teads}',
+    'teads_duplicate_rows',
+    'teads_daily',
+    'Same check as teads_uv_daily. Clean on both 2026-10-29 and 2026-10-30. Non-zero means the load started inserting instead of replacing.',
+    (SELECT COUNT(*) - COUNT(DISTINCT FORMAT('%t|%t|%t|%t|%t|%t',
+       day, seat_id, advertiser_id, campaign_id, line_item_id, creative_id))
+     FROM ${ref({ schema: constants.DATASETS.teads, name: "teads_daily" })}),
+    CAST(NULL AS FLOAT64)
+
+  UNION ALL
+
+  -- Teads: two money columns, and which one is the client-facing figure
+  -- was INFERRED, not documented. Over 2026-09-30 to 10-29 against
+  -- MASTER_TABLE: delivered 34,051.35 (1.019), MASTER_TABLE 33,414.24,
+  -- spent 32,651.36 (0.977). MASTER_TABLE sits between the two and
+  -- matches neither. We report delivered, on a 0.4pp margin that had
+  -- been 1.8pp the day before -- which is drift, not evidence. Every
+  -- row where the two columns disagree is money resting on that guess.
+  SELECT
+    '${constants.CHANNEL.teads}',
+    'teads_budget_columns_disagree',
+    CAST(NULL AS STRING),
+    'budget_delivered <> budget_spent. We report budget_delivered as spend on a reconciliation that does not clearly favour it — MASTER_TABLE falls between the two columns. spend_affected is the absolute gap. Settle this with the Teads account team and the inference goes away.',
+    COUNT(*),
+    CAST(SUM(ABS(spend - budget_spent)) AS FLOAT64)
+  FROM ${ref("fct_teads_creative_daily")}
+  WHERE spend IS DISTINCT FROM budget_spent
+
+  UNION ALL
+
   -- Core: clients with no canonical name — this is what splits one
   -- client into three in every cross-channel report
   SELECT

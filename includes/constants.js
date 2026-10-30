@@ -23,6 +23,13 @@ const DATASETS = {
   // seventh decimal. Same feed, two vendors, different column sets.
   tiktok_keboola: "keboola_tiktok",
   gads:      "google_ads",        // Google Ads (Weld)
+
+  // Teads (Keboola). Arrived 2026-10-30. The first extract in this
+  // project to carry a load timestamp (extracted_at), which is what
+  // finally makes a correct de-duplication possible -- every other
+  // Keboola source has to be de-duplicated on "largest wins" because
+  // nothing says which read is the newest.
+  teads:     "keboola_teads",
   final:     "FINAL_TABLES",      // hand-built reference data that predates
                                   // this project. Home of MonthlyExchangeRate.
 };
@@ -59,6 +66,10 @@ const SCHEMAS = {
   gads_marts:       "gads_marts",
   gads_reporting:   "gads_reporting",
 
+  teads_staging:    "teads_staging",
+  teads_marts:      "teads_marts",
+  teads_reporting:  "teads_reporting",
+
   core_staging:    "core_staging",
   core:            "core",      // cross-channel, channel-agnostic schema
   core_seeds:      "core_seeds",
@@ -72,6 +83,7 @@ const CHANNEL = {
   meta:  "Meta",
   tiktok: "TikTok",
   gads:   "Google Ads",
+  teads:  "Teads",
 };
 
 // Every partitioned fact in this project is PARTITION BY date. Some

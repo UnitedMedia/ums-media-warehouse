@@ -1,0 +1,62 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.teads_marts,
+  name: "fct_teads_creative_daily",
+  tags: ["teads", "marts"],
+  description: "THE Teads fact. Day x seat x advertiser x campaign x line item x creative — the finest grain Teads delivers, and the only delivery table in the channel. core.fct_ad_performance_daily rolls this up to campaign.",
+  bigquery: {
+    partitionBy: "date",
+    clusterBy: ["advertiser_id", "campaign_id", "line_item_id"]
+  },
+  assertions: {
+    uniqueKey: ["date", "seat_id", "advertiser_id", "campaign_id", "line_item_id", "creative_id"],
+    nonNull: ["date", "campaign_id", "creative_id"]
+  },
+  columns: {
+    spend: "budget_delivered, in campaign currency. See stg_teads_daily for why this column and not budget_spent.",
+    budget_spent: "Teads' second money column, audit only. Never add it to spend.",
+    video_completes: "The video played to the end. The same measurement as DV360 Complete_Views_Video and TikTok video_views_p100, which is why this one is allowed into the cross-channel fact's complete_views.",
+    viewable_impressions: "Moat valid-and-viewable. Divide by measurable_impressions, NOT by impressions — Teads gives the real denominator, so the viewability rate here is the true one and reads higher than the CM360 equivalent.",
+    measurable_impressions: "Impressions Moat could measure at all. The denominator of viewable_rate."
+  }
+}
+
+-- NO DIMENSION TABLES IN THIS CHANNEL, deliberately.
+-- Teads is bought as managed insertion orders: there is no account
+-- hierarchy, no entity endpoint, and the one delivery table already
+-- carries every name beside every id. Splitting those names into
+-- dim_teads_campaign and dim_teads_creative would create two tables
+-- whose only source is this one, and a join to get back what was
+-- already on the row. The names are carried here instead.
+--
+-- ANY_VALUE, not GROUP BY, on every name. A line item or creative
+-- renamed mid-flight must not split into two rows and double the spend
+-- on a scorecard. Same rule as core.fct_ad_performance_daily.
+
+SELECT
+  date,
+  seat_id,
+  advertiser_id,
+  campaign_id,
+  line_item_id,
+  creative_id,
+
+  ANY_VALUE(advertiser_name) AS advertiser_name,
+  ANY_VALUE(campaign_name)   AS campaign_name,
+  ANY_VALUE(line_item_name)  AS line_item_name,
+  ANY_VALUE(creative_name)   AS creative_name,
+  ANY_VALUE(currency)        AS currency,
+
+  SUM(impressions)            AS impressions,
+  SUM(clicks)                 AS clicks,
+  SUM(video_starts)           AS video_starts,
+  SUM(video_completes)        AS video_completes,
+  SUM(spend)                  AS spend,
+  SUM(budget_spent)           AS budget_spent,
+  SUM(measurable_impressions) AS measurable_impressions,
+  SUM(viewable_impressions)   AS viewable_impressions,
+
+  MAX(extracted_at)           AS extracted_at
+FROM ${ref("stg_teads_daily")}
+WHERE date IS NOT NULL
+GROUP BY 1, 2, 3, 4, 5, 6

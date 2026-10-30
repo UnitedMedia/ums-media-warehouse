@@ -56,7 +56,9 @@ correct no matter how Looker rolls it up; a ratio stored in a table does not.
 | **Google Ads by country / city** | `gads_reporting.v_geo_daily` (filter `location_type`) |
 | **Google Ads video / YouTube by format** | `gads_reporting.v_video_daily` |
 | **Google Ads video completion funnel (25/50/75/100%)** | `gads_reporting.v_video_funnel_daily` |
-| All five channels in one chart | `reporting.v_ad_performance_daily` |
+| Teads spend, viewability, video completion | `teads_reporting.v_daily` |
+| Teads unique viewers | `teads_reporting.v_reach_daily` |
+| All six channels in one chart | `reporting.v_ad_performance_daily` |
 | What is broken or unmapped right now | `reporting.v_data_gaps` |
 | How fresh each channel is | `reporting.v_source_freshness` |
 | How a metric is defined | `dv360_reporting.v_metric_catalog`, `cm360_reporting.v_metric_catalog` |
@@ -74,6 +76,7 @@ correct no matter how Looker rolls it up; a ratio stored in a table does not.
 | TikTok | `spend` | `tiktok_reporting.v_campaign_daily` | **Complete.** Advertiser currency |
 | TikTok | `spend` | `tiktok_reporting.v_daily` | Ad level — only ~98.6% of the above |
 | Google Ads | `spend` | `gads_reporting.v_daily` | **Complete**, incl. Performance Max. Account currency, from `cost_micros` |
+| Teads | `spend` | `teads_reporting.v_daily` | `budget_delivered`, campaign currency. Picked over `budget_spent` on a reconciliation, **not** on a definition from Teads — see below |
 
 ### Where the impressions are
 
@@ -87,7 +90,7 @@ within it but must never add two breakdowns together.
 
 ## Read this before you total anything
 
-**All five channels are live** — measured 2026-10-13.
+**All six channels are live** — measured 2026-10-13.
 
 **CM360 moved dataset on 2026-10-12**: its tables were dropped from `kebooladv`
 and recreated in **`keboola_cm360`**, fresh daily and about seven times larger.
@@ -602,11 +605,86 @@ only, so an `age_gender_actions` sibling is still needed.
 
 ---
 
+## Teads
+
+Source: Keboola → `keboola_teads`. **Landed 2026-10-30.** Two tables, and that
+is the whole channel.
+
+Teads is bought as managed insertion orders, so there is no account hierarchy
+and no entity endpoint. One flat table carries seat, advertiser, campaign, line
+item and creative names beside their ids — which is why **this channel has no
+dimension tables**. The names live on the fact.
+
+### Reporting views — `teads_reporting`
+
+| View | Grain | Use it for |
+|---|---|---|
+| **`v_daily`** | creative × day | **The main one.** Delivery, money, Moat viewability and video completion. Roll it up to line item, campaign or advertiser in Looker. |
+| `v_reach_daily` | creative × billable event × day | Unique viewers. **Never blend it with `v_daily`** — the blend fans reach out against delivery rows and both sides lie. |
+
+### Marts — `teads_marts`
+
+| Table | Grain | Notes |
+|---|---|---|
+| `fct_teads_creative_daily` | creative × day | **THE Teads fact.** Carries every name itself; `core` rolls it up to campaign. |
+| `fct_teads_reach_daily` | creative × billable event × day | `unique_viewers`, quarantined with nothing additive beside it. |
+
+### Staging — `teads_staging`
+
+Two views, both de-duplicated. `stg_teads_uv` deliberately drops the
+impressions, video starts and video completes the source repeats, so only one
+table in the warehouse answers "how many impressions did this creative get".
+
+### Four things that will catch you out
+
+1. **`completion_rate` here is not the one in the other channels.** Teads
+   delivers `video_starts`, so this is completes ÷ **starts** — the real VTR.
+   DV360, TikTok and Google Ads divide by impressions because their feeds carry
+   no start count. Same column name, different measurement.
+2. **`viewable_rate` here is not the one in CM360 either.** Moat gives the
+   measurable denominator, so this is viewable ÷ **measurable**, the true rate.
+   The CM360 column divides by impressions and reads lower. Check
+   `measurable_rate` first — a low one makes the viewability figure unreliable.
+3. **Which money column is spend was inferred, and the inference is weak.**
+   Over 2026-09-30 to 10-29: `budget_delivered` 34,051.35, `MASTER_TABLE`
+   33,414.24, `budget_spent` 32,651.36. **MASTER_TABLE falls between the two
+   and matches neither** — delivered is +1.9%, spent is −2.3%. We report
+   delivered on that 0.4pp margin, which had been 1.8pp the day before. Spent
+   is carried as `src_budget_spent` and the gap is sized in `v_data_gaps` as
+   `teads_budget_columns_disagree`. **Nobody at Teads has confirmed this.**
+4. **No conversions at all.** The feed has delivery, money and viewability and
+   nothing attributed, so `conversions` is NULL in `core`. `billable_events` is
+   a billing count, not a conversion, and is deliberately not promoted.
+
+### The one good thing about this source
+
+`extracted_at`. It is the **only** extract in the project that says when it was
+loaded, so its staging de-duplicates on *newest wins* rather than the
+largest-wins workaround every other Keboola source needs. A figure the platform
+revises downward is handled correctly here and nowhere else.
+
+Whether it needs to is **unsettled**. On 2026-10-29 `teads_uv_daily` held 4,880
+rows for 2,972 grain keys across 3 extractions, 39% inflation. On 2026-10-30 it
+held 2,851 for 2,851 with one extraction, and `teads_daily` 3,175 for 3,175 —
+both exactly clean. Either the load was switched to replace, or the 29th was a
+backfill. The de-duplication stays because on a clean table it is provably a
+no-op and it costs nothing; `v_data_gaps.teads_duplicate_rows` reads zero today
+and is how a relapse shows up.
+
+### Freshness
+
+Delivery reaches 2026-10-29 and unique viewers only 2026-10-27, measured
+2026-10-30 — **the reach feed runs two days behind.** Teads shares the one
+project-wide 2-day threshold, so `Teads / unique viewers` fails
+`assert_source_freshness` on day one. Both tables start 2026-09-30.
+
+---
+
 ## Cross-channel
 
 | Object | Grain | Use it for |
 |---|---|---|
-| `reporting.v_ad_performance_daily` | channel × campaign × day | One chart covering all three channels. Adds week and month columns and the rate metrics. |
+| `reporting.v_ad_performance_daily` | channel × campaign × day | One chart covering all six channels. Adds week and month columns and the rate metrics. |
 | `core.fct_ad_performance_daily` | the same | The table behind it. Query the view. |
 | `reporting.v_data_gaps` | one row per gap | **Your work list.** Everything unmapped or unattributable, sized by rows and by spend. |
 
@@ -767,6 +845,34 @@ that soft-deletes rows.
 | `search_term_stats` | `stg_gads_search_term` | 5.8M rows. The actual queries, the matched keyword, and whether each is added or negated. **All metrics arrive as FLOAT64**, cost_micros included. |
 | `keyword_stats` | `stg_gads_keyword_daily` | 969k rows. Keyword performance by day — the history `ad_group_criterion` has never had. **Every id column is STRING here**, unlike every other google_ads table. |
 | `youtube_ads` | `stg_gads_campaign_network_daily` | **The name is wrong.** Campaign × day × network across all seven channel types. Read ONLY for the video quartiles, `video_trueview_views`, `engagements` and `all_conversions`. Its `cost_micros` duplicates `campaign_stats` exactly and is not staged. |
+
+### `keboola_tiktok` — Keboola → TikTok (video only)
+
+1 declared, 1 required. Not a second source of truth: the same data Weld
+already delivers in `tiktok_ads.campaign_platform_report`, verified identical
+on all eight overlapping days. Read **only** for the three video columns Weld
+does not carry.
+
+| Source table | Read by | Note |
+|---|---|---|
+| `titktok_platform` | `stg_tiktok_breakdown` | ad × platform × day. **The name is misspelled at source** — `titktok`, with an extra `t`. Spelled here as the source spells it; if Keboola corrects it the ref breaks loudly, which is the right failure. 8 days of history against Weld's 88, and two days of lag against Weld's one, so Weld stays the base and this LEFT JOINs on. |
+
+### `keboola_teads` — Keboola → Teads
+
+2 declared, 2 required. **The only source in the project that carries a load
+timestamp** (`extracted_at`), which is what lets its staging de-duplicate on
+newest-wins instead of largest-wins.
+
+| Source table | Read by | Note |
+|---|---|---|
+| `teads_daily` | `stg_teads_daily` | day × seat × advertiser × campaign × line item × creative. Delivery, two money columns and Moat viewability. `campaign_currency` added 2026-10-30. |
+| `teads_uv_daily` | `stg_teads_uv` | The same grain plus `line_item_billable_event`, carrying `unique_viewers`. Its impressions / video starts / video completes repeat `teads_daily` and are deliberately **not** staged. |
+
+**Both were clean on 2026-10-30** — one extraction each, rows equal to grain
+keys, 3,175 and 2,851, window 2026-09-30 to 10-29 and 10-27. One day earlier
+`teads_uv_daily` carried 4,880 rows for 2,972 keys across 3 extractions.
+Unexplained. Staging de-duplicates both regardless; never query either raw
+without doing the same.
 
 ### What is deliberately excluded
 

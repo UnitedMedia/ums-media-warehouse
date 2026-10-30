@@ -1,0 +1,66 @@
+config {
+  type: "assertion",
+  tags: ["teads", "monitoring"],
+  description: "Fails if de-duplication left more than one row per grain key in either Teads fact, or if either source table stops carrying extracted_at. Both failures are silent corruption of spend, not a visible error."
+}
+
+-- An assertion FAILS if it returns rows. Empty result = healthy.
+--
+-- TWO THINGS ARE WATCHED, and the second is the one that will actually
+-- fire one day.
+--
+-- 1. DUPLICATE GRAIN KEYS after staging. The marts carry uniqueKey
+--    assertions already, so this is partly belt and braces — but those
+--    run on the mart and this names the channel, which is what gets
+--    read when the workflow goes red at 06:00.
+--
+-- 2. extracted_at GOING NULL. The whole de-duplication in
+--    stg_teads_daily and stg_teads_uv orders on extracted_at. If the
+--    extractor ever stops populating it, ROW_NUMBER falls back to the
+--    impression tiebreak and quietly starts keeping an arbitrary row
+--    from an arbitrary extraction. Nothing else would complain: row
+--    counts stay right, spend just drifts.
+--
+-- On 2026-10-30 both source tables were exactly clean -- one extraction
+-- each, rows equal to grain keys. On 2026-10-29 teads_uv_daily carried
+-- 39% more rows than keys across 3 extractions. This assertion is what
+-- says which of those two days is normal, so leave it running even
+-- while it is green.
+
+SELECT 'duplicate grain key' AS problem, 'fct_teads_creative_daily' AS object,
+       CAST(COUNT(*) AS STRING) AS detail
+FROM (
+  SELECT 1
+  FROM ${ref("fct_teads_creative_daily")}
+  GROUP BY date, seat_id, advertiser_id, campaign_id, line_item_id, creative_id
+  HAVING COUNT(*) > 1
+)
+HAVING COUNT(*) > 0
+
+UNION ALL
+
+SELECT 'duplicate grain key', 'fct_teads_reach_daily', CAST(COUNT(*) AS STRING)
+FROM (
+  SELECT 1
+  FROM ${ref("fct_teads_reach_daily")}
+  GROUP BY date, seat_id, advertiser_id, campaign_id, line_item_id,
+           creative_id, billable_event
+  HAVING COUNT(*) > 1
+)
+HAVING COUNT(*) > 0
+
+UNION ALL
+
+SELECT 'extracted_at is NULL — de-duplication has no ordering key',
+       'teads_daily', CAST(COUNT(*) AS STRING)
+FROM ${ref({ schema: constants.DATASETS.teads, name: "teads_daily" })}
+WHERE extracted_at IS NULL
+HAVING COUNT(*) > 0
+
+UNION ALL
+
+SELECT 'extracted_at is NULL — de-duplication has no ordering key',
+       'teads_uv_daily', CAST(COUNT(*) AS STRING)
+FROM ${ref({ schema: constants.DATASETS.teads, name: "teads_uv_daily" })}
+WHERE extracted_at IS NULL
+HAVING COUNT(*) > 0

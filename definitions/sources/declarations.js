@@ -215,6 +215,54 @@ const KEBOOLA_TIKTOK_TABLES = [
 ];
 
 // ---------------------------------------------------------------------
+// keboola_teads — Keboola extraction for Teads. TWO tables.
+//
+// Arrived 2026-10-30. Teads is the sixth channel and the first one that
+// is NOT a self-service platform: everything is bought as a managed
+// insertion order, so there is no account hierarchy to model. One flat
+// table carries seat, advertiser, campaign, line item and creative
+// names together, which is why this channel needs no dimension tables.
+//
+// THE ONE THING THAT MAKES THIS SOURCE DIFFERENT: extracted_at.
+// Every other Keboola extract in this project APPENDS a fresh extract
+// beside the previous one and gives you no way to tell which read is
+// newer, so staging has to de-duplicate on "largest wins" and hope the
+// counter only ever goes up. These two tables carry the load timestamp,
+// so they are de-duplicated on "newest wins", which is actually
+// correct -- a restated day that goes DOWN is handled properly here and
+// nowhere else.
+//
+// WHETHER THESE TABLES APPEND IS UNSETTLED, and the two measurements
+// disagree:
+//   2026-10-29  teads_uv_daily  4,880 rows / 2,972 grain keys / 3
+//               extracted_at values -- 39% inflation.
+//   2026-10-30  teads_uv_daily  2,851 rows / 2,851 grain keys / 1
+//               extracted_at.   teads_daily 3,175 / 3,175 / 1.
+// Both tables are now exactly clean. Either the load was switched to
+// replace between those two days, or the three extractions on the 29th
+// were a backfill that has since been collapsed. Nobody told us which.
+//
+// Staging de-duplicates anyway. The repo's standing rule is NOT to
+// de-duplicate pre-emptively -- an arbitrary tiebreak on a clean table
+// silently deletes real rows, which is why stg_tiktok_campaign_daily
+// has no QUALIFY. That rule turns on the word ARBITRARY. Here the
+// tiebreak is extracted_at, a real load timestamp, so on a clean table
+// it is provably a no-op: one row per key, one timestamp, nothing to
+// choose between. It costs nothing and it covers the 29th happening
+// again. See stg_teads_daily and stg_teads_uv.
+// ---------------------------------------------------------------------
+const TEADS_TABLES = [
+  "teads_daily",     // day x seat x advertiser x campaign x line item x
+                     // creative. Delivery, money and Moat viewability.
+                     // THE delivery table.
+  "teads_uv_daily",  // the same grain plus line_item_billable_event,
+                     // carrying unique_viewers. NON-ADDITIVE. Its
+                     // impressions / video_starts / video_completes
+                     // duplicate teads_daily and are deliberately not
+                     // staged -- see stg_teads_uv.
+];
+
+// ---------------------------------------------------------------------
 // google_ads — Weld sync for Google Ads
 //
 // PHASE 1: campaign level only, which is what the cross-channel view
@@ -346,6 +394,14 @@ KEBOOLA_TIKTOK_TABLES.forEach(name => {
   declare({
     database: constants.RAW_PROJECT,
     schema: constants.DATASETS.tiktok_keboola,
+    name: name,
+  });
+});
+
+TEADS_TABLES.forEach(name => {
+  declare({
+    database: constants.RAW_PROJECT,
+    schema: constants.DATASETS.teads,
     name: name,
   });
 });

@@ -1,0 +1,27 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.teads_reporting,
+  name: "v_reach_daily",
+  tags: ["teads", "reporting"],
+  description: "Teads unique viewers. Its own Looker Studio page, its own scorecards, its own data source. NEVER blend this with v_daily in Looker: the blend fans unique_viewers out against delivery rows and both sides lie. Unique viewers are only valid at the grain Teads de-duplicated them on."
+}
+
+SELECT
+  f.date,
+  DATE_TRUNC(f.date, WEEK(MONDAY)) AS week,
+  DATE_TRUNC(f.date, MONTH)        AS month,
+
+  f.seat_id,
+  f.advertiser_id,
+  f.advertiser_name,
+  f.campaign_id,
+  f.campaign_name,
+  f.line_item_id,
+  f.line_item_name,
+  f.creative_id,
+  f.creative_name,
+  f.billable_event,
+
+  f.unique_viewers,
+  f.billable_events
+FROM ${ref("fct_teads_reach_daily")} f

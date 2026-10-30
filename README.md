@@ -1,8 +1,8 @@
 # ums-media-warehouse
 
 Dataform project for the UMS advertising warehouse in `ums-digital-core-automation`.
-One repo for every paid channel: DV360, CM360, Meta, TikTok and Google Ads are
-modelled here today.
+One repo for every paid channel: DV360, CM360, Meta, TikTok, Google Ads and
+Teads are modelled here today.
 
 Everything in `definitions/` supersedes the hand-run scripts in `all_scripts/`.
 Those are kept as the record of what was deployed before; nothing reads them.
@@ -595,6 +595,65 @@ either asserted on or surfaced in `v_data_gaps`.
 - History starts 2026-06-21.
 - Weld finishes syncing between 00:15 and 02:15 UTC, so the 06:00 Bucharest
   schedule (03:00 UTC) always picks up a complete sync.
+
+**Teads**
+
+- **Landed 2026-10-30**, the sixth channel. Two Keboola tables,
+  `teads_daily` and `teads_uv_daily`, and nothing else.
+- **No dimension tables, on purpose.** Teads is bought as managed insertion
+  orders: there is no account hierarchy and no entity endpoint. One flat table
+  carries seat, advertiser, campaign, line item and creative names beside their
+  ids, so the names are carried on `fct_teads_creative_daily` itself. A
+  `dim_teads_campaign` would have this table as its only source and a join to
+  get back what was already on the row.
+- **The first source in the project with a load timestamp.** `extracted_at`
+  means staging can de-duplicate on **newest wins** instead of the largest-wins
+  workaround every other Keboola source needs. That matters beyond tidiness: a
+  figure a platform revises DOWNWARD is handled correctly here and on no other
+  channel.
+- **Whether the extraction appends is unsettled.** On 2026-10-29
+  `teads_uv_daily` held 4,880 rows for 2,972 distinct grain keys across 3
+  extractions, 39% inflation. On 2026-10-30 it held 2,851 rows for 2,851 keys
+  with one extraction, and `teads_daily` 3,175 for 3,175. Both exactly clean.
+  Either the load was switched to replace, or the 29th was a backfill; nobody
+  told us. Staging de-duplicates anyway — **a deliberate exception** to the
+  rule that this repo does not de-duplicate pre-emptively, because that rule
+  turns on the tiebreak being *arbitrary* and `extracted_at` is not. On a clean
+  table the QUALIFY is provably a no-op. `v_data_gaps.teads_duplicate_rows`
+  shows zero today and is how a relapse becomes visible.
+- **Two money columns and no documentation of which is which.** Over
+  2026-09-30 to 10-29 against `MASTER_TABLE`: `budget_delivered` 34,051.35
+  (1.019), `MASTER_TABLE` 33,414.24, `budget_spent` 32,651.36 (0.977).
+  **MASTER_TABLE falls between the two and matches neither.** Delivered is
+  reported as `spend` on a 0.4pp margin that had been 1.8pp the day before —
+  drift, not evidence. Spent is carried beside it for audit and the gap is
+  sized in `v_data_gaps` as `teads_budget_columns_disagree`. **This is an
+  inference, not a definition** — someone should settle it with the Teads
+  account team.
+- **`campaign_currency` arrived 2026-10-30.** Before that the channel had no
+  currency column at all, the same position CM360 is still in. It is read from
+  the source, not asserted. Measured over the full window: one value, EUR.
+- **No conversions of any kind.** The feed carries delivery, money and Moat
+  viewability and nothing attributed, so `conversions` is NULL in `core`.
+  `billable_events` is a billing count and is deliberately not promoted into
+  it.
+- **Viewability is the real rate here.** Teads delivers Moat's measurable
+  denominator, so `viewable_rate` is viewable / measurable. The CM360 column of
+  the same name divides by impressions because its feed has no denominator, and
+  reads lower. They are not comparable.
+- **`completion_rate` is also the real one** — completes / video_STARTS. Every
+  other channel divides by impressions because none of them delivers a start
+  count. Same column name, different measurement.
+- `unique_viewers` is non-additive and quarantined in `fct_teads_reach_daily`
+  with nothing additive beside it, the same defence as the DV360 and CM360
+  reach facts. Never blend `v_reach_daily` with `v_daily` in Looker.
+  `billable_event` stays in its grain although no creative-day currently
+  carries two values — removing it would turn a future second billable model
+  into silent double-counting.
+- **The unique-viewer feed runs 2 days behind the delivery feed** — 2026-10-27
+  against 2026-10-29, measured 2026-10-30. `assert_source_freshness` will fail
+  on `Teads / unique viewers` at the one shared 2-day threshold. That is the
+  threshold working, not a tolerance to add. History starts 2026-09-30 on both.
 
 **Cross-channel**
 

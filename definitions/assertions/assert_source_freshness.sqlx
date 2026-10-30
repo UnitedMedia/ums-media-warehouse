@@ -99,6 +99,15 @@ WITH latest AS (
   UNION ALL
   SELECT '${constants.CHANNEL.gads}', 'audience daily', MAX(date), ${dataform.projectConfig.vars.freshnessThresholdDays}
   FROM ${ref("fct_gads_audience_daily")}
+
+  -- Teads ----------------------------------------------------------------
+  UNION ALL
+  SELECT '${constants.CHANNEL.teads}', 'creative daily', MAX(date), ${dataform.projectConfig.vars.freshnessThresholdDays}
+  FROM ${ref("fct_teads_creative_daily")}
+
+  UNION ALL
+  SELECT '${constants.CHANNEL.teads}', 'unique viewers', MAX(date), ${dataform.projectConfig.vars.freshnessThresholdDays}
+  FROM ${ref("fct_teads_reach_daily")}
 )
 
 SELECT

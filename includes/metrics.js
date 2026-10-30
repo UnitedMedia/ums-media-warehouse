@@ -21,10 +21,18 @@ function interactionRate(interactions, impressions) {
   return `SAFE_DIVIDE(${interactions}, ${impressions})`;
 }
 
-// Proxy: no video-starts column is delivered by any of the three
-// extractors, so completion is measured against impressions.
-function completionRate(completeViews, impressions) {
-  return `SAFE_DIVIDE(${completeViews}, ${impressions})`;
+// Completion against whatever denominator the source can give.
+//
+// DV360, CM360, TikTok and Google Ads deliver no video-start count, so
+// their views pass impressions and the result is a PROXY — completions
+// per impression, which is not the industry VTR.
+//
+// Teads does deliver video_starts, so teads/v_daily passes that and
+// gets the real thing. The two are NOT comparable with each other.
+// Read the column description on the view before putting them on the
+// same chart.
+function completionRate(completeViews, denominator) {
+  return `SAFE_DIVIDE(${completeViews}, ${denominator})`;
 }
 
 function viewRate(views, impressions) {
@@ -39,11 +47,17 @@ function cpc(spend, clicks) {
   return `SAFE_DIVIDE(${spend}, NULLIF(${clicks}, 0))`;
 }
 
-// CM360 only. NOT CM360's "Active View: % Viewable Impressions" — the
-// real metric divides by Measurable Impressions, which the Keboola
-// report does not deliver. This reads LOWER than the CM360 UI.
-function viewableRate(viewableImpressions, impressions) {
-  return `SAFE_DIVIDE(${viewableImpressions}, ${impressions})`;
+// Viewability, against whatever denominator the source can give.
+//
+// CM360 passes impressions, because the Keboola report does not deliver
+// Measurable Impressions. That is NOT CM360's "Active View: % Viewable
+// Impressions" and it reads LOWER than the CM360 UI.
+//
+// Teads passes measurable impressions, because Moat delivers them, so
+// teads/v_daily carries the real viewability rate. Higher than the CM360
+// column of the same name, and not comparable with it.
+function viewableRate(viewableImpressions, denominator) {
+  return `SAFE_DIVIDE(${viewableImpressions}, ${denominator})`;
 }
 
 // Impressions per reached person. Only valid where reach was
