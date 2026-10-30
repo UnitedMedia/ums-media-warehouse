@@ -25,7 +25,16 @@ SELECT
   SUM(clicks)      AS clicks,
   SUM(spend)       AS spend,
   SUM(conversion)  AS conversions,
-  SUM(result)      AS results
+  SUM(result)      AS results,
+
+  -- PLATFORM ONLY, and only from 2026-10-21. NULL on every other
+  -- breakdown and on every earlier platform row: TikTok publishes no
+  -- video metric on the age, country or language reports, and the
+  -- Keboola feed that carries them for platform starts there. SUM over
+  -- all-NULL returns NULL, which is the honest answer -- not 0.
+  SUM(video_watched_2s) AS video_watched_2s,
+  SUM(video_watched_6s) AS video_watched_6s,
+  SUM(video_plays)      AS video_plays
 FROM ${ref("stg_tiktok_breakdown")}
 WHERE date IS NOT NULL
 GROUP BY 1, 2, 3, 4, 5, 6, 7

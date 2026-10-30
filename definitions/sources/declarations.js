@@ -182,6 +182,39 @@ const TIKTOK_TABLES = [
 ];
 
 // ---------------------------------------------------------------------
+// keboola_tiktok — Keboola extraction for TikTok. ONE table.
+//
+// Arrived 2026-10-30, after Weld could not add video metrics to its
+// breakdown reports. It is the SAME data Weld already delivers in
+// tiktok_ads.campaign_platform_report -- checked on all eight
+// overlapping days, 2026-10-21 to 10-28: every daily impression total
+// identical, every spend total equal to the seventh decimal
+// (5894.550000 vs 5894.549989). 3,017 of 3,018 campaign x platform x
+// day pairs identical, nothing present only in Keboola.
+//
+// So it is NOT a second source of truth for spend, and nothing reads
+// delivery from it. It is joined ONLY for the three video columns Weld
+// does not carry.
+//
+// Two things make it the junior partner despite being richer:
+//   * 8 days of history against Weld's 88
+//   * two days of lag against Weld's one
+// Weld therefore stays the base of the platform breakdown and this
+// table LEFT JOINs onto it. See stg_tiktok_breakdown.
+//
+// The name is misspelled at source -- titktok, with an extra t. Spelled
+// here as the source spells it. If Keboola ever corrects it this ref
+// breaks loudly, which is the right failure: a silent rename cost three
+// days when cm360_floodlights became cm360_floodlightsv2.
+// ---------------------------------------------------------------------
+const KEBOOLA_TIKTOK_TABLES = [
+  "titktok_platform",  // ad x platform x day. ANDROID, IPHONE, IPAD,
+                       // WAP, UNKNOWN. Carries video_watched_2s,
+                       // video_watched_6s and video_play_actions, and
+                       // does NOT carry conversion or result.
+];
+
+// ---------------------------------------------------------------------
 // google_ads — Weld sync for Google Ads
 //
 // PHASE 1: campaign level only, which is what the cross-channel view
@@ -305,6 +338,14 @@ TIKTOK_TABLES.forEach(name => {
   declare({
     database: constants.RAW_PROJECT,
     schema: constants.DATASETS.tiktok,
+    name: name,
+  });
+});
+
+KEBOOLA_TIKTOK_TABLES.forEach(name => {
+  declare({
+    database: constants.RAW_PROJECT,
+    schema: constants.DATASETS.tiktok_keboola,
     name: name,
   });
 });

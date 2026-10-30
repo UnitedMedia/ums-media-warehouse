@@ -9,7 +9,10 @@ config {
     campaign_id: "Comes from the breakdown itself for platform, and from dim_tiktok_ad for the other three.",
     campaign_name: "Resolved through dim_tiktok_ad where the row has an ad_id, and through dim_tiktok_campaign where it does not. Before 2026-10-28 this was NULL on every platform row.",
     advertiser_name: "Same two-step resolution as campaign_name.",
-    currency: "Same two-step resolution as campaign_name. The advertiser's billing currency, not a converted figure."
+    currency: "Same two-step resolution as campaign_name. The advertiser's billing currency, not a converted figure.",
+    video_watched_2s: "TikTok's own definition of a video VIEW for the Video Views objective — the number a client sees in the TikTok interface. PLATFORM breakdown only, and only from 2026-10-21. NULL everywhere else.",
+    video_watched_6s: "The stricter view definition. Same coverage as video_watched_2s.",
+    video_plays: "Video STARTS, not views. Always the largest of the three and the least comparable to what TikTok reports. Same coverage as video_watched_2s."
   }
 }
 
@@ -33,10 +36,20 @@ SELECT
   b.spend,
   b.conversions,
   b.results,
+  b.video_watched_2s,
+  b.video_watched_6s,
+  b.video_plays,
   ${metrics.cpm("b.spend", "b.impressions")}  AS cpm,
   ${metrics.ctr("b.clicks", "b.impressions")} AS ctr,
   ${metrics.cpc("b.spend", "b.clicks")}       AS cpc,
-  ${metrics.cpa("b.spend", "b.conversions")}  AS cost_per_conversion
+  ${metrics.cpa("b.spend", "b.conversions")}  AS cost_per_conversion,
+
+  -- NULL outside the platform breakdown, by construction: the numerator
+  -- is NULL there. A rate of 0 would read as "nobody watched" instead of
+  -- "TikTok does not report this cut".
+  ${metrics.viewRate("b.video_watched_2s", "b.impressions")} AS view_rate_2s,
+  ${metrics.viewRate("b.video_watched_6s", "b.impressions")} AS view_rate_6s,
+  ${metrics.cpa("b.spend", "b.video_watched_6s")}            AS cost_per_6s_view
 FROM ${ref("fct_tiktok_breakdown_daily")} b
 
 -- Two joins, because the four breakdowns do not share a grain.

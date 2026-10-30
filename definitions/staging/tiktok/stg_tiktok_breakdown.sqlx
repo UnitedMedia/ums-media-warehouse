@@ -8,7 +8,10 @@ config {
     ad_id: "NULL for the platform breakdown, which TikTok only publishes at campaign level.",
     campaign_id: "NULL for the three ad-level breakdowns. Pick it up from dim_tiktok_ad instead.",
     breakdown_1: "age, country_code, language or platform depending on breakdown_type",
-    breakdown_2: "gender, and only for the age_gender breakdown"
+    breakdown_2: "gender, and only for the age_gender breakdown",
+    video_watched_2s: "PLATFORM BREAKDOWN ONLY, and only from 2026-10-21. NULL everywhere else, because TikTok publishes no video metric on the age, country or language reports.",
+    video_watched_6s: "Same coverage as video_watched_2s.",
+    video_plays: "Same coverage as video_watched_2s. Video STARTS, always larger than either watched figure."
   }
 }
 
@@ -24,7 +27,10 @@ SELECT
   clicks,
   spend,
   conversion,
-  result
+  result,
+  CAST(NULL AS INT64)                         AS video_watched_2s,
+  CAST(NULL AS INT64)                         AS video_watched_6s,
+  CAST(NULL AS INT64)                         AS video_plays
 FROM ${ref({ schema: constants.DATASETS.tiktok, name: "ad_age_gender_report" })}
 
 UNION ALL
@@ -36,7 +42,8 @@ SELECT
   CAST(ad_id AS STRING),
   country_code,
   CAST(NULL AS STRING),
-  impressions, clicks, spend, conversion, result
+  impressions, clicks, spend, conversion, result,
+  CAST(NULL AS INT64), CAST(NULL AS INT64), CAST(NULL AS INT64)
 FROM ${ref({ schema: constants.DATASETS.tiktok, name: "ad_country_report" })}
 
 UNION ALL
@@ -48,20 +55,87 @@ SELECT
   CAST(ad_id AS STRING),
   language,
   CAST(NULL AS STRING),
-  impressions, clicks, spend, conversion, result
+  impressions, clicks, spend, conversion, result,
+  CAST(NULL AS INT64), CAST(NULL AS INT64), CAST(NULL AS INT64)
 FROM ${ref({ schema: constants.DATASETS.tiktok, name: "ad_language_report" })}
 
--- Platform is the odd one out: TikTok publishes it at CAMPAIGN level
--- only, so these rows have a campaign_id and no ad_id. That is a real
--- limitation of the feed, not a modelling choice.
+-- Platform is the odd one out, twice over.
+--
+-- TikTok publishes it at CAMPAIGN level only, so these rows have a
+-- campaign_id and no ad_id. That is a real limitation of the feed, not
+-- a modelling choice.
+--
+-- And it is the only branch assembled from TWO vendors. Weld is the
+-- base and Keboola contributes three columns. No delivery figure is
+-- read from Keboola -- impressions, clicks, spend and conversion all
+-- come from Weld, exactly as before.
+--
+-- Why Weld stays the base, despite Keboola being the richer feed:
+--   * 88 days of history against Keboola's 8
+--   * one day of lag against Keboola's two
+--   * Keboola has no conversion column at all
+--
+-- They agree exactly where they overlap. Measured 2026-10-30 across
+-- 2026-10-21 to 10-28: every daily impression total identical, every
+-- spend total equal to the seventh decimal (5894.550000 against
+-- 5894.549989), and 3,017 of 3,018 campaign x platform x day pairs
+-- identical with nothing present only in Keboola. The one unmatched
+-- pair exists only in Weld.
+--
+-- That is what makes the LEFT JOIN safe. A Weld row with no Keboola
+-- match keeps its delivery and gets NULL video -- which is what every
+-- row before 2026-10-21 gets, and what the three ad-level breakdowns
+-- above get for all dates.
+--
+-- The Keboola side is aggregated to campaign level on the way in. It
+-- arrives at AD level, which is finer, and that detail is dropped
+-- deliberately: a campaign-level conversion cannot be split across ads,
+-- so keeping the ad grain would have meant losing conversion from
+-- 2026-10-21 onward. Giving up granularity we never had is cheaper than
+-- giving up numbers already in reports.
+--
+-- stg_tiktok_ad resolves ad -> campaign, NOT dim_tiktok_ad. The
+-- dimension is built from stg_tiktok_ad and so covers exactly the same
+-- ads, and staging must not read from marts. 813 of 814 ads resolve,
+-- covering 100% of impressions -- the one that does not has zero of
+-- everything.
+--
+-- No result column is taken from Keboola. Keboola has none, and it
+-- would be worthless if it did: SUM(result) over all 88 days of
+-- campaign_platform_report is exactly 0.
 UNION ALL
 SELECT
   'platform',
-  ${metrics.parseTiktokDate("stat_time_day")},
-  CAST(advertiser_id AS STRING),
-  CAST(campaign_id AS STRING),
+  w.date,
+  w.advertiser_id,
+  w.campaign_id,
   CAST(NULL AS STRING),
-  platform,
+  w.platform,
   CAST(NULL AS STRING),
-  impressions, clicks, spend, conversion, result
-FROM ${ref({ schema: constants.DATASETS.tiktok, name: "campaign_platform_report" })}
+  w.impressions, w.clicks, w.spend, w.conversion, w.result,
+  k.video_watched_2s, k.video_watched_6s, k.video_plays
+FROM (
+  SELECT
+    ${metrics.parseTiktokDate("stat_time_day")} AS date,
+    CAST(advertiser_id AS STRING)               AS advertiser_id,
+    CAST(campaign_id AS STRING)                 AS campaign_id,
+    platform,
+    impressions, clicks, spend, conversion, result
+  FROM ${ref({ schema: constants.DATASETS.tiktok, name: "campaign_platform_report" })}
+) w
+LEFT JOIN (
+  SELECT
+    DATE(t.stat_time_day)     AS date,
+    a.campaign_id             AS campaign_id,
+    t.platform                AS platform,
+    SUM(t.video_watched_2s)   AS video_watched_2s,
+    SUM(t.video_watched_6s)   AS video_watched_6s,
+    SUM(t.video_play_actions) AS video_plays
+  FROM ${ref({ schema: constants.DATASETS.tiktok_keboola, name: "titktok_platform" })} t
+  JOIN ${ref("stg_tiktok_ad")} a
+    ON a.ad_id = CAST(t.ad_id AS STRING)
+  GROUP BY 1, 2, 3
+) k
+  ON  k.date        = w.date
+  AND k.campaign_id = w.campaign_id
+  AND k.platform    = w.platform

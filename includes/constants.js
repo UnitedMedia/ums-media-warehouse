@@ -14,6 +14,14 @@ const DATASETS = {
   cm360:     "keboola_cm360",     // CM360 (Keboola), since 2026-10-12
   meta:      "facebook_ads_weld", // Meta (Weld)
   tiktok:    "tiktok_ads",        // TikTok (Weld)
+
+  // TikTok, a SECOND time, through Keboola. Not a replacement: it
+  // carries one table, device platform at AD level with the video
+  // metrics Weld's breakdown reports do not have. Verified 2026-10-30
+  // against tiktok_ads.campaign_platform_report -- identical on all
+  // eight overlapping days, impressions to the unit and spend to the
+  // seventh decimal. Same feed, two vendors, different column sets.
+  tiktok_keboola: "keboola_tiktok",
   gads:      "google_ads",        // Google Ads (Weld)
   final:     "FINAL_TABLES",      // hand-built reference data that predates
                                   // this project. Home of MonthlyExchangeRate.
