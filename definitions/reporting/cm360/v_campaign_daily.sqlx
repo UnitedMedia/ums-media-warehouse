@@ -1,0 +1,105 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.cm360_reporting,
+  name: "v_campaign_daily",
+  tags: ["cm360", "reporting"],
+  description: "CM360 campaign x day. THE VIEW TO USE FOR CLICKS, CTR AND CONVERSIONS — clicks here match the CM360 interface, and in v_daily they do not. Use v_daily for placement, site and creative detail.",
+  columns: {
+    clicks: "The REAL click count, from CM360's campaign-level report. Verified 2026-11-03 against the CM360 UI on ALLIANZ ASIGURARI, 10-31 Oct: 49,256 here, 49,256 in the interface. v_daily shows 29,487 for the same advertiser and period.",
+    ctr: "Computed from the campaign-level clicks, so it matches the interface. The CTR in v_daily is roughly 40% lower and is not comparable with this one.",
+    impressions: "From the placement fact rolled up, not from the campaign report. The three CM360 reports agree on impressions to within 0.4%, so either is fine, and this one is consistent with v_daily.",
+    media_cost: "CM360 SERVING FEE, not media spend. 1,926.44 against 11.8M impressions for ALLIANZ in October. The media was bought in DV360 or direct and its cost lives there. Never chart this next to DV360 or Meta spend.",
+    total_conversions: "CM360 Total Conversions from the standard campaign report. Not comparable with Meta Results or Google Ads conversions.",
+    is_dv360_passthrough: "TRUE where DV360 bought the media and CM360 only served it. These rows are ALSO in the DV360 channel and are excluded from core.fct_ad_performance_daily. Filter them out before totalling."
+  }
+}
+
+-- WHY THIS VIEW EXISTS.
+--
+-- CM360 publishes three reports. They agree on impressions to within
+-- 0.4% and disagree about CLICKS by 3x, because CM360 cannot attribute
+-- a click below campaign level and returns zero for most detailed rows.
+-- October, all campaigns:
+--   campaign x day                                425,356 clicks
+--   + placement, ad, creative, country, city      188,511
+--   + hour, placement, ad, creative               143,202
+--
+-- v_daily is built on the finest of those, because that is the only
+-- grain at which placement, site and creative exist. Its clicks are
+-- therefore right for RANKING placements against each other and wrong
+-- for any total. There is no fix for that inside v_daily: the numbers
+-- it needs are not published at its grain.
+--
+-- So this view exists at the grain where clicks are real. It was
+-- already referenced in CATALOG.md before it existed -- the catalog
+-- promised it and nobody had built it.
+--
+-- VERIFIED against the CM360 interface, 2026-11-03, ALLIANZ ASIGURARI,
+-- 10-31 October:
+--   interface   11,017,101 impressions   49,256 clicks   0.45%
+--   this view   11,017,422               49,256          0.447%
+-- Clicks exact. Impressions 0.003% apart, a date-boundary artefact.
+-- The same advertiser reads 29,487 clicks in v_daily, 40% short.
+--
+-- Clicks come from fct_cm360_reach_daily, whose clicks_check column is
+-- misleadingly named -- it is the authoritative count, not an audit
+-- figure. See the note in that file.
+--
+-- REACH IS DELIBERATELY NOT HERE. total_reach is non-additive and lives
+-- quarantined in fct_cm360_reach_daily with nothing additive beside it,
+-- which is the only structural defence against SUM(total_reach) next to
+-- SUM(impressions). Putting it in a view full of additive metrics would
+-- undo that. It needs its own view, like dv360_reporting.v_reach_daily.
+
+WITH delivery AS (
+  SELECT
+    date,
+    campaign_id,
+    ANY_VALUE(advertiser_id)        AS advertiser_id,
+    SUM(impressions)                AS impressions,
+    SUM(viewable_impressions)       AS viewable_impressions,
+    SUM(video_views)                AS video_views,
+    SUM(media_cost)                 AS media_cost
+  FROM ${ref("fct_cm360_placement_daily")}
+  GROUP BY 1, 2
+),
+
+-- The only complete click count CM360 gives us.
+clicks AS (
+  SELECT
+    date,
+    campaign_id,
+    SUM(clicks_check) AS clicks
+  FROM ${ref("fct_cm360_reach_daily")}
+  GROUP BY 1, 2
+)
+
+SELECT
+  d.date,
+  DATE_TRUNC(d.date, WEEK(MONDAY)) AS week,
+  DATE_TRUNC(d.date, MONTH)        AS month,
+
+  d.advertiser_id,
+  c.advertiser_name,
+  d.campaign_id,
+  c.campaign_name,
+  c.is_dv360_passthrough,
+  c.first_active_date,
+  c.last_active_date,
+
+  d.impressions,
+  cl.clicks,
+  d.viewable_impressions,
+  d.video_views,
+  d.media_cost,
+  cd.total_conversions,
+
+  ${metrics.ctr("cl.clicks", "d.impressions")}                          AS ctr,
+  ${metrics.cpm("d.media_cost", "d.impressions")}                       AS cpm_serving_fee,
+  ${metrics.cpc("d.media_cost", "cl.clicks")}                           AS cpc_serving_fee,
+  ${metrics.viewableRate("d.viewable_impressions", "d.impressions")}    AS viewable_rate,
+  ${metrics.cpa("d.media_cost", "cd.total_conversions")}                AS cost_per_conversion_serving_fee
+FROM delivery d
+LEFT JOIN clicks                             cl USING (date, campaign_id)
+LEFT JOIN ${ref("dim_cm360_campaign")}       c  USING (campaign_id)
+LEFT JOIN ${ref("fct_cm360_campaign_daily")} cd USING (date, campaign_id)

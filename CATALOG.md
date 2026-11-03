@@ -32,9 +32,10 @@ correct no matter how Looker rolls it up; a ratio stored in a table does not.
 | DV360 by device, exchange, environment | `dv360_reporting.v_inventory_daily` |
 | DV360 by day of week / hour | `dv360_reporting.v_timeofday_daily` |
 | DV360 unique reach | `dv360_reporting.v_reach_daily` |
-| CM360 impressions, clicks, viewability, serving cost | `cm360_reporting.v_daily` |
+| CM360 **clicks, CTR, conversions** | `cm360_reporting.v_campaign_daily` |
+| CM360 by placement, site, creative | `cm360_reporting.v_daily` (clicks here are ~40% low — see below) |
 | CM360 by hour | `cm360_reporting.v_hourly` |
-| CM360 conversions or reach | `cm360_reporting.v_campaign_daily` |
+| CM360 viewability, serving cost | `cm360_reporting.v_daily` |
 | Meta spend, conversions, ROAS, cost per anything | `meta_reporting.v_ad_daily` |
 | Meta by age and gender, with conversions | `meta_reporting.v_demographics_daily` |
 | Meta by age and gender **per campaign** | `meta_reporting.v_age_gender_daily` |
@@ -650,12 +651,25 @@ hourly report and **88,959** in the campaign one.
 CM360 is click-tracked independently by DV360, which counts 54,637. The
 campaign report counts 52,220 — within 4%. The hourly report counts 11,084.
 
-`reporting.v_ad_performance_daily` therefore reads CM360 clicks from
-`fct_cm360_reach_daily.clicks_check`, which despite the name is the
-authoritative count. **`cm360_reporting.v_daily` still carries the
-placement-level clicks**, because that is the only figure that exists at
-placement grain — it is right for comparing placements against each other and
-wrong for any total.
+`reporting.v_ad_performance_daily` and `cm360_reporting.v_campaign_daily` both
+read CM360 clicks from `fct_cm360_reach_daily.clicks_check`, which despite the
+name is the authoritative count.
+
+**`cm360_reporting.v_daily` still carries the placement-level clicks**, and
+always will — they are the only figure that exists at placement grain. Right
+for ranking placements against each other, wrong for any total.
+
+Verified against the CM360 interface on 2026-11-03, ALLIANZ ASIGURARI,
+10–31 October:
+
+| | impressions | clicks | CTR |
+|---|---|---|---|
+| CM360 interface | 11,017,101 | 49,256 | 0.45% |
+| `v_campaign_daily` | 11,017,422 | **49,256** | 0.447% |
+| `v_daily` | 11,017,422 | 29,487 | 0.268% |
+
+`check_cm360_vs_ui.sql` in the repo root runs that comparison for any
+advertiser — edit the four values at the top.
 
 ---
 
