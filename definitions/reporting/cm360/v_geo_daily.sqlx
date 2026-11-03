@@ -7,7 +7,9 @@ config {
   columns: {
     country: "Safe to sum across, unlike Google's geo — CM360 reports one location per impression, with no presence/interest duplication.",
     city: "Long tail with many NULLs. Filter to country for a stable picture.",
-    media_cost: "Not comparable with DV360, Meta, TikTok or Google spend. See the README."
+    media_cost: "Not comparable with DV360, Meta, TikTok or Google spend. See the README.",
+    clicks: "GEO-LEVEL CLICKS, WHICH DO NOT MATCH THE CM360 INTERFACE — 188,511 for October against a real 425,356, about 44%. CM360 cannot attribute a click below campaign level, so the detailed reports lose most of them. Better than v_daily's 34% and still not a total. Use them to compare countries against each other; never sum them as a click figure. **For any real click figure use cm360_reporting.v_campaign_daily.**",
+    click_rate: "Computed from the geo-level clicks above, so it reads roughly half what the interface shows. Comparable BETWEEN countries, not against v_campaign_daily."
   }
 }
 

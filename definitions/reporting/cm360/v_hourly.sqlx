@@ -3,7 +3,11 @@ config {
   schema: constants.SCHEMAS.cm360_reporting,
   name: "v_hourly",
   tags: ["cm360", "reporting"],
-  description: "CM360 with the hour dimension. Its own chart and its own Looker Studio data source — do not blend it with v_daily, which is the same spend at a coarser grain."
+  description: "CM360 with the hour dimension. Its own chart and its own Looker Studio data source — do not blend it with v_daily, which is the same spend at a coarser grain.",
+  columns: {
+    clicks: "HOUR-LEVEL CLICKS, WHICH DO NOT MATCH THE CM360 INTERFACE — 143,202 for October against a real 425,356, about a third. CM360 cannot attribute a click below campaign level and returns zero for most rows at this grain. Use them to find WHEN clicks happen relative to each other; never total them. **For any real click figure use cm360_reporting.v_campaign_daily.**",
+    click_rate: "Computed from the hour-level clicks above, so it reads about two thirds low. Not comparable with the CTR in v_campaign_daily, which matches the interface."
+  }
 }
 
 SELECT
