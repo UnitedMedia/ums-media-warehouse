@@ -1,8 +1,9 @@
 config {
-  type: "incremental",
+  type: "table",
   schema: constants.SCHEMAS.dv360_marts,
   name: "fct_dv360_reach_daily",
   tags: ["dv360", "marts"],
+  dependencies: ["assert_keboola_window"],
   description: "DV360 unique reach. ISOLATED BY DESIGN: no metric from any other fact belongs in here. Unique reach is non-additive — summing it across days or line items overstates reach, and joining it to an impression fact multiplies impressions by the number of matching reach rows.",
   bigquery: {
     partitionBy: "date",
@@ -18,27 +19,30 @@ config {
 -- next to SUM(impressions) and getting a number that looks plausible.
 
 
--- INCREMENTAL, APPEND-ONLY. The Keboola extract holds ONE DAY at a time
--- (confirmed 2026-10-05: fct_dv360_lineitem_daily_v5 had a single date,
--- cm360_hourly likewise). A full rebuild therefore wrote a one-day mart and
--- threw the rest away, which is exactly what had happened by 5 Oct.
+-- WAS INCREMENTAL AND APPEND-ONLY UNTIL 2026-11-03, for the same reason
+-- as fct_cm360_placement_hourly and changed for the same reason. Read
+-- the note in that file for the full story; the short version:
 --
--- The predicate loads any date NOT ALREADY in the table, rather than
--- `date > MAX(date)`. That distinction matters: if Keboola ever backfills
--- June to September, a MAX(date) predicate would skip all of it, because
--- every backfilled date is older than what is already here.
+-- The design assumed the Keboola extract held ONE DAY at a time, which
+-- it did on 2026-10-05. Under that assumption a full rebuild wrote a
+-- one-day mart and threw the rest away, so append-only was correct.
 --
--- Append-only rather than a uniqueKey MERGE, deliberately. Half the grain
--- columns here are nullable (country, app_url, creative_asset ...), and
--- BigQuery MERGE joins with `=`, which never matches NULL to NULL — so a
--- null-keyed row would be re-inserted on every single run, forever.
--- Loading each date exactly once cannot duplicate anything.
+-- The cost was that a date already loaded was never reloaded, so an
+-- upstream restatement of an existing day was ignored forever.
 --
--- THE TRADE-OFF: a date already loaded is never reloaded, so an upstream
--- RESTATEMENT of an existing day is ignored. DV360 revises conversions for
--- several days after delivery. When a restatement or backfill matters, run
--- this table once with FULL REFRESH and it rebuilds from whatever the
--- source currently holds.
+-- MEASURED 2026-11-03 against stg_dv360_reach: 12 of 34 days diverged,
+-- 381 unique reach in total. Small -- far smaller than the 26,900 clicks
+-- the same defect cost CM360 -- but it is the same defect, and reach is
+-- a number nobody can sanity-check by eye, so a quiet 381 would have
+-- stayed quiet indefinitely.
+--
+-- The premise is gone: staging now covers 2026-09-28 to 10-31, the same
+-- 34 days this table held, so a full rebuild loses nothing.
+--
+-- IF THE EXTRACT EVER GOES BACK TO HOLDING ONE DAY, a rebuild would
+-- write a one-day mart. The dependency on assert_keboola_window above
+-- prevents that: the assertion fails below a 7-day window and this
+-- table is skipped rather than rebuilt from nothing.
 
 SELECT
   date,
@@ -48,7 +52,4 @@ SELECT
   SUM(unique_reach) AS unique_reach
 FROM ${ref("stg_dv360_reach")}
 WHERE date IS NOT NULL
-${when(incremental(),
-  `AND date NOT IN (SELECT DISTINCT date FROM ${self()}
-                    WHERE ${constants.allPartitions()})`)}
 GROUP BY 1,2,3,4

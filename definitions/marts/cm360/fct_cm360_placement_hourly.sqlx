@@ -1,8 +1,9 @@
 config {
-  type: "incremental",
+  type: "table",
   schema: constants.SCHEMAS.cm360_marts,
   name: "fct_cm360_placement_hourly",
   tags: ["cm360", "marts"],
+  dependencies: ["assert_keboola_window"],
   description: "CM360 base fact: date + hour + placement + ad + creative. Largest table in the stack. requirePartitionFilter is ON — every query, including downstream models, must filter on date. That is the main cost control.",
   bigquery: {
     partitionBy: "date",
@@ -24,27 +25,48 @@ config {
 -- Never join two of them on date alone.
 
 
--- INCREMENTAL, APPEND-ONLY. The Keboola extract holds ONE DAY at a time
--- (confirmed 2026-10-05: fct_dv360_lineitem_daily_v5 had a single date,
--- cm360_hourly likewise). A full rebuild therefore wrote a one-day mart and
--- threw the rest away, which is exactly what had happened by 5 Oct.
+-- WAS INCREMENTAL AND APPEND-ONLY UNTIL 2026-11-03. The reason it was,
+-- and the reason it is not any more, both matter -- so here is the whole
+-- story rather than a one-line changelog.
 --
--- The predicate loads any date NOT ALREADY in the table, rather than
--- `date > MAX(date)`. That distinction matters: if Keboola ever backfills
--- June to September, a MAX(date) predicate would skip all of it, because
--- every backfilled date is older than what is already here.
+-- THE ORIGINAL REASON (2026-10-05, correct at the time): the Keboola
+-- extract held ONE DAY at a time. A full rebuild therefore wrote a
+-- one-day mart and threw the rest away, which is exactly what had
+-- happened by 5 Oct. Append-only was the fix, and it was the right one.
 --
--- Append-only rather than a uniqueKey MERGE, deliberately. Half the grain
--- columns here are nullable (country, app_url, creative_asset ...), and
--- BigQuery MERGE joins with `=`, which never matches NULL to NULL — so a
--- null-keyed row would be re-inserted on every single run, forever.
--- Loading each date exactly once cannot duplicate anything.
+-- THE COST OF IT: a date already loaded was never reloaded, so an
+-- upstream RESTATEMENT of an existing day was ignored forever. That was
+-- documented as a known trade-off and the remedy was "run it once with
+-- full refresh". Nobody ever did, because nothing made the loss visible.
 --
--- THE TRADE-OFF: a date already loaded is never reloaded, so an upstream
--- RESTATEMENT of an existing day is ignored. DV360 revises conversions for
--- several days after delivery. When a restatement or backfill matters, run
--- this table once with FULL REFRESH and it rebuilds from whatever the
--- source currently holds.
+-- WHAT IT ACTUALLY COST, measured 2026-11-03 by comparing this table
+-- against stg_cm360_hourly day by day:
+--   2026-10-21 to 10-25, five days of thirty-four
+--   26,900 clicks and 589,778 impressions present in staging, absent here
+--   every other day matched to the click
+-- Those five days were loaded while Keboola still held partial data --
+-- the 06:00 Bucharest run reads an extract that does not finish landing
+-- until the afternoon -- and the restatement that completed them was
+-- then ignored by design. Clicks are attributed later than impressions,
+-- which is why the click loss (24% over October) ran far ahead of the
+-- impression loss (3%).
+--
+-- WHY IT IS A TABLE NOW: the premise died. Checked 2026-11-03,
+-- keboola_cm360.cm360_hourly holds 35 distinct dates, not one. Staging
+-- covers 2026-09-28 to 11-01; this mart covered 09-28 to 10-31. A full
+-- rebuild therefore loses nothing and recovers the five damaged days on
+-- the first run.
+--
+-- It is also cheap: 481,356 rows, 53 MB. "Largest table in the stack" is
+-- true and still small in absolute terms.
+--
+-- IF THE EXTRACT EVER GOES BACK TO HOLDING ONE DAY, a full rebuild
+-- would again write a one-day mart. That is what the dependency on
+-- assert_keboola_window above is for: it fails when the staging window
+-- drops below 7 days and this table is then SKIPPED rather than rebuilt
+-- from nothing. assert_source_freshness would not catch it -- it checks
+-- the latest date, not how many there are, and a one-day extract
+-- carrying yesterday looks perfectly fresh.
 
 SELECT
   date,
@@ -62,7 +84,4 @@ SELECT
   SUM(media_cost)           AS media_cost
 FROM ${ref("stg_cm360_hourly")}
 WHERE date IS NOT NULL
-${when(incremental(),
-  `AND date NOT IN (SELECT DISTINCT date FROM ${self()}
-                    WHERE ${constants.allPartitions()})`)}
 GROUP BY 1,2,3,4,5,6,7,8

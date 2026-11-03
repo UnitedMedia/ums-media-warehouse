@@ -1,0 +1,57 @@
+config {
+  type: "assertion",
+  tags: ["cm360", "dv360", "monitoring"],
+  description: "Fails if a Keboola staging window collapses to a handful of days. This is the guard on every mart that was switched from incremental append-only to a full rebuild on 2026-11-03 — a full rebuild of a one-day source writes a one-day mart and throws the history away."
+}
+
+-- An assertion FAILS if it returns rows. Empty result = healthy.
+--
+-- WHY THIS EXISTS.
+-- Until 2026-11-03, fct_cm360_placement_hourly and fct_dv360_reach_daily
+-- were incremental and append-only. That was not a performance choice:
+-- on 2026-10-05 the Keboola extracts held ONE DAY at a time, and a full
+-- rebuild had already wiped the history once. Append-only was the fix.
+--
+-- It had a cost. A date already loaded was never reloaded, so an
+-- upstream RESTATEMENT was ignored forever. Measured 2026-11-03, that
+-- cost 26,900 clicks and 589,778 impressions on CM360 across five days,
+-- and 8.8M impressions on DV360 inventory. Clicks are attributed later
+-- than impressions, so a date first loaded while Keboola was still
+-- half-landed kept its impressions and lost most of its clicks.
+--
+-- The extracts now hold 34-44 days, so those marts were switched to full
+-- rebuilds and the restatements come through.
+--
+-- THAT MAKES THIS ASSERTION THE SAFETY NET. If Keboola ever reverts to a
+-- narrow window, the next rebuild silently replaces a month of history
+-- with a day or two of it. Nothing else would notice: the tables would
+-- be freshly built, every assertion on grain and nullability would pass,
+-- and assert_source_freshness checks the LATEST date, not how many there
+-- are -- a one-day extract carrying yesterday looks perfectly fresh.
+--
+-- The marts that depend on this assertion are skipped when it fails,
+-- which is the point: better a stale mart than a destroyed one.
+--
+-- THE THRESHOLD is 7 days, well below the 34-44 these windows currently
+-- carry and well above the 1 that caused the original incident. It is
+-- deliberately not tuned close to today's value -- a window shrinking
+-- from 35 days to 20 is worth knowing about but is not an emergency,
+-- while a drop to 1 or 2 destroys data on the next run.
+
+WITH windows AS (
+  SELECT 'stg_cm360_hourly' AS sursa, COUNT(DISTINCT date) AS zile
+  FROM ${ref("stg_cm360_hourly")}
+  WHERE date IS NOT NULL
+
+  UNION ALL
+  SELECT 'stg_dv360_reach', COUNT(DISTINCT date)
+  FROM ${ref("stg_dv360_reach")}
+  WHERE date IS NOT NULL
+)
+SELECT
+  sursa,
+  zile,
+  7 AS prag,
+  'Keboola window collapsed. A full rebuild of this source will destroy history — switch the dependent marts back to incremental BEFORE the next run.' AS actiune
+FROM windows
+WHERE zile < 7

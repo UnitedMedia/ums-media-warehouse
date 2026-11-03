@@ -113,13 +113,38 @@ and only a Keboola backfill recovers it.
 | DV360 | Keboola | 14 days | 2 |
 | CM360 | Keboola | 14 days | 2 |
 
-**The Keboola extracts hold ONE DAY at a time.** Confirmed 2026-10-05:
-`fct_dv360_lineitem_daily_v5` and `cm360_hourly` each contained a single date.
-The DV360 and CM360 marts are therefore **incremental** and accumulate history
-run by run; the history that existed before 2026-10-05 is gone from the source
-and only Keboola can restore it. Those marts will be thin until they have run
-for a while, and that is expected, not a bug. Meta, TikTok and Google Ads marts
-are unaffected and remain full rebuilds.
+**The Keboola extracts no longer hold one day at a time — and that changed
+something important.** On 2026-10-05 `fct_dv360_lineitem_daily_v5` and
+`cm360_hourly` each contained a single date, so a full rebuild wrote a one-day
+mart and destroyed the rest. Every DV360 and CM360 mart was made **incremental
+and append-only** in response, which was correct then.
+
+Re-checked 2026-11-03: those extracts now hold **34 to 44 days**. The premise is
+gone, and append-only had been quietly costing us, because a date already
+loaded was never reloaded and an upstream **restatement was ignored forever**:
+
+| Mart | Lost to ignored restatements |
+|---|---|
+| `fct_cm360_placement_hourly` | 26,900 clicks and 589,778 impressions, 21–25 Oct |
+| `fct_dv360_inventory_daily` | 8,844,775 impressions (3.2%) |
+| `fct_dv360_reach_daily` | 381 unique reach across 12 of 34 days |
+| `fct_dv360_daily` | reads 8,024 impressions HIGHER than its own source |
+
+Clicks are attributed later than impressions, which is why CM360 lost 24% of
+October clicks but only 3% of impressions: those five days were first loaded
+while Keboola was still half-landed, kept their impressions, and never saw the
+restatement that carried the clicks.
+
+`fct_cm360_placement_hourly` and `fct_dv360_reach_daily` are **full rebuilds**
+as of 2026-11-03. The other eight are still append-only pending a decision.
+
+**`assert_keboola_window` is the safety net.** If a Keboola window ever
+collapses below 7 days again, it fails and the rebuilt marts are **skipped**
+rather than overwritten with a day of data. `assert_source_freshness` would not
+catch that — it checks the latest date, not how many there are, and a one-day
+extract carrying yesterday looks perfectly fresh.
+
+Meta, TikTok and Google Ads marts were never affected and remain full rebuilds.
 TikTok runs through today and updates daily, 46 days of history from 3 August.
 Meta is current. The other two stopped in August — see below.
 
