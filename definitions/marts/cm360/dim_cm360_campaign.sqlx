@@ -4,6 +4,9 @@ config {
   name: "dim_cm360_campaign",
   tags: ["cm360", "marts"],
   description: "One row per CM360 campaign. Names come from the standard table, falling back to reach; the most recently seen name wins if a campaign was renamed mid-flight.",
+  columns: {
+    is_dv360_passthrough: "TRUE where this is a DV360 campaign trafficked through CM360, not CM360-served media. The SAME impressions are already counted in the DV360 channel, so core.fct_ad_performance_daily excludes these. Filter on it before totalling anything cross-channel."
+  },
   uniqueKey: ["campaign_id"],
   bigquery: {
     clusterBy: ["campaign_id", "advertiser_id"]
@@ -19,10 +22,36 @@ config {
 -- A dimension needs one row per entity that gets UPDATED, not added to, and
 -- these keys are non-null so the MERGE has no null-key problem.
 --
--- Activity dates read from fct_cm360_placement_hourly, which accumulates.
--- stg_cm360_hourly is ONE DAY wide (confirmed 2026-10-05), so anything
--- derived from it alone would reset every night. That table carries
--- requirePartitionFilter, hence the explicit date predicate.
+-- Activity dates read from fct_cm360_placement_hourly, which holds the
+-- full source window. It carries requirePartitionFilter, hence the
+-- explicit date predicate. (Until 2026-11-03 that table was append-only
+-- because stg_cm360_hourly was one day wide; it is a full rebuild now
+-- and the staging window is 35 days. See the note in that file.)
+--
+-- is_dv360_passthrough: DV360 BUYS THE MEDIA, CM360 ONLY SERVES IT.
+-- When a DV360 campaign is trafficked through CM360, CM360 auto-creates
+-- a campaign and an advertiser both named BidManager_*_DO_NOT_EDIT_*.
+-- Those rows are the SAME impressions DV360 already reports, so anything
+-- adding CM360 to DV360 counts them twice.
+--
+-- Measured 2026-11-03 over October:
+--   DV360 channel                 48,219,040 impressions, 54,761 clicks
+--   CM360 BidManager rows         44,818,779 impressions, 11,084 clicks
+--   CM360 real campaigns          96,967,791 impressions, 132,118 clicks
+-- 93% overlap on impressions, and the CM360 copy carries ZERO spend --
+-- all 205,579.18 of CM360 money sits on the real campaigns. So excluding
+-- the passthrough from the cross-channel fact loses no money at all.
+--
+-- The click difference is not a loss either: DV360 owns the click
+-- tracker on its own media, so it counts 54,761 where CM360 sees 11,084.
+-- Those rows then drag the whole channel's CTR down -- 0.025% against
+-- 0.136% for CM360's real campaigns, which is an ordinary display CTR.
+--
+-- BOTH name fields are matched, not one. Checked over October: all 22
+-- passthrough campaigns have BidManager on the campaign AND the
+-- advertiser, and no real campaign has it on either. Matching one field
+-- alone would silently start catching real campaigns the day somebody
+-- names one "BidManager_test".
 WITH names AS (
   SELECT campaign_id, campaign_name, date
   FROM ${ref("stg_cm360_united")}
@@ -54,7 +83,17 @@ SELECT
   a.advertiser_id,
   d.advertiser_name,
   a.first_active_date,
-  a.last_active_date
+  a.last_active_date,
+  -- COALESCE, not a bare AND. Either name can be NULL, and NULL here
+  -- would be dropped by `WHERE NOT is_dv360_passthrough` in core --
+  -- silently losing a real campaign whose advertiser never resolved.
+  -- Unknown means "not passthrough", which is the safe default: it
+  -- keeps the row in the cross-channel fact rather than hiding it.
+  COALESCE(
+    n.campaign_name   LIKE 'BidManager\_%' AND
+    d.advertiser_name LIKE 'BidManager\_%',
+    FALSE
+  ) AS is_dv360_passthrough
 FROM activity a
 LEFT JOIN latest_name n USING (campaign_id)
 LEFT JOIN (

@@ -6,7 +6,8 @@ config {
   description: "THE CM360 view. Delivery and conversions together at placement x ad x creative x day, with every name resolved. Three dimensions do not fit this grain and have their own views: Hour (v_hourly), Country/City (v_geo_daily), Floodlight activity detail (v_floodlight_daily). Primary CM360 Looker Studio source. One row per date + placement + ad + creative, fully labelled. Ratios are computed here, never stored, which is what keeps them correct at every level Looker rolls them up to.",
   columns: {
     viewable_rate: "NOT CM360's 'Active View: % Viewable Impressions'. That metric's denominator is Measurable Impressions, which is absent from the Keboola report, so this reads LOWER than the CM360 UI. Add activeViewMeasurableImpressions to the report to close the gap.",
-    placement_first_active_date: "DERIVED from delivery, not the booked Placement Start Date. Do not use it for pacing."
+    placement_first_active_date: "DERIVED from delivery, not the booked Placement Start Date. Do not use it for pacing.",
+    is_dv360_passthrough: "TRUE where DV360 bought the media and CM360 only served it — the auto-created BidManager_*_DO_NOT_EDIT_* campaigns. These impressions are ALSO in the DV360 channel, carry no CM360 spend, and have a 0.025% CTR because DV360 owns the click tracker. 44.8M of October's 141.8M CM360 impressions. The cross-channel fact excludes them; this view keeps them so the ad-server view is still available. **Filter them out before quoting a CM360 CTR.**"
   }
 }
 
@@ -18,6 +19,7 @@ SELECT
   c.advertiser_name,
   f.campaign_id,
   c.campaign_name,
+  c.is_dv360_passthrough,
   f.site_id,
   p.site_name,
   p.channel_group,

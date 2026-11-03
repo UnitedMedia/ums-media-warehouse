@@ -101,6 +101,19 @@ cm360 AS (
   FROM cm360_delivery x
   LEFT JOIN ${ref("dim_cm360_campaign")}       c  USING (campaign_id)
   LEFT JOIN ${ref("fct_cm360_campaign_daily")} cd USING (date, campaign_id)
+  -- DV360 media trafficked through CM360 is excluded HERE and only here,
+  -- the same way Google Ads test accounts are. These rows are the SAME
+  -- impressions the dv360 branch above already reports -- 44,818,779 of
+  -- them in October against DV360's 48,219,040 -- so leaving them in
+  -- counts that media twice in every cross-channel total.
+  --
+  -- They carry ZERO spend, so no money leaves this table with them.
+  -- What does leave is a 0.025% CTR dragging the channel's real 0.136%
+  -- down by two thirds.
+  --
+  -- cm360_reporting still exposes them behind is_dv360_passthrough, for
+  -- anyone who needs the ad-server view of DV360 delivery.
+  WHERE COALESCE(c.is_dv360_passthrough, FALSE) = FALSE
 ),
 
 -- Meta's headline conversion count is "Results", which is not a field:
