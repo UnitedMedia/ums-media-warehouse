@@ -3,7 +3,12 @@ config {
   schema: constants.SCHEMAS.cm360_marts,
   name: "fct_cm360_reach_daily",
   tags: ["cm360", "marts"],
-  description: "CM360 unique reach, quarantined on purpose. total_reach is NON-ADDITIVE: it cannot be summed across dates, campaigns or advertisers. Its own table at its own coarse grain is the only structural defence against someone writing SUM(total_reach).",
+  description: "CM360 unique reach, quarantined on purpose, PLUS the only complete click count CM360 gives us. total_reach is NON-ADDITIVE. clicks_check is additive and is what core reads — see the note below, the name is now wrong and kept only to avoid breaking anything.",
+  columns: {
+    total_reach: "NON-ADDITIVE. Cannot be summed across dates, campaigns or advertisers.",
+    clicks_check: "MISLEADINGLY NAMED — this is the authoritative CM360 click count, not an audit figure. The placement-level reports undercount clicks by about 65%; this one agrees with DV360's own tracker to within 4% on shared media. core.fct_ad_performance_daily reads CM360 clicks from HERE. Additive, safe to sum.",
+    impressions_check: "Genuinely a cross-check. Impressions agree across all three CM360 reports to within 0.4%, so this one is only used to confirm the reach rows cover the same delivery."
+  },
   bigquery: {
     partitionBy: "date",
     clusterBy: ["campaign_id", "advertiser_id"]
@@ -14,6 +19,37 @@ config {
   }
 }
 
+
+-- THE CLICKS IN THIS TABLE ARE THE REAL ONES. Found 2026-11-03 after
+-- someone compared the warehouse against the CM360 UI and the clicks
+-- did not match.
+--
+-- CM360 ships three reports and they disagree about clicks by 3x, over
+-- the same impressions. October, all campaigns:
+--   cm360_reach    (campaign x day)                425,356 clicks
+--   cm360_united   (+ placement, ad, creative,
+--                     country, city)               188,511 clicks
+--   cm360_hourly   (+ hour, placement, ad,
+--                     creative)                    143,202 clicks
+-- Impressions agree across all three to within 0.4%. Only clicks move,
+-- and they fall as the grain gets finer: CM360 cannot attribute a click
+-- to a specific creative or hour, so the detailed reports return zero
+-- for most rows. Per campaign the gap is brutal -- BAT glo HYPER pro+
+-- reports 1,532 clicks hourly and 88,959 here.
+--
+-- WHICH ONE IS RIGHT, and this is not a judgement call: the DV360
+-- campaigns trafficked through CM360 are measured independently by
+-- DV360's own click tracker. For that media DV360 counts 54,637 clicks;
+-- this table counts 52,220 and the hourly report counts 11,084. Within
+-- 4% of an independent source, against a 79% shortfall.
+--
+-- So core.fct_ad_performance_daily takes CM360 impressions and spend
+-- from the placement fact and CLICKS FROM HERE. Mixing two reports in
+-- one row is normally wrong; it is correct here because they agree on
+-- impressions and only one of them can count clicks at all.
+--
+-- The column is still called clicks_check because renaming it is a
+-- separate change and this one is already load-bearing.
 
 -- INCREMENTAL, APPEND-ONLY. The Keboola extract holds ONE DAY at a time
 -- (confirmed 2026-10-05: fct_dv360_lineitem_daily_v5 had a single date,

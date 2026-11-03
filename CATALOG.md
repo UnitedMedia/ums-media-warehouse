@@ -72,6 +72,7 @@ correct no matter how Looker rolls it up; a ratio stored in a table does not.
 | DV360 | `spend` | `dv360_reporting.v_daily` | Revenue in **advertiser currency**, sell-side |
 | DV360 | `spend_usd` | `dv360_reporting.v_daily` | Same, in USD. Use for cross-currency totals |
 | CM360 | `media_cost` | `cm360_reporting.v_daily` | See the warning below — probably a serving fee |
+| CM360 | `clicks` | **`reporting.v_ad_performance_daily`** | Campaign grain. The placement-level views undercount clicks by ~65% — see below |
 | Meta | `spend` | `meta_reporting.v_ad_daily` | Account currency |
 | TikTok | `spend` | `tiktok_reporting.v_campaign_daily` | **Complete.** Advertiser currency |
 | TikTok | `spend` | `tiktok_reporting.v_daily` | Ad level — only ~98.6% of the above |
@@ -627,6 +628,34 @@ half-closed.** `facebook_ads_weld.age_gender` arrived on 2026-10-02 carrying
 and *"how much did we spend on women 35-44 in September"*. The remaining gap is
 conversions: the source carries spend, impressions and all-interaction clicks
 only, so an `age_gender_actions` sibling is still needed.
+
+---
+
+### CM360 clicks: use the cross-channel view, not `v_daily`
+
+CM360 ships three reports that agree on impressions to within 0.4% and
+disagree about **clicks by 3x**, because it cannot attribute a click below
+campaign level and returns zero for most detailed rows:
+
+| Report | Grain | October clicks |
+|---|---|---|
+| `cm360_reach` | campaign × day | **425,356** |
+| `cm360_united` | + placement, ad, creative, country, city | 188,511 |
+| `cm360_hourly` | + hour, placement, ad, creative | 143,202 |
+
+Per campaign the gap is brutal — BAT glo HYPER pro+ shows 1,532 clicks in the
+hourly report and **88,959** in the campaign one.
+
+**Which is right is not a judgement call.** DV360 media trafficked through
+CM360 is click-tracked independently by DV360, which counts 54,637. The
+campaign report counts 52,220 — within 4%. The hourly report counts 11,084.
+
+`reporting.v_ad_performance_daily` therefore reads CM360 clicks from
+`fct_cm360_reach_daily.clicks_check`, which despite the name is the
+authoritative count. **`cm360_reporting.v_daily` still carries the
+placement-level clicks**, because that is the only figure that exists at
+placement grain — it is right for comparing placements against each other and
+wrong for any total.
 
 ---
 
