@@ -1,8 +1,9 @@
 config {
-  type: "incremental",
+  type: "table",
   schema: constants.SCHEMAS.cm360_marts,
   name: "fct_cm360_reach_daily",
   tags: ["cm360", "marts"],
+  dependencies: ["assert_keboola_window"],
   description: "CM360 unique reach, quarantined on purpose, PLUS the only complete click count CM360 gives us. total_reach is NON-ADDITIVE. clicks_check is additive and is what core reads — see the note below, the name is now wrong and kept only to avoid breaking anything.",
   columns: {
     total_reach: "NON-ADDITIVE. Cannot be summed across dates, campaigns or advertisers.",
@@ -51,27 +52,28 @@ config {
 -- The column is still called clicks_check because renaming it is a
 -- separate change and this one is already load-bearing.
 
--- INCREMENTAL, APPEND-ONLY. The Keboola extract holds ONE DAY at a time
--- (confirmed 2026-10-05: fct_dv360_lineitem_daily_v5 had a single date,
--- cm360_hourly likewise). A full rebuild therefore wrote a one-day mart and
--- threw the rest away, which is exactly what had happened by 5 Oct.
+-- WAS INCREMENTAL AND APPEND-ONLY UNTIL 2026-11-03, on the assumption --
+-- correct on 2026-10-05 -- that the Keboola extract held ONE DAY at a
+-- time, where a full rebuild would write a one-day mart and throw the
+-- rest away. See fct_cm360_placement_hourly for the full story.
 --
--- The predicate loads any date NOT ALREADY in the table, rather than
--- `date > MAX(date)`. That distinction matters: if Keboola ever backfills
--- June to September, a MAX(date) predicate would skip all of it, because
--- every backfilled date is older than what is already here.
+-- Changed here the same day this table became load-bearing. Append-only
+-- means a date already loaded is never reloaded, so an upstream
+-- RESTATEMENT is ignored forever. That was tolerable while clicks_check
+-- was an unread audit column. It is not tolerable now that
+-- core.fct_ad_performance_daily reads CM360 clicks from it: the headline
+-- click figure for a whole channel would quietly freeze at whatever was
+-- true the first time each day was loaded, and CM360 keeps attributing
+-- clicks for days after delivery.
 --
--- Append-only rather than a uniqueKey MERGE, deliberately. Half the grain
--- columns here are nullable (country, app_url, creative_asset ...), and
--- BigQuery MERGE joins with `=`, which never matches NULL to NULL — so a
--- null-keyed row would be re-inserted on every single run, forever.
--- Loading each date exactly once cannot duplicate anything.
+-- Safe now because the premise is gone -- checked 2026-11-03,
+-- stg_cm360_reach carries 35 days (2026-09-28 to 11-01), the same range
+-- this table held, and both sides agreed on 461,329 clicks. The table is
+-- ~2,000 rows.
 --
--- THE TRADE-OFF: a date already loaded is never reloaded, so an upstream
--- RESTATEMENT of an existing day is ignored. DV360 revises conversions for
--- several days after delivery. When a restatement or backfill matters, run
--- this table once with FULL REFRESH and it rebuilds from whatever the
--- source currently holds.
+-- assert_keboola_window above is the guard: if the staging window ever
+-- collapses below 7 days this table is SKIPPED rather than rebuilt from
+-- nothing.
 
 SELECT
   date,

@@ -32,6 +32,12 @@ config {
 -- The marts that depend on this assertion are skipped when it fails,
 -- which is the point: better a stale mart than a destroyed one.
 --
+-- stg_cm360_reach matters most of the three. Since 2026-11-03 it is
+-- where core.fct_ad_performance_daily gets CM360 CLICKS from -- the
+-- placement-level reports undercount them by about 65% -- so a
+-- collapsed window there does not just thin a table, it takes the
+-- channel's headline click figure with it.
+--
 -- THE THRESHOLD is 7 days, well below the 34-44 these windows currently
 -- carry and well above the 1 that caused the original incident. It is
 -- deliberately not tuned close to today's value -- a window shrinking
@@ -41,6 +47,11 @@ config {
 WITH windows AS (
   SELECT 'stg_cm360_hourly' AS sursa, COUNT(DISTINCT date) AS zile
   FROM ${ref("stg_cm360_hourly")}
+  WHERE date IS NOT NULL
+
+  UNION ALL
+  SELECT 'stg_cm360_reach', COUNT(DISTINCT date)
+  FROM ${ref("stg_cm360_reach")}
   WHERE date IS NOT NULL
 
   UNION ALL
