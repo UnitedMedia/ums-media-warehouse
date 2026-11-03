@@ -52,6 +52,14 @@ config {
 -- advertiser, and no real campaign has it on either. Matching one field
 -- alone would silently start catching real campaigns the day somebody
 -- names one "BidManager_test".
+--
+-- STARTS_WITH, not LIKE. The pattern contains an underscore, which LIKE
+-- treats as a single-character wildcard, so it has to be escaped -- and
+-- a backslash here has to survive BOTH the .sqlx template literal and
+-- the BigQuery string literal, which is four backslashes to express one
+-- escaped underscore. The first attempt got it wrong and failed at run
+-- time with "Illegal escape sequence". STARTS_WITH has no pattern
+-- language and no escaping, and says what is meant.
 WITH names AS (
   SELECT campaign_id, campaign_name, date
   FROM ${ref("stg_cm360_united")}
@@ -90,8 +98,8 @@ SELECT
   -- Unknown means "not passthrough", which is the safe default: it
   -- keeps the row in the cross-channel fact rather than hiding it.
   COALESCE(
-    n.campaign_name   LIKE 'BidManager\_%' AND
-    d.advertiser_name LIKE 'BidManager\_%',
+    STARTS_WITH(n.campaign_name,   'BidManager_') AND
+    STARTS_WITH(d.advertiser_name, 'BidManager_'),
     FALSE
   ) AS is_dv360_passthrough
 FROM activity a
