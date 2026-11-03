@@ -6,3 +6,6 @@ node_modules/
 
 # personal learning notes, not part of the project
 DATAFORM-FROM-SCRATCH.md
+
+# dataform compile --json output
+compiled.json
