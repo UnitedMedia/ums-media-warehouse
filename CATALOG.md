@@ -59,7 +59,8 @@ correct no matter how Looker rolls it up; a ratio stored in a table does not.
 | **Google Ads video completion funnel (25/50/75/100%)** | `gads_reporting.v_video_funnel_daily` |
 | Teads spend, viewability, video completion | `teads_reporting.v_daily` |
 | Teads unique viewers | `teads_reporting.v_reach_daily` |
-| All six channels in one chart | `reporting.v_ad_performance_daily` |
+| Taboola spend, clicks, viewability | `taboola_reporting.v_daily` |
+| All seven channels in one chart | `reporting.v_ad_performance_daily` |
 | What is broken or unmapped right now | `reporting.v_data_gaps` |
 | How fresh each channel is | `reporting.v_source_freshness` |
 | How a metric is defined | `dv360_reporting.v_metric_catalog`, `cm360_reporting.v_metric_catalog` |
@@ -78,6 +79,7 @@ correct no matter how Looker rolls it up; a ratio stored in a table does not.
 | TikTok | `spend` | `tiktok_reporting.v_campaign_daily` | **Complete.** Advertiser currency |
 | TikTok | `spend` | `tiktok_reporting.v_daily` | Ad level — only ~98.6% of the above |
 | Google Ads | `spend` | `gads_reporting.v_daily` | **Complete**, incl. Performance Max. Account currency, from `cost_micros` |
+| Taboola | `spend` | `taboola_reporting.v_daily` | **USD**, not euros. Use `spend_eur`, and read `is_fx_converted` first |
 | Teads | `spend` | `teads_reporting.v_daily` | `budget_delivered`, campaign currency. **Confirmed billed** — equals `MASTER_TABLE` to the cent on every day 2026-10-01 to 10-15 |
 
 ### Where the impressions are
@@ -92,7 +94,7 @@ within it but must never add two breakdowns together.
 
 ## Read this before you total anything
 
-**All six channels are live** — measured 2026-10-13.
+**All seven channels are live** — measured 2026-10-13.
 
 **CM360 moved dataset on 2026-10-12**: its tables were dropped from `kebooladv`
 and recreated in **`keboola_cm360`**, fresh daily and about seven times larger.
@@ -751,11 +753,43 @@ project-wide 2-day threshold, so `Teads / unique viewers` fails
 
 ---
 
+## Taboola
+
+Source: Keboola → `keboola_taboola`. **Landed 2026-11-05.** Two tables, one
+advertiser, 289 delivery rows. The smallest channel in the warehouse.
+
+### Reporting view — `taboola_reporting`
+
+| View | Grain | Use it for |
+|---|---|---|
+| **`v_daily`** | campaign × day | Everything. It is the only Taboola view, because campaign × day is the only grain the feed has. |
+
+### Marts — `taboola_marts`
+
+| Table | Grain | Notes |
+|---|---|---|
+| `fct_taboola_campaign_daily` | campaign × day | THE fact. No roll-up — the source is already at this grain, which is also what `core` needs. |
+| `dim_taboola_campaign` | campaign | Advertiser slug, pricing model, bid strategy, daily cap. 16 rows, 9 with delivery, flagged by `has_delivery`. |
+
+### Three things that will catch you out
+
+1. **`spend` is in US dollars.** The only non-EUR spend in the warehouse. Use
+   `spend_eur` for anything cross-channel, and check `is_fx_converted` — it is
+   FALSE for September and October 2026, which is 72% of the channel, because
+   `MonthlyExchangeRate` has no `ExchangeRateUSD` for those months yet.
+2. **`date` in the RAW table is a STRING with a time part.** `SAFE_CAST` gives
+   NULL on every row; use `SUBSTR(date,1,10)`. Staging already handles it — this
+   only bites ad-hoc queries against `keboola_taboola`.
+3. **There are no conversions**, though every campaign bids MAX_CONVERSIONS.
+   `conversions` is NULL in `core` and there is nothing else to use.
+
+---
+
 ## Cross-channel
 
 | Object | Grain | Use it for |
 |---|---|---|
-| `reporting.v_ad_performance_daily` | channel × campaign × day | One chart covering all six channels. Adds week and month columns and the rate metrics. |
+| `reporting.v_ad_performance_daily` | channel × campaign × day | One chart covering all seven channels. Adds week and month columns and the rate metrics. |
 | `core.fct_ad_performance_daily` | the same | The table behind it. Query the view. |
 | `reporting.v_data_gaps` | one row per gap | **Your work list.** Everything unmapped or unattributable, sized by rows and by spend. |
 

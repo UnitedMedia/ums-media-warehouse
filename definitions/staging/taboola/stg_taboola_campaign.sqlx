@@ -1,0 +1,31 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.taboola_staging,
+  name: "stg_taboola_campaign",
+  tags: ["taboola", "staging"],
+  description: "Taboola campaign entity. One row per campaign, including campaigns that have never delivered.",
+  columns: {
+    advertiser_id: "A slug, not a number — 'tdg-e-onromania-sc'. Taboola gives no advertiser NAME anywhere in this feed, so this is what reporting falls back to until seed_client_name_map has a row for it.",
+    daily_cap: "0.0 means no cap, not a cap of zero. Taboola uses zero as the absent value.",
+    pricing_model: "CPC on every campaign as of 2026-11-05.",
+    bid_strategy: "MAX_CONVERSIONS on every campaign — which is worth knowing, because the feed carries no conversion count at all."
+  }
+}
+
+-- 16 rows on 2026-11-05, 9 of which appear in taboola_campaign_day. The
+-- other 7 are campaigns that exist in Taboola and have not delivered
+-- inside the extraction window; they are kept, because a dimension that
+-- only held delivering entities could not answer "did this campaign run".
+
+SELECT
+  CAST(id AS STRING)    AS campaign_id,
+  name                  AS campaign_name,
+  advertiser_id,
+  order_id,
+  branding_text,
+  tracking_code,
+  pricing_model,
+  bid_strategy,
+  traffic_allocation_mode,
+  CAST(daily_cap AS FLOAT64) AS daily_cap
+FROM ${ref({ schema: constants.DATASETS.taboola, name: "taboola_campaigns" })}

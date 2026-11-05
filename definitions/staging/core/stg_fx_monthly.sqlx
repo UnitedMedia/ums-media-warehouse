@@ -3,18 +3,67 @@ config {
   schema: constants.SCHEMAS.core_staging,
   name: "stg_fx_monthly",
   tags: ["core", "staging"],
-  description: "The monthly RON/EUR rate from FINAL_TABLES.MonthlyExchangeRate, given an explicit currency so it can sit alongside rates from other sources.",
+  description: "Monthly exchange rates from FINAL_TABLES.MonthlyExchangeRate, unpivoted to one row per month per currency. The source stores RON per unit of each currency; this converts that to the units-per-EUR the warehouse uses.",
   columns: {
     rate_to_eur: "Units of local currency per 1 EUR. 5.278 means 5.278 RON buys 1 EUR, so spend_eur = spend / rate_to_eur.",
-    currency: "Hard-coded RON. The source table has no currency column — a single unlabelled rate that has always meant RON per EUR."
+    currency: "RON, USD or CZK. The source has no currency column — it has one column per currency, which is what this view unpivots."
   }
 }
 
-SELECT
-  DATE_TRUNC(DATE(Date), MONTH) AS month,
-  'RON'                         AS currency,
-  ExchangeRate                  AS rate_to_eur,
-  'MonthlyExchangeRate'         AS rate_source
-FROM ${ref({ schema: constants.DATASETS.final, name: "MonthlyExchangeRate" })}
-WHERE ExchangeRate IS NOT NULL
-  AND ExchangeRate > 0
+-- THE SOURCE STORES RON PER UNIT, NOT UNITS PER EUR.
+-- FINAL_TABLES.MonthlyExchangeRate is filled by hand each month from the
+-- rates UMS receives by email, in the form they arrive:
+--   ExchangeRate     5.3449   RON per 1 EUR
+--   ExchangeRateUSD  4.7943   RON per 1 USD
+--   ExchangeRateCZK  0.2197   RON per 1 CZK
+--
+-- The warehouse wants units per EUR, so USD and CZK are DERIVED:
+--   USD per EUR = 5.3449 / 4.7943 = 1.1148
+-- which is exactly the cross-rate on the same email. Deriving it rather
+-- than storing a second number means the two can never drift apart.
+--
+-- RON needs no arithmetic: RON per EUR is already units per EUR.
+--
+-- USD AND CZK WERE ADDED 2026-11-05, for Taboola, the first channel in
+-- this warehouse that bills in dollars. Every month before that has NULL
+-- in both columns, because we did not record those rates at the time.
+--
+-- THE NULL FILTER IS LOAD-BEARING. dim_fx_rate asserts rate_to_eur is
+-- non-null, so emitting a USD row for a month with no USD rate would
+-- fail the whole workflow rather than just leave that month
+-- unconvertible. Omitting the row is the correct behaviour: the fact
+-- then finds no rate, spend_eur stays NULL, is_fx_converted is FALSE,
+-- and v_data_gaps.core_spend_without_fx_rate sizes exactly how much
+-- money is waiting on a rate somebody has to type in.
+--
+-- The same guard protects the existing RON behaviour unchanged.
+
+WITH src AS (
+  SELECT
+    DATE_TRUNC(DATE(Date), MONTH) AS month,
+    ExchangeRate                  AS ron_per_eur,
+    ExchangeRateUSD               AS ron_per_usd,
+    ExchangeRateCZK               AS ron_per_czk
+  FROM ${ref({ schema: constants.DATASETS.final, name: "MonthlyExchangeRate" })}
+)
+
+SELECT month, 'RON' AS currency, ron_per_eur AS rate_to_eur,
+       'MonthlyExchangeRate' AS rate_source
+FROM src
+WHERE ron_per_eur IS NOT NULL AND ron_per_eur > 0
+
+UNION ALL
+
+SELECT month, 'USD', SAFE_DIVIDE(ron_per_eur, ron_per_usd),
+       'MonthlyExchangeRate'
+FROM src
+WHERE ron_per_eur IS NOT NULL AND ron_per_eur > 0
+  AND ron_per_usd IS NOT NULL AND ron_per_usd > 0
+
+UNION ALL
+
+SELECT month, 'CZK', SAFE_DIVIDE(ron_per_eur, ron_per_czk),
+       'MonthlyExchangeRate'
+FROM src
+WHERE ron_per_eur IS NOT NULL AND ron_per_eur > 0
+  AND ron_per_czk IS NOT NULL AND ron_per_czk > 0

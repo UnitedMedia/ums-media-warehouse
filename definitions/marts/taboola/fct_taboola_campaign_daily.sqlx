@@ -1,0 +1,44 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.taboola_marts,
+  name: "fct_taboola_campaign_daily",
+  tags: ["taboola", "marts"],
+  description: "THE Taboola fact. Campaign x day — the finest grain Taboola delivers in this feed. core.fct_ad_performance_daily reads it directly, no roll-up needed.",
+  bigquery: {
+    partitionBy: "date",
+    clusterBy: ["campaign_id"]
+  },
+  assertions: {
+    uniqueKey: ["date", "campaign_id"],
+    nonNull: ["date", "campaign_id"]
+  },
+  columns: {
+    spend: "USD. The only non-EUR spend in the warehouse — core converts it through dim_fx_rate, and will leave spend_eur NULL for any month with no USD rate in MonthlyExchangeRate.",
+    visible_impressions: "Taboola's viewable impressions. A real denominator: the viewability rate in the reporting view is viewable / impressions and means what it says.",
+    campaign_name: "Carried from the delivery feed, which states it on every row. ANY_VALUE'd so a campaign renamed mid-flight cannot split into two rows."
+  }
+}
+
+-- NO ROLL-UP. The source is already campaign x day, which is also the
+-- grain core.fct_ad_performance_daily works at, so this fact is the
+-- staging view with the grain asserted and nothing else. The GROUP BY
+-- exists to make the uniqueKey assertion meaningful rather than to
+-- aggregate anything -- on 2026-11-05 it collapses 289 rows to 289.
+--
+-- NO CONVERSIONS COLUMN. Every campaign bids MAX_CONVERSIONS and the
+-- feed carries no conversion count, so there is nothing to put here.
+-- See the note in declarations.js.
+
+SELECT
+  date,
+  campaign_id,
+  ANY_VALUE(campaign_name)       AS campaign_name,
+  ANY_VALUE(currency)            AS currency,
+
+  SUM(impressions)               AS impressions,
+  SUM(visible_impressions)       AS visible_impressions,
+  SUM(clicks)                    AS clicks,
+  SUM(spend)                     AS spend
+FROM ${ref("stg_taboola_daily")}
+WHERE date IS NOT NULL
+GROUP BY 1, 2

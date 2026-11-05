@@ -263,6 +263,47 @@ const TEADS_TABLES = [
 ];
 
 // ---------------------------------------------------------------------
+// keboola_taboola — Keboola extraction for Taboola. TWO tables.
+//
+// Arrived 2026-11-05. The smallest source in the project: 289 delivery
+// rows over 44 days, 9 delivering campaigns, ONE advertiser
+// (tdg-e-onromania-sc, E.ON Romania). Native advertising, bought CPC.
+//
+// THREE THINGS ARE SPECIFIC TO IT:
+//
+//   * IT BILLS IN USD. Every other channel here is EUR, or converts
+//     from RON through MonthlyExchangeRate. Taboola is why that table
+//     gained an ExchangeRateUSD column on 2026-11-05, and why
+//     stg_fx_monthly now unpivots instead of hard-coding RON.
+//
+//   * `date` is a STRING carrying a time part -- '2026-11-04 00:00:00.0'.
+//     SAFE_CAST(date AS DATE) returns NULL on every row. It needs
+//     SUBSTR(date, 1, 10). Checked 2026-11-05: 289 of 289 fail the
+//     direct cast and 0 of 289 fail the substring.
+//
+//   * NO CONVERSIONS, although all 16 campaigns bid MAX_CONVERSIONS.
+//     The feed carries clicks, impressions, visible impressions and
+//     spend, and nothing attributed. Worth asking Keboola for, since
+//     the campaigns are explicitly optimising for something we cannot
+//     see.
+//
+// No extracted_at, so there is no load timestamp to de-duplicate on.
+// Verified clean 2026-11-05: 289 rows for 289 distinct (date, campaign)
+// keys. Staging therefore does NOT de-duplicate -- an arbitrary
+// tiebreak on a clean table deletes real rows, which is the same
+// reasoning as stg_tiktok_campaign_daily. The uniqueKey assertion on
+// fct_taboola_campaign_daily is what watches that assumption.
+// ---------------------------------------------------------------------
+const TABOOLA_TABLES = [
+  "taboola_campaign_day",  // date x campaign. Delivery, spend, currency
+                           // and visible_impressions (a real viewability
+                           // denominator, like Teads).
+  "taboola_campaigns",     // campaign entity: advertiser_id, pricing
+                           // model, bid strategy, daily cap. 16 rows,
+                           // 9 of which have delivery.
+];
+
+// ---------------------------------------------------------------------
 // google_ads — Weld sync for Google Ads
 //
 // PHASE 1: campaign level only, which is what the cross-channel view
@@ -402,6 +443,14 @@ TEADS_TABLES.forEach(name => {
   declare({
     database: constants.RAW_PROJECT,
     schema: constants.DATASETS.teads,
+    name: name,
+  });
+});
+
+TABOOLA_TABLES.forEach(name => {
+  declare({
+    database: constants.RAW_PROJECT,
+    schema: constants.DATASETS.taboola,
     name: name,
   });
 });

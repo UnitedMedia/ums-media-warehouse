@@ -108,6 +108,11 @@ WITH latest AS (
   UNION ALL
   SELECT '${constants.CHANNEL.teads}', 'unique viewers', MAX(date), ${dataform.projectConfig.vars.freshnessThresholdDays}
   FROM ${ref("fct_teads_reach_daily")}
+
+  -- Taboola --------------------------------------------------------------
+  UNION ALL
+  SELECT '${constants.CHANNEL.taboola}', 'campaign daily', MAX(date), ${dataform.projectConfig.vars.freshnessThresholdDays}
+  FROM ${ref("fct_taboola_campaign_daily")}
 )
 
 SELECT

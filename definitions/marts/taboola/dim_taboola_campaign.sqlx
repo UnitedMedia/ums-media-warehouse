@@ -1,0 +1,45 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.taboola_marts,
+  name: "dim_taboola_campaign",
+  tags: ["taboola", "marts"],
+  description: "One row per Taboola campaign, with its advertiser, pricing model and bid strategy. Includes campaigns that have never delivered.",
+  bigquery: {
+    clusterBy: ["campaign_id", "advertiser_id"]
+  },
+  assertions: {
+    uniqueKey: ["campaign_id"],
+    nonNull: ["campaign_id"]
+  },
+  columns: {
+    advertiser_id: "Taboola publishes no advertiser NAME. This slug is the only advertiser identifier in the feed and is what the cross-channel fact reports as advertiser_raw_name until seed_client_name_map maps it.",
+    has_delivery: "FALSE for campaigns that exist in Taboola but have no row in the delivery feed. 7 of 16 on 2026-11-05."
+  }
+}
+
+-- A full rebuild, not incremental. 16 rows.
+--
+-- has_delivery is computed here rather than left to the reader, because
+-- a campaign with no delivery and a campaign whose delivery has not been
+-- extracted look identical from the dimension alone.
+
+WITH delivered AS (
+  SELECT DISTINCT campaign_id
+  FROM ${ref("stg_taboola_daily")}
+  WHERE date IS NOT NULL
+)
+
+SELECT
+  c.campaign_id,
+  c.campaign_name,
+  c.advertiser_id,
+  c.order_id,
+  c.branding_text,
+  c.tracking_code,
+  c.pricing_model,
+  c.bid_strategy,
+  c.traffic_allocation_mode,
+  NULLIF(c.daily_cap, 0.0)             AS daily_cap,
+  (d.campaign_id IS NOT NULL)          AS has_delivery
+FROM ${ref("stg_taboola_campaign")} c
+LEFT JOIN delivered d USING (campaign_id)

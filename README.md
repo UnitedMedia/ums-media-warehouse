@@ -1,8 +1,8 @@
 # ums-media-warehouse
 
 Dataform project for the UMS advertising warehouse in `ums-digital-core-automation`.
-One repo for every paid channel: DV360, CM360, Meta, TikTok, Google Ads and
-Teads are modelled here today.
+One repo for every paid channel: DV360, CM360, Meta, TikTok, Google Ads,
+Teads and Taboola are modelled here today.
 
 Everything in `definitions/` supersedes the hand-run scripts in `all_scripts/`.
 Those are kept as the record of what was deployed before; nothing reads them.
@@ -675,6 +675,41 @@ either asserted on or surfaced in `v_data_gaps`.
   against 2026-10-29, measured 2026-10-30. `assert_source_freshness` will fail
   on `Teads / unique viewers` at the one shared 2-day threshold. That is the
   threshold working, not a tolerance to add. History starts 2026-09-30 on both.
+
+**Taboola**
+
+- **Landed 2026-11-05**, the seventh channel and by far the smallest: 289
+  delivery rows over 44 days, 9 delivering campaigns, **one advertiser**
+  (`tdg-e-onromania-sc`). Native advertising, bought CPC.
+- **It bills in USD — the only channel here that does.** Everything else is
+  EUR or converts from RON. That is why `FINAL_TABLES.MonthlyExchangeRate`
+  gained `ExchangeRateUSD` and `ExchangeRateCZK` columns the same day, and why
+  `stg_fx_monthly` now unpivots instead of hard-coding RON.
+- **The source stores RON per unit, not units per EUR.** The monthly email
+  gives 5.3449 RON/EUR and 4.7943 RON/USD; staging derives USD per EUR as
+  5.3449 ÷ 4.7943 = **1.1148**, which is the cross-rate on the same email.
+  Storing the derived number instead would be a second figure that can drift.
+- **September and October 2026 have no USD rate**, so 72% of Taboola spend
+  ($11,318.03 of $15,801.83) lands with `spend_eur` NULL. That is the designed
+  behaviour — NULL means not convertible, never zero — and it is sized in
+  `v_data_gaps` as `core_spend_without_fx_rate`. Two numbers typed into
+  `MonthlyExchangeRate` close it.
+- **`date` is a STRING carrying a time part** — `'2026-11-04 00:00:00.0'`.
+  `SAFE_CAST(date AS DATE)` returns NULL on all 289 rows; `SUBSTR(date,1,10)`
+  parses all 289. Any ad-hoc query needs the substring.
+- **No conversions, although every campaign bids MAX_CONVERSIONS.** The feed
+  carries clicks, impressions, visible impressions and spend and nothing
+  attributed, so `conversions` is NULL in `core` — the same position Teads is
+  in. Worth asking Keboola for, since the campaigns optimise for it.
+- **No advertiser name.** `advertiser_id` is a slug and there is no name
+  column anywhere in the feed, so the cross-channel report groups this client
+  under `tdg-e-onromania-sc` until `seed_client_name_map` has a row for it.
+- **`visible_impressions` is a real viewability count**, like Teads and unlike
+  CM360 — 57–72% by month.
+- **No `extracted_at`**, so there is no load timestamp to de-duplicate on.
+  Verified clean on 2026-11-05: 289 rows for 289 distinct (date, campaign)
+  keys. Staging therefore does NOT de-duplicate; the `uniqueKey` assertion on
+  `fct_taboola_campaign_daily` watches that assumption instead.
 
 **Cross-channel**
 

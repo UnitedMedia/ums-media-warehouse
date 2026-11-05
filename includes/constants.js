@@ -30,6 +30,12 @@ const DATASETS = {
   // Keboola source has to be de-duplicated on "largest wins" because
   // nothing says which read is the newest.
   teads:     "keboola_teads",
+
+  // Taboola (Keboola). Arrived 2026-11-05. Two tiny tables and the
+  // FIRST channel in this warehouse that bills in USD -- every other
+  // one is EUR or converts from RON. That is why MonthlyExchangeRate
+  // gained an ExchangeRateUSD column the same day.
+  taboola:   "keboola_taboola",
   final:     "FINAL_TABLES",      // hand-built reference data that predates
                                   // this project. Home of MonthlyExchangeRate.
 };
@@ -70,6 +76,10 @@ const SCHEMAS = {
   teads_marts:      "teads_marts",
   teads_reporting:  "teads_reporting",
 
+  taboola_staging:   "taboola_staging",
+  taboola_marts:     "taboola_marts",
+  taboola_reporting: "taboola_reporting",
+
   core_staging:    "core_staging",
   core:            "core",      // cross-channel, channel-agnostic schema
   core_seeds:      "core_seeds",
@@ -84,6 +94,7 @@ const CHANNEL = {
   tiktok: "TikTok",
   gads:   "Google Ads",
   teads:  "Teads",
+  taboola: "Taboola",
 };
 
 // Every partitioned fact in this project is PARTITION BY date. Some

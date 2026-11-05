@@ -1,0 +1,62 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.taboola_reporting,
+  name: "v_daily",
+  tags: ["taboola", "reporting"],
+  description: "Taboola campaign x day. The Looker Studio surface for the channel. Every ratio is computed here over the sums, so it stays correct at whatever level Looker rolls it up to.",
+  columns: {
+    spend: "USD, NOT euros. Taboola is the only channel in this warehouse that bills in dollars — never put this column on a chart beside another channel's spend. Use spend_eur, and read is_fx_converted first.",
+    spend_eur: "Converted from dim_fx_rate at the month's rate. NULL where MonthlyExchangeRate has no ExchangeRateUSD for that month — September and October 2026 are NULL as of 2026-11-05, which is 72% of the channel's spend waiting on two numbers somebody has to type in.",
+    fx_rate_to_eur: "The rate actually used, carried on the row so any euro figure can be traced back. USD per 1 EUR, derived as RON-per-EUR / RON-per-USD.",
+    is_fx_converted: "FALSE where spend_eur is NULL. Filter on this before presenting any euro total, or sum only the converted rows and say so.",
+    viewable_rate: "visible_impressions / impressions. A TRUE viewability rate — Taboola supplies the viewable count directly. The CM360 column of the same name divides by a denominator it does not have and is not comparable.",
+    cpc: "Taboola is bought CPC on every campaign, so this is the metric the buy is judged on."
+  }
+}
+
+-- spend_eur is computed HERE, from dim_fx_rate, the same way
+-- meta_reporting.v_age_gender_daily does it. The rate lives in exactly
+-- one place; the division is trivial and stated on the column.
+--
+-- The first version of this view read spend_eur out of
+-- core.fct_ad_performance_daily instead, to avoid repeating the
+-- arithmetic. That was wrong for this layer: it made a channel view
+-- depend on the cross-channel fact, so a tag-scoped `taboola` run would
+-- have built this view against whatever core happened to hold.
+--
+-- dim_fx_rate is keyed on month + currency, so the join cannot fan out
+-- a daily row.
+
+SELECT
+  f.date,
+  DATE_TRUNC(f.date, WEEK(MONDAY)) AS week,
+  DATE_TRUNC(f.date, MONTH)        AS month,
+
+  f.campaign_id,
+  f.campaign_name,
+  d.advertiser_id,
+  d.branding_text,
+  d.pricing_model,
+  d.bid_strategy,
+  d.daily_cap,
+  f.currency,
+
+  f.impressions,
+  f.visible_impressions,
+  f.clicks,
+  f.spend,
+  SAFE_DIVIDE(f.spend, fx.rate_to_eur)  AS spend_eur,
+  fx.rate_to_eur                        AS fx_rate_to_eur,
+  (fx.rate_to_eur IS NOT NULL)          AS is_fx_converted,
+
+  ${metrics.cpm("f.spend", "f.impressions")}                          AS cpm,
+  ${metrics.ctr("f.clicks", "f.impressions")}                         AS ctr,
+  ${metrics.cpc("f.spend", "f.clicks")}                               AS cpc,
+  ${metrics.viewRate("f.visible_impressions", "f.impressions")}       AS viewable_rate,
+  ${metrics.cpm("SAFE_DIVIDE(f.spend, fx.rate_to_eur)", "f.impressions")} AS cpm_eur,
+  ${metrics.cpc("SAFE_DIVIDE(f.spend, fx.rate_to_eur)", "f.clicks")}      AS cpc_eur
+FROM ${ref("fct_taboola_campaign_daily")} f
+LEFT JOIN ${ref("dim_taboola_campaign")} d USING (campaign_id)
+LEFT JOIN ${ref("dim_fx_rate")} fx
+  ON fx.month    = DATE_TRUNC(f.date, MONTH)
+ AND fx.currency = f.currency
