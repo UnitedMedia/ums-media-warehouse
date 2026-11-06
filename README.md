@@ -2,7 +2,7 @@
 
 Dataform project for the UMS advertising warehouse in `ums-digital-core-automation`.
 One repo for every paid channel: DV360, CM360, Meta, TikTok, Google Ads,
-Teads, Taboola and Adform are modelled here today.
+Teads, Taboola, Adform and ChatGPT Ads are modelled here today.
 
 Everything in `definitions/` supersedes the hand-run scripts in `all_scripts/`.
 Those are kept as the record of what was deployed before; nothing reads them.
@@ -750,6 +750,36 @@ either asserted on or surfaced in `v_data_gaps`.
   the line item count.
 - `adCreativeType` is a single value, `Pixel Tag`, on all 1,600 rows. Staged
   so a second value would be visible, not because it is useful yet.
+
+**ChatGPT Ads**
+
+- **Landed 2026-11-06**, the ninth channel. Three tables, 16 accounts (7
+  delivering), 2026-10-07 to 11-05. Clean: 448 rows for 448 (date, ad) keys
+  and 206 for 206 (date, campaign, country) keys.
+- **The first channel whose currency varies BETWEEN ACCOUNTS.** 12 bill in
+  RON and 4 in EUR. Every other channel here is one currency throughout.
+- **There IS a currency column, and no hand-written map should replace it.**
+  `ad_accounts.currency_code` is fully populated, 16 of 16. It was reported as
+  missing, and building a lookup instead would have been actively wrong:
+  **two different accounts are both named `United Media Services`**, one EUR
+  and one RON —
+  `adacct_6a8c2610ec2c81a29fc6963af110f441` against
+  `adacct_6abb85502ba48195b968b4fe63044044` — and two more differ only in
+  capitalisation. A name-keyed map cannot represent that, and an id-keyed one
+  would just be a copy of a source column, free to drift from it.
+  `dim_chatgptads_account` flags the collision as `is_name_ambiguous`.
+- **`currency` is asserted non-null** on both facts. Spend that cannot name
+  its own currency cannot be converted, and the assertion says so rather than
+  letting the money disappear from euro totals.
+- **The two insight tables are the same money.** `insights_ad_daily` totals
+  14,324.73 and `insights_campaign_country_daily` 14,324.69 over the same
+  window — four cents apart on different roll-ups. Never union them; the
+  country table is the ad table split by country. Country is published at
+  campaign level only, so it carries no ad or ad group.
+- **Everything converts today**: RON 13,381.14 → €2,503.53 and EUR 943.59
+  straight through, zero rows without a rate.
+- `ctr`, `cpc` and `cpm` arrive pre-computed and are staged with an `src_`
+  prefix, audit only. The reporting layer recomputes them over the sums.
 
 **Cross-channel**
 

@@ -330,6 +330,42 @@ const ADFORM_TABLES = [
 ];
 
 // ---------------------------------------------------------------------
+// keboola_chatgptads — Keboola extraction for ChatGPT Ads. THREE tables.
+//
+// Arrived 2026-11-06. 16 accounts, 7 of them delivering, 2026-10-07 to
+// 11-05. Clean: 448 rows for 448 (date, ad) keys and 206 for 206
+// (date, campaign, country) keys.
+//
+// MIXED CURRENCIES, AND THE SOURCE STATES THEM. 12 accounts bill in RON
+// and 4 in EUR. ad_accounts.currency_code carries it per account and is
+// fully populated -- checked 2026-11-06, 16 of 16.
+//
+// That column is load-bearing and must not be replaced by a lookup
+// written out by hand. TWO DIFFERENT ACCOUNTS ARE BOTH NAMED "United
+// Media Services":
+//   adacct_6a8c2610ec2c81a29fc6963af110f441   EUR
+//   adacct_6abb85502ba48195b968b4fe63044044   RON
+// and two more differ only in capitalisation, "UNITED MEDIA SERVICES
+// SRL" (EUR) against "United Media Services SRL" (RON). A name-keyed
+// map cannot represent that; an id-keyed one would just be a copy of a
+// column the source already provides, free to drift from it.
+//
+// THE TWO INSIGHT TABLES ARE THE SAME MONEY. insights_ad_daily totals
+// 14,324.73 and insights_campaign_country_daily 14,324.69 over the same
+// window -- four cents apart on different roll-ups. Never union them;
+// the country table is the ad table split by country, nothing more.
+//
+// ctr, cpc and cpm arrive pre-computed on both tables. They are staged
+// with an src_ prefix, audit only -- a stored ratio is correct solely
+// at the grain it was computed at, and the reporting layer recomputes.
+// ---------------------------------------------------------------------
+const CHATGPTADS_TABLES = [
+  "ad_accounts",                      // 16 rows. THE source of currency.
+  "insights_ad_daily",                // date x ad. The delivery backbone.
+  "insights_campaign_country_daily",  // the same money by country.
+];
+
+// ---------------------------------------------------------------------
 // google_ads — Weld sync for Google Ads
 //
 // PHASE 1: campaign level only, which is what the cross-channel view
@@ -485,6 +521,14 @@ ADFORM_TABLES.forEach(name => {
   declare({
     database: constants.RAW_PROJECT,
     schema: constants.DATASETS.adform,
+    name: name,
+  });
+});
+
+CHATGPTADS_TABLES.forEach(name => {
+  declare({
+    database: constants.RAW_PROJECT,
+    schema: constants.DATASETS.chatgptads,
     name: name,
   });
 });

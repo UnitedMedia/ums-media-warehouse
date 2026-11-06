@@ -119,6 +119,15 @@ WITH latest AS (
   UNION ALL
   SELECT '${constants.CHANNEL.adform}', 'reach', MAX(date)
   FROM ${ref("fct_adform_reach_daily")}
+
+  -- ChatGPT Ads ----------------------------------------------------------
+  UNION ALL
+  SELECT '${constants.CHANNEL.chatgptads}', 'ad daily', MAX(date)
+  FROM ${ref("fct_chatgptads_ad_daily")}
+
+  UNION ALL
+  SELECT '${constants.CHANNEL.chatgptads}', 'country daily', MAX(date)
+  FROM ${ref("fct_chatgptads_country_daily")}
 )
 SELECT
   channel,

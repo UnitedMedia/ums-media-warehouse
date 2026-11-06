@@ -1,0 +1,42 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.chatgptads_staging,
+  name: "stg_chatgptads_ad_daily",
+  tags: ["chatgptads", "staging"],
+  description: "ChatGPT Ads delivery at day x ad. The backbone of the channel — insights_campaign_country_daily is this same money split by country.",
+  columns: {
+    spend: "In the ACCOUNT's currency, which is RON for 12 accounts and EUR for 4. Join stg_chatgptads_account to find out which; there is no currency column on this table.",
+    src_ctr: "Pre-computed by the source. Audit only — a stored ratio is correct solely at the grain it was computed at. The reporting layer recomputes.",
+    start_time_unix: "Kept as delivered. Not parsed, because nothing reads it yet and a wrong timezone assumption would be worse than no column."
+  }
+}
+
+-- NO DE-DUPLICATION. Verified 2026-11-06: 448 rows for 448 distinct
+-- (date, ad_id) keys, exactly 1:1. No extracted_at exists to order on,
+-- and an arbitrary tiebreak on a clean table deletes real rows -- the
+-- rule settled in stg_tiktok_campaign_daily. The uniqueKey assertion on
+-- fct_chatgptads_ad_daily watches that assumption instead.
+
+SELECT
+  date,
+  ad_account_id,
+  ad_account_name,
+  campaign_id,
+  campaign_name,
+  ad_group_id,
+  ad_group_name,
+  ad_id,
+  ad_name,
+
+  CAST(impressions AS INT64)   AS impressions,
+  CAST(clicks      AS INT64)   AS clicks,
+  CAST(spend       AS FLOAT64) AS spend,
+
+  -- stored ratios, audit only
+  ctr AS src_ctr,
+  cpc AS src_cpc,
+  cpm AS src_cpm,
+
+  start_time_unix,
+  end_time_unix
+FROM ${ref({ schema: constants.DATASETS.chatgptads, name: "insights_ad_daily" })}

@@ -1,0 +1,35 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.chatgptads_marts,
+  name: "fct_chatgptads_country_daily",
+  tags: ["chatgptads", "marts"],
+  description: "ChatGPT Ads by country, at day x campaign x country. THE SAME SPEND as fct_chatgptads_ad_daily expressed differently — never union them, never add them, never join them on date alone.",
+  bigquery: {
+    partitionBy: "date",
+    clusterBy: ["ad_account_id", "campaign_id"]
+  },
+  assertions: {
+    uniqueKey: ["date", "campaign_id", "country_name"],
+    nonNull: ["date", "campaign_id", "currency"]
+  },
+  columns: {
+    spend: "The same money as the ad fact, split by country instead of by ad. 14,324.69 against that table's 14,324.73 over 2026-10-07 to 11-05."
+  }
+}
+
+SELECT
+  f.date,
+  f.ad_account_id,
+  ANY_VALUE(f.ad_account_name) AS ad_account_name,
+  ANY_VALUE(a.currency_code)   AS currency,
+  f.campaign_id,
+  ANY_VALUE(f.campaign_name)   AS campaign_name,
+  f.country_name,
+
+  SUM(f.impressions) AS impressions,
+  SUM(f.clicks)      AS clicks,
+  SUM(f.spend)       AS spend
+FROM ${ref("stg_chatgptads_country_daily")} f
+LEFT JOIN ${ref("dim_chatgptads_account")} a USING (ad_account_id)
+WHERE f.date IS NOT NULL
+GROUP BY f.date, f.ad_account_id, f.campaign_id, f.country_name

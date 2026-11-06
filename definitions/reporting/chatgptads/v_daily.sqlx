@@ -1,0 +1,47 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.chatgptads_reporting,
+  name: "v_daily",
+  tags: ["chatgptads", "reporting"],
+  description: "ChatGPT Ads day x ad. The Looker Studio surface for the channel. Mixed currencies — use spend_eur for anything that crosses accounts.",
+  columns: {
+    spend: "In the account's OWN currency, RON or EUR. Summing this across accounts adds lei to euros. Use spend_eur.",
+    spend_eur: "Converted at the month's rate from dim_fx_rate. Every row converts today — RON and EUR both have rates — but check is_fx_converted rather than assuming.",
+    currency: "Comes from the account, not the delivery row. Two accounts share the name 'United Media Services' and bill differently, so group by ad_account_id, never by name.",
+    src_ctr: "The source's own stored CTR. Audit only — ctr beside it is recomputed over the sums and is the one to use."
+  }
+}
+
+SELECT
+  f.date,
+  DATE_TRUNC(f.date, WEEK(MONDAY)) AS week,
+  DATE_TRUNC(f.date, MONTH)        AS month,
+
+  f.ad_account_id,
+  f.ad_account_name,
+  a.is_name_ambiguous,
+  f.currency,
+  f.campaign_id,
+  f.campaign_name,
+  f.ad_group_id,
+  f.ad_group_name,
+  f.ad_id,
+  f.ad_name,
+
+  f.impressions,
+  f.clicks,
+  f.spend,
+  SAFE_DIVIDE(f.spend, fx.rate_to_eur) AS spend_eur,
+  fx.rate_to_eur                       AS fx_rate_to_eur,
+  (fx.rate_to_eur IS NOT NULL)         AS is_fx_converted,
+
+  ${metrics.cpm("f.spend", "f.impressions")}  AS cpm,
+  ${metrics.ctr("f.clicks", "f.impressions")} AS ctr,
+  ${metrics.cpc("f.spend", "f.clicks")}       AS cpc,
+  ${metrics.cpm("SAFE_DIVIDE(f.spend, fx.rate_to_eur)", "f.impressions")} AS cpm_eur,
+  ${metrics.cpc("SAFE_DIVIDE(f.spend, fx.rate_to_eur)", "f.clicks")}      AS cpc_eur
+FROM ${ref("fct_chatgptads_ad_daily")} f
+LEFT JOIN ${ref("dim_chatgptads_account")} a USING (ad_account_id)
+LEFT JOIN ${ref("dim_fx_rate")} fx
+  ON fx.month    = DATE_TRUNC(f.date, MONTH)
+ AND fx.currency = f.currency

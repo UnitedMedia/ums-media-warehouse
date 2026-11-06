@@ -42,6 +42,11 @@ const DATASETS = {
   // not. Its delivery rows duplicate inside a recent window -- see
   // stg_adform_daily.
   adform:    "keboola_adform",
+
+  // ChatGPT Ads (Keboola). Arrived 2026-11-06. Three tables, and the
+  // first channel here with MIXED currencies inside one feed -- 12 RON
+  // accounts and 4 EUR ones, stated per account by the source.
+  chatgptads: "keboola_chatgptads",
   final:     "FINAL_TABLES",      // hand-built reference data that predates
                                   // this project. Home of MonthlyExchangeRate.
 };
@@ -90,6 +95,10 @@ const SCHEMAS = {
   adform_marts:      "adform_marts",
   adform_reporting:  "adform_reporting",
 
+  chatgptads_staging:   "chatgptads_staging",
+  chatgptads_marts:     "chatgptads_marts",
+  chatgptads_reporting: "chatgptads_reporting",
+
   core_staging:    "core_staging",
   core:            "core",      // cross-channel, channel-agnostic schema
   core_seeds:      "core_seeds",
@@ -106,6 +115,7 @@ const CHANNEL = {
   teads:  "Teads",
   taboola: "Taboola",
   adform:  "Adform",
+  chatgptads: "ChatGPT Ads",
 };
 
 // Every partitioned fact in this project is PARTITION BY date. Some

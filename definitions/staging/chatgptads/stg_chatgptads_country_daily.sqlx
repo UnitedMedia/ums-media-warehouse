@@ -1,0 +1,34 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.chatgptads_staging,
+  name: "stg_chatgptads_country_daily",
+  tags: ["chatgptads", "staging"],
+  description: "ChatGPT Ads delivery by country, at day x campaign x country. THE SAME MONEY as stg_chatgptads_ad_daily, split differently — never union or add the two.",
+  columns: {
+    spend: "In the account's currency. The same spend as the ad-level table: 14,324.69 against 14,324.73 over 2026-10-07 to 11-05, four cents apart on different roll-ups."
+  }
+}
+
+-- 206 rows for 206 distinct (date, campaign, country) keys on
+-- 2026-11-06. No de-duplication, same reasoning as the ad table.
+--
+-- This table has NO ad or ad group. Country is published at campaign
+-- level only, which is why it is a separate fact rather than columns on
+-- the backbone.
+
+SELECT
+  date,
+  ad_account_id,
+  ad_account_name,
+  campaign_id,
+  campaign_name,
+  country_name,
+
+  CAST(impressions AS INT64)   AS impressions,
+  CAST(clicks      AS INT64)   AS clicks,
+  CAST(spend       AS FLOAT64) AS spend,
+
+  ctr AS src_ctr,
+  cpc AS src_cpc,
+  cpm AS src_cpm
+FROM ${ref({ schema: constants.DATASETS.chatgptads, name: "insights_campaign_country_daily" })}

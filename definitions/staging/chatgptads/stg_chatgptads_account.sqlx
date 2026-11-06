@@ -1,0 +1,19 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.chatgptads_staging,
+  name: "stg_chatgptads_account",
+  tags: ["chatgptads", "staging"],
+  description: "ChatGPT Ads accounts. THE source of currency for this channel — 12 RON accounts and 4 EUR ones, stated per account.",
+  columns: {
+    currency_code: "RON or EUR. Fully populated — 16 of 16 on 2026-11-06. This is the only place the channel's currency exists, and it is keyed on the ACCOUNT ID for good reason: two different accounts share the name 'United Media Services' and bill in different currencies.",
+    status: "'active' on all 16 as of 2026-11-06. Kept so a paused or closed account is visible rather than silently still reporting."
+  }
+}
+
+SELECT
+  ad_account_id,
+  ad_account_name,
+  currency_code,
+  timezone,
+  status
+FROM ${ref({ schema: constants.DATASETS.chatgptads, name: "ad_accounts" })}

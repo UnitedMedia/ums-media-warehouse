@@ -60,9 +60,11 @@ correct no matter how Looker rolls it up; a ratio stored in a table does not.
 | Teads spend, viewability, video completion | `teads_reporting.v_daily` |
 | Teads unique viewers | `teads_reporting.v_reach_daily` |
 | Taboola spend, clicks, viewability | `taboola_reporting.v_daily` |
+| ChatGPT Ads spend, clicks | `chatgptads_reporting.v_daily` |
+| ChatGPT Ads by country | `chatgptads_reporting.v_geo_daily` |
 | Adform delivery by line item | `adform_reporting.v_daily` |
 | Adform unique reach | `adform_reporting.v_reach_daily` |
-| All eight channels in one chart | `reporting.v_ad_performance_daily` |
+| All nine channels in one chart | `reporting.v_ad_performance_daily` |
 | What is broken or unmapped right now | `reporting.v_data_gaps` |
 | How fresh each channel is | `reporting.v_source_freshness` |
 | How a metric is defined | `dv360_reporting.v_metric_catalog`, `cm360_reporting.v_metric_catalog` |
@@ -83,6 +85,7 @@ correct no matter how Looker rolls it up; a ratio stored in a table does not.
 | Google Ads | `spend` | `gads_reporting.v_daily` | **Complete**, incl. Performance Max. Account currency, from `cost_micros` |
 | Taboola | `spend` | `taboola_reporting.v_daily` | **USD**, not euros. Use `spend_eur`, and read `is_fx_converted` first |
 | Adform | `cost` | `adform_reporting.v_daily` | EUR. No conversion needed |
+| ChatGPT Ads | `spend` | `chatgptads_reporting.v_daily` | **RON or EUR, per account.** Use `spend_eur` across accounts |
 | Teads | `spend` | `teads_reporting.v_daily` | `budget_delivered`, campaign currency. **Confirmed billed** — equals `MASTER_TABLE` to the cent on every day 2026-10-01 to 10-15 |
 
 ### Where the impressions are
@@ -97,7 +100,7 @@ within it but must never add two breakdowns together.
 
 ## Read this before you total anything
 
-**All eight channels are live** — measured 2026-10-13.
+**All nine channels are live** — measured 2026-10-13.
 
 **CM360 moved dataset on 2026-10-12**: its tables were dropped from `kebooladv`
 and recreated in **`keboola_cm360`**, fresh daily and about seven times larger.
@@ -792,7 +795,7 @@ advertiser, 289 delivery rows. The smallest channel in the warehouse.
 
 | Object | Grain | Use it for |
 |---|---|---|
-| `reporting.v_ad_performance_daily` | channel × campaign × day | One chart covering all eight channels. Adds week and month columns and the rate metrics. |
+| `reporting.v_ad_performance_daily` | channel × campaign × day | One chart covering all nine channels. Adds week and month columns and the rate metrics. |
 | `core.fct_ad_performance_daily` | the same | The table behind it. Query the view. |
 | `reporting.v_data_gaps` | one row per gap | **Your work list.** Everything unmapped or unattributable, sized by rows and by spend. |
 

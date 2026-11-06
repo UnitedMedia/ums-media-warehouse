@@ -1,0 +1,42 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.chatgptads_reporting,
+  name: "v_geo_daily",
+  tags: ["chatgptads", "reporting"],
+  description: "ChatGPT Ads by country, at day x campaign x country. The SAME spend as v_daily split a different way — its own Looker Studio data source, never blended with v_daily.",
+  columns: {
+    spend_eur: "Converted at the month's rate. Totals to the same figure as v_daily, within rounding: 14,324.69 against 14,324.73 over 2026-10-07 to 11-05.",
+    country_name: "As the source spells it. No mapping to ISO codes yet — nothing needs one."
+  }
+}
+
+-- Country is published at CAMPAIGN level only, so there is no ad or ad
+-- group here. That is why this is a separate view rather than columns
+-- on v_daily: joining the two would fan every ad out across every
+-- country the campaign ran in.
+
+SELECT
+  f.date,
+  DATE_TRUNC(f.date, WEEK(MONDAY)) AS week,
+  DATE_TRUNC(f.date, MONTH)        AS month,
+
+  f.ad_account_id,
+  f.ad_account_name,
+  f.currency,
+  f.campaign_id,
+  f.campaign_name,
+  f.country_name,
+
+  f.impressions,
+  f.clicks,
+  f.spend,
+  SAFE_DIVIDE(f.spend, fx.rate_to_eur) AS spend_eur,
+  (fx.rate_to_eur IS NOT NULL)         AS is_fx_converted,
+
+  ${metrics.cpm("f.spend", "f.impressions")}  AS cpm,
+  ${metrics.ctr("f.clicks", "f.impressions")} AS ctr,
+  ${metrics.cpc("f.spend", "f.clicks")}       AS cpc
+FROM ${ref("fct_chatgptads_country_daily")} f
+LEFT JOIN ${ref("dim_fx_rate")} fx
+  ON fx.month    = DATE_TRUNC(f.date, MONTH)
+ AND fx.currency = f.currency

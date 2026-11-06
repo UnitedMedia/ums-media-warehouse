@@ -1,0 +1,43 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.chatgptads_marts,
+  name: "dim_chatgptads_account",
+  tags: ["chatgptads", "marts"],
+  description: "One row per ChatGPT Ads account, carrying the currency every other model in this channel depends on.",
+  bigquery: { clusterBy: ["ad_account_id"] },
+  assertions: {
+    uniqueKey: ["ad_account_id"],
+    nonNull: ["ad_account_id", "currency_code"]
+  },
+  columns: {
+    currency_code: "RON or EUR. The nonNull assertion above is the important one: if this ever arrives empty, spend for that account stops converting and the assertion says so instead of the money quietly vanishing from euro totals.",
+    is_name_ambiguous: "TRUE where another account shares this exact name. Two accounts are both called 'United Media Services' and bill in DIFFERENT currencies, so anything joining this channel by NAME rather than by id is wrong.",
+    has_delivery: "FALSE for accounts with no rows in the delivery feed. 9 of 16 on 2026-11-06."
+  }
+}
+
+-- THE nonNull ON currency_code IS THE POINT OF THIS TABLE.
+-- ChatGPT Ads is the first channel here that mixes currencies inside a
+-- single feed, and the only place the currency is stated is this
+-- account entity. Everything downstream converts through it.
+
+WITH delivered AS (
+  SELECT DISTINCT ad_account_id FROM ${ref("stg_chatgptads_ad_daily")}
+),
+name_counts AS (
+  SELECT ad_account_name, COUNT(*) AS n
+  FROM ${ref("stg_chatgptads_account")}
+  GROUP BY 1
+)
+
+SELECT
+  a.ad_account_id,
+  a.ad_account_name,
+  a.currency_code,
+  a.timezone,
+  a.status,
+  (n.n > 1)                     AS is_name_ambiguous,
+  (d.ad_account_id IS NOT NULL) AS has_delivery
+FROM ${ref("stg_chatgptads_account")} a
+LEFT JOIN delivered   d USING (ad_account_id)
+LEFT JOIN name_counts n USING (ad_account_name)

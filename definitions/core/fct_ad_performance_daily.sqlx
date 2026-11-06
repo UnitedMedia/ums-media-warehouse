@@ -382,6 +382,39 @@ adform AS (
   GROUP BY f.date, f.campaign_id
 ),
 
+-- ChatGPT Ads. Rolled up from ad to campaign. The FIRST channel in
+-- this union whose currency varies BETWEEN ACCOUNTS -- 12 bill in RON
+-- and 4 in EUR -- so currency is grouped on rather than ANY_VALUE'd,
+-- which it has to be anyway for this table's unique key.
+--
+-- advertiser_raw_name is the ACCOUNT name, and two accounts share the
+-- name 'United Media Services' while billing in different currencies.
+-- They stay separate rows here because advertiser_id carries the
+-- account id and currency differs; anything grouping this channel by
+-- name alone merges two real accounts.
+--
+-- conversions is NULL: the feed carries impressions, clicks and spend
+-- and nothing attributed. Fourth channel in that position.
+chatgptads AS (
+  SELECT
+    f.date,
+    '${constants.CHANNEL.chatgptads}'       AS channel,
+    ANY_VALUE(f.ad_account_name)            AS advertiser_raw_name,
+    f.ad_account_id                         AS advertiser_id,
+    ANY_VALUE(f.campaign_name)              AS campaign_name,
+    f.campaign_id                           AS campaign_id,
+    f.currency                              AS currency,
+    CAST(SUM(f.impressions) AS INT64)       AS impressions,
+    CAST(SUM(f.clicks)      AS INT64)       AS clicks,
+    CAST(NULL AS INT64)                     AS interactions,
+    CAST(NULL AS INT64)                     AS complete_views,
+    CAST(NULL AS FLOAT64)                   AS conversions,
+    CAST(NULL AS STRING)                    AS conversions_definition,
+    CAST(SUM(f.spend)       AS FLOAT64)     AS spend
+  FROM ${ref("fct_chatgptads_ad_daily")} f
+  GROUP BY f.date, f.ad_account_id, f.campaign_id, f.currency
+),
+
 unioned AS (
   SELECT * FROM dv360
   UNION ALL
@@ -398,6 +431,8 @@ unioned AS (
   SELECT * FROM taboola
   UNION ALL
   SELECT * FROM adform
+  UNION ALL
+  SELECT * FROM chatgptads
 )
 
 SELECT
