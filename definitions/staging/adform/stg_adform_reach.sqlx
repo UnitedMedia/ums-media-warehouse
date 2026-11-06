@@ -1,0 +1,55 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.adform_staging,
+  name: "stg_adform_reach",
+  tags: ["adform", "staging"],
+  description: "Adform reach at day x campaign x line item. NOTHING ELSE. The source carries impressions and cost on the same rows; they are dropped here so only one view in the warehouse answers how much was delivered.",
+  columns: {
+    unique_reach: "NON-ADDITIVE. De-duplicated by Adform within line item x day — verified 2026-11-05, five line items on one campaign-day carry five different values, so it is scoped to the line item and not the campaign. Summing it across line items counts the same person once per line item they saw.",
+    impressions_campaign_unique: "NON-ADDITIVE and campaign-scoped despite sitting on a line-item row. Adform's count of impressions against uniquely-reached users for the whole campaign.",
+    impressions_campaign_day_unique: "NON-ADDITIVE, the same figure scoped to the day."
+  }
+}
+
+-- Quarantined, like fct_dv360_reach_daily and fct_teads_reach_daily.
+-- A table holding nothing additive is the only structural defence
+-- against SUM(unique_reach) sitting next to SUM(impressions).
+--
+-- The same conditional de-duplication as stg_adform_daily, and it has
+-- to be driven by IMPRESSIONS rather than by reach. On a duplicated
+-- key, impressions double and unique_reach stays IDENTICAL -- line item
+-- 15048079 on 11-02 reads 13,539 on both rows while impressions read
+-- 208,871 and 417,742. Ordering by reach would therefore pick
+-- arbitrarily between two equal values; ordering by impressions picks
+-- the row we decided is real and carries its reach along.
+
+WITH deduped AS (
+  SELECT DISTINCT * FROM ${ref({ schema: constants.DATASETS.adform, name: "adform_reports_combined" })}
+),
+bounds AS (
+  SELECT
+    *,
+    MIN(impressions) OVER (PARTITION BY date, campaignID, lineItemID) AS impr_min,
+    MAX(impressions) OVER (PARTITION BY date, campaignID, lineItemID) AS impr_max
+  FROM deduped
+)
+
+SELECT
+  date,
+  CAST(campaignID AS STRING) AS campaign_id,
+  campaign                   AS campaign_name,
+  CAST(lineItemID AS STRING) AS line_item_id,
+  lineItem                   AS line_item_name,
+  client                     AS client_name,
+
+  CAST(unique_reach                    AS INT64) AS unique_reach,
+  CAST(impressions_campaign_unique     AS INT64) AS impressions_campaign_unique,
+  CAST(impressions_campaign_day_unique AS INT64) AS impressions_campaign_day_unique
+FROM bounds
+QUALIFY ROW_NUMBER() OVER (
+  PARTITION BY date, campaignID, lineItemID
+  ORDER BY CASE
+    WHEN impr_max = 2 * impr_min THEN impressions
+    ELSE -impressions
+  END
+) = 1

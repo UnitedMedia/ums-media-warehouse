@@ -2,7 +2,7 @@
 
 Dataform project for the UMS advertising warehouse in `ums-digital-core-automation`.
 One repo for every paid channel: DV360, CM360, Meta, TikTok, Google Ads,
-Teads and Taboola are modelled here today.
+Teads, Taboola and Adform are modelled here today.
 
 Everything in `definitions/` supersedes the hand-run scripts in `all_scripts/`.
 Those are kept as the record of what was deployed before; nothing reads them.
@@ -710,6 +710,46 @@ either asserted on or surfaced in `v_data_gaps`.
   Verified clean on 2026-11-05: 289 rows for 289 distinct (date, campaign)
   keys. Staging therefore does NOT de-duplicate; the `uniqueKey` assertion on
   `fct_taboola_campaign_daily` watches that assumption instead.
+
+**Adform**
+
+- **Landed 2026-11-05**, the eighth channel. One table, 1,600 rows over 47
+  days, **one client (HORNBACH RO)**, four campaigns, 24 line items, EUR.
+  Grain is day x campaign x line item.
+- **Better shaped than most sources here**: `date` is a real DATE, the
+  currency is EUR so nothing converts, the client is stated by NAME on every
+  row (Taboola gives only a slug), and it carries `unique_reach`, which only
+  DV360, CM360 and Teads otherwise do.
+- **It duplicates inside a recent window, in two different ways.** 1,600 rows
+  for 803 grain keys. 725 extras are byte-identical and fall to `SELECT
+  DISTINCT`. The remaining 72 keys carry rows that DIFFER, all between
+  2026-10-30 and 11-05:
+  - **66 keys have one row exactly double the other** — to the unit, on
+    impressions, clicks, cost and both campaign_unique columns. Exact 2.000x
+    on 66 independent keys is arithmetic, not restatement. The smaller row is
+    kept.
+  - **6 keys have some other ratio** — line item 15048079 on 11-05 reads 3,665
+    against 9,589, a factor of 2.62. That is two readings of a day still
+    filling, and there the larger row is kept.
+- **The de-duplication rule is therefore conditional**, not a blunt MIN or
+  MAX: a blunt MIN would undercount the six still-filling days, a blunt MAX
+  would double 66 of them.
+- **What settled it** was continuity across the boundary. Clean days 26–29 Oct
+  run 58,964 / 53,491 / 70,979 / 75,489. Keeping MIN gives 45,340 and 36,209
+  on 30–31 Oct, continuous; keeping MAX gives 90,680 and 72,418, a step-change
+  landing exactly on the day the duplication starts. Delivery does not double
+  on the day an extractor misbehaves.
+- **This is an inference, not confirmed by Adform.** Nobody has compared it
+  against the Adform interface. If that comparison happens and disagrees, the
+  fix is one CASE expression in `stg_adform_daily`.
+- `unique_reach` is **line-item scoped**, not campaign scoped — verified
+  2026-11-05, five line items on one campaign-day carry five different values.
+  It is quarantined in `fct_adform_reach_daily`, like every other channel's
+  reach. The two `impressions_campaign_*` columns ARE campaign-scoped and are
+  repeated on every line item of that campaign, so summing them multiplies by
+  the line item count.
+- `adCreativeType` is a single value, `Pixel Tag`, on all 1,600 rows. Staged
+  so a second value would be visible, not because it is useful yet.
 
 **Cross-channel**
 

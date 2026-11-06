@@ -1,0 +1,41 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.adform_marts,
+  name: "fct_adform_reach_daily",
+  tags: ["adform", "marts"],
+  description: "Adform reach. ISOLATED BY DESIGN: no impression, click or cost column belongs here. unique_reach is non-additive — summing it across line items or days counts the same person repeatedly, and joining it to the delivery fact is how that happens by accident.",
+  bigquery: {
+    partitionBy: "date",
+    clusterBy: ["campaign_id", "line_item_id"]
+  },
+  assertions: {
+    uniqueKey: ["date", "campaign_id", "line_item_id"],
+    nonNull: ["date", "campaign_id", "line_item_id"]
+  },
+  columns: {
+    unique_reach: "NON-ADDITIVE. Valid only at this exact grain. In Looker Studio set the aggregation to MAX, never SUM.",
+    impressions_campaign_unique: "NON-ADDITIVE and campaign-scoped, although it sits on a line-item row. Repeated across the campaign's line items — summing it multiplies by the number of line items.",
+    impressions_campaign_day_unique: "NON-ADDITIVE, campaign-scoped, per day. Same warning."
+  }
+}
+
+-- The same quarantine as fct_dv360_reach_daily, fct_cm360_reach_daily
+-- and fct_teads_reach_daily. Keeping a non-additive metric in a table
+-- with nothing additive beside it is the only structural defence
+-- against a plausible-looking wrong number.
+
+SELECT
+  date,
+  campaign_id,
+  line_item_id,
+
+  ANY_VALUE(campaign_name)  AS campaign_name,
+  ANY_VALUE(line_item_name) AS line_item_name,
+  ANY_VALUE(client_name)    AS client_name,
+
+  SUM(unique_reach)                    AS unique_reach,
+  SUM(impressions_campaign_unique)     AS impressions_campaign_unique,
+  SUM(impressions_campaign_day_unique) AS impressions_campaign_day_unique
+FROM ${ref("stg_adform_reach")}
+WHERE date IS NOT NULL
+GROUP BY 1, 2, 3

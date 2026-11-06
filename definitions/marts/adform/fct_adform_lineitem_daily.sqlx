@@ -1,0 +1,45 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.adform_marts,
+  name: "fct_adform_lineitem_daily",
+  tags: ["adform", "marts"],
+  description: "THE Adform fact. Day x campaign x line item — the finest grain the feed delivers. core.fct_ad_performance_daily rolls it up to campaign.",
+  bigquery: {
+    partitionBy: "date",
+    clusterBy: ["campaign_id", "line_item_id"]
+  },
+  assertions: {
+    uniqueKey: ["date", "campaign_id", "line_item_id"],
+    nonNull: ["date", "campaign_id", "line_item_id"]
+  },
+  columns: {
+    cost: "EUR, no conversion needed.",
+    client_name: "Adform states the client on every delivery row — HORNBACH RO throughout as of 2026-11-05. Unlike Taboola, which gives only a slug, this is a real name."
+  }
+}
+
+-- NO DIMENSION TABLE for this channel. The source carries campaign,
+-- line item and client names on every delivery row and there is no
+-- entity feed to join to, so splitting them out would create a table
+-- whose only source is this one. Same decision as Teads.
+--
+-- Names are ANY_VALUE'd, not grouped on: a line item renamed mid-flight
+-- must not split into two rows and double its cost on a scorecard.
+
+SELECT
+  date,
+  campaign_id,
+  line_item_id,
+
+  ANY_VALUE(campaign_name)    AS campaign_name,
+  ANY_VALUE(line_item_name)   AS line_item_name,
+  ANY_VALUE(client_name)      AS client_name,
+  ANY_VALUE(currency)         AS currency,
+  ANY_VALUE(ad_creative_type) AS ad_creative_type,
+
+  SUM(impressions) AS impressions,
+  SUM(clicks)      AS clicks,
+  SUM(cost)        AS cost
+FROM ${ref("stg_adform_daily")}
+WHERE date IS NOT NULL
+GROUP BY 1, 2, 3

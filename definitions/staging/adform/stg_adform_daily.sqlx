@@ -1,0 +1,87 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.adform_staging,
+  name: "stg_adform_daily",
+  tags: ["adform", "staging"],
+  description: "Adform delivery at day x campaign x line item, de-duplicated. The reach columns are deliberately NOT here — see stg_adform_reach.",
+  columns: {
+    cost: "EUR. Adform is one of the three channels that needs no conversion at all.",
+    ad_creative_type: "A single value, 'Pixel Tag', on every row as of 2026-11-05. Staged so a second value would be visible, not because it is useful yet."
+  }
+}
+
+-- TWO KINDS OF DUPLICATION, AND THEY NEED DIFFERENT ANSWERS.
+-- Measured 2026-11-05: 1,600 rows for 803 distinct (date, campaign,
+-- line item) keys.
+--
+-- 1. BYTE-IDENTICAL ROWS -- 725 of them. SELECT DISTINCT removes these
+--    and cannot lose anything, since identical rows are
+--    interchangeable. Same reasoning as stg_cm360_hourly.
+--
+-- 2. ROWS THAT DIFFER ON THE SAME KEY -- 72 keys, every one of them
+--    between 2026-10-30 and 2026-11-05. DISTINCT keeps both, so one has
+--    to be chosen, and the two cases are not the same:
+--
+--    * 66 keys have one row EXACTLY DOUBLE the other, to the unit, on
+--      impressions, clicks, cost and both campaign_unique columns.
+--      Exact 2.000x on 66 independent keys is arithmetic, not a
+--      platform restating. The SMALLER row is the real one.
+--
+--    * 6 keys have some other ratio -- line item 15048079 on 11-05 runs
+--      3,665 against 9,589, a factor of 2.62. That is what two readings
+--      of a day still filling up looks like, and there the LARGER row
+--      is the more complete one.
+--
+-- So the rule is conditional: exact doubling -> keep the smaller,
+-- anything else -> keep the larger. A blunt MIN would undercount the
+-- six still-filling days; a blunt MAX would double 66 of them.
+--
+-- WHAT SETTLED IT. Daily totals across the boundary, which is the one
+-- test the data can answer on its own:
+--   26-29 Oct (clean)      58,964 / 53,491 / 70,979 / 75,489
+--   30-31 Oct keeping MIN  45,340 / 36,209        <- continuous
+--   30-31 Oct keeping MAX  90,680 / 72,418        <- steps up exactly
+--                                                    where the
+--                                                    duplication starts
+-- Real delivery does not double on the day an extractor starts
+-- misbehaving.
+--
+-- THIS IS AN INFERENCE, not something Adform confirmed. Nobody has
+-- compared it against the Adform interface yet. If that comparison ever
+-- happens and disagrees, the fix is the CASE below and nothing else.
+
+WITH deduped AS (
+  SELECT DISTINCT * FROM ${ref({ schema: constants.DATASETS.adform, name: "adform_reports_combined" })}
+),
+
+-- The bounds have to be computed in their own step: BigQuery will not
+-- allow an analytic function inside a window's ORDER BY.
+bounds AS (
+  SELECT
+    *,
+    MIN(impressions) OVER (PARTITION BY date, campaignID, lineItemID) AS impr_min,
+    MAX(impressions) OVER (PARTITION BY date, campaignID, lineItemID) AS impr_max
+  FROM deduped
+)
+
+SELECT
+  date,
+  CAST(campaignID AS STRING) AS campaign_id,
+  campaign                   AS campaign_name,
+  CAST(lineItemID AS STRING) AS line_item_id,
+  lineItem                   AS line_item_name,
+  client                     AS client_name,
+  campaignCurrency           AS currency,
+  adCreativeType             AS ad_creative_type,
+
+  CAST(impressions AS INT64)   AS impressions,
+  CAST(clicks      AS INT64)   AS clicks,
+  CAST(cost        AS FLOAT64) AS cost
+FROM bounds
+QUALIFY ROW_NUMBER() OVER (
+  PARTITION BY date, campaignID, lineItemID
+  ORDER BY CASE
+    WHEN impr_max = 2 * impr_min THEN impressions   -- ascending: keep the smaller
+    ELSE -impressions                               -- descending: keep the larger
+  END
+) = 1

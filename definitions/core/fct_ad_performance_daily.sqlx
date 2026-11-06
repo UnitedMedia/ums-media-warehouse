@@ -20,9 +20,9 @@ config {
     fx_rate_to_eur: "The rate actually used, carried on the row so any euro figure can be traced back. 1.0 for EUR.",
     is_fx_converted: "FALSE where spend_eur is NULL. Filter on this before presenting a euro total, or sum only the rows that converted and say so.",
     conversions: "Each channel's OWN headline conversion count. These are NOT like for like — read conversions_definition on the same row before adding or comparing them.",
-    conversions_definition: "What produced the conversions figure on this row. Exists so nobody has to remember which channel means what. NULL on Teads and Taboola, the two channels here that report no attributed conversion at all. Taboola is the odder of the two: every campaign bids MAX_CONVERSIONS and the feed still carries no conversion count.",
+    conversions_definition: "What produced the conversions figure on this row. Exists so nobody has to remember which channel means what. NULL on Teads, Taboola and Adform, which report no attributed conversion at all. Taboola is the odd one: every campaign bids MAX_CONVERSIONS and the feed still carries no conversion count.",
     clicks: "Clicks to the destination, on every channel. DV360 and TikTok count only those natively; for Meta this is inline_link_clicks, NOT its `clicks` field, which also counts likes, comments and profile taps and would overstate Meta against the rest. CM360 reads its CAMPAIGN-level report, because its placement-level reports undercount clicks by about 65% — see the cm360_clicks CTE.",
-    interactions: "NULL for CM360, Teads and Taboola, none of which measures it. NULL means not measured; 0 would mean measured as zero.",
+    interactions: "NULL for CM360, Teads, Taboola and Adform, none of which measures it. NULL means not measured; 0 would mean measured as zero.",
     complete_views: "DV360, TikTok and Teads only. DV360 gives Complete_Views_Video, TikTok video_views_p100, Teads video_completes — all three mean the video played to the end. CM360 video_views and Meta views_3s do NOT, so they stay NULL rather than being silently equated."
   }
 }
@@ -348,6 +348,40 @@ taboola AS (
   GROUP BY f.date, f.campaign_id, f.currency
 ),
 
+-- Adform. One client (HORNBACH RO), four campaigns, EUR. Rolled up
+-- from line item to campaign, which is this table's grain.
+--
+-- client_name comes from the feed itself -- Adform states it on every
+-- delivery row, so advertiser_raw_name is a real name here rather than
+-- the slug Taboola gives. It still goes through seed_client_name_map
+-- like every other channel, so a different spelling can be mapped.
+--
+-- conversions is NULL: the feed carries delivery, cost and reach and
+-- nothing attributed. Third channel in that position, after Teads and
+-- Taboola.
+--
+-- complete_views is NULL too. adCreativeType is 'Pixel Tag' on every
+-- row and there is no video completion column anywhere in the feed.
+adform AS (
+  SELECT
+    f.date,
+    '${constants.CHANNEL.adform}'           AS channel,
+    ANY_VALUE(f.client_name)                AS advertiser_raw_name,
+    CAST(NULL AS STRING)                    AS advertiser_id,
+    ANY_VALUE(f.campaign_name)              AS campaign_name,
+    f.campaign_id                           AS campaign_id,
+    ANY_VALUE(f.currency)                   AS currency,
+    CAST(SUM(f.impressions) AS INT64)       AS impressions,
+    CAST(SUM(f.clicks)      AS INT64)       AS clicks,
+    CAST(NULL AS INT64)                     AS interactions,
+    CAST(NULL AS INT64)                     AS complete_views,
+    CAST(NULL AS FLOAT64)                   AS conversions,
+    CAST(NULL AS STRING)                    AS conversions_definition,
+    CAST(SUM(f.cost)        AS FLOAT64)     AS spend
+  FROM ${ref("fct_adform_lineitem_daily")} f
+  GROUP BY f.date, f.campaign_id
+),
+
 unioned AS (
   SELECT * FROM dv360
   UNION ALL
@@ -362,6 +396,8 @@ unioned AS (
   SELECT * FROM teads
   UNION ALL
   SELECT * FROM taboola
+  UNION ALL
+  SELECT * FROM adform
 )
 
 SELECT

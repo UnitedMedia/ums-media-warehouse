@@ -1,0 +1,28 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.adform_reporting,
+  name: "v_reach_daily",
+  tags: ["adform", "reporting"],
+  description: "Adform reach. Its own Looker Studio page, its own scorecards, its own data source. NEVER blend it with v_daily: the blend fans unique_reach out against delivery rows and both sides lie."
+}
+
+-- unique_reach is de-duplicated by Adform within line item x day and is
+-- valid at no other grain. The two impressions_campaign_* columns are
+-- campaign-scoped and are REPEATED on every line item of that campaign,
+-- so summing them multiplies by the number of line items. Use MAX.
+
+SELECT
+  f.date,
+  DATE_TRUNC(f.date, WEEK(MONDAY)) AS week,
+  DATE_TRUNC(f.date, MONTH)        AS month,
+
+  f.client_name,
+  f.campaign_id,
+  f.campaign_name,
+  f.line_item_id,
+  f.line_item_name,
+
+  f.unique_reach,
+  f.impressions_campaign_unique,
+  f.impressions_campaign_day_unique
+FROM ${ref("fct_adform_reach_daily")} f

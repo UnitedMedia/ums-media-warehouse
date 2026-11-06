@@ -110,6 +110,15 @@ WITH latest AS (
   UNION ALL
   SELECT '${constants.CHANNEL.taboola}', 'campaign daily', MAX(date)
   FROM ${ref("fct_taboola_campaign_daily")}
+
+  -- Adform ---------------------------------------------------------------
+  UNION ALL
+  SELECT '${constants.CHANNEL.adform}', 'line item daily', MAX(date)
+  FROM ${ref("fct_adform_lineitem_daily")}
+
+  UNION ALL
+  SELECT '${constants.CHANNEL.adform}', 'reach', MAX(date)
+  FROM ${ref("fct_adform_reach_daily")}
 )
 SELECT
   channel,

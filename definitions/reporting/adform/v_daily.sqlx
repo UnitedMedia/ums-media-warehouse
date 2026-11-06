@@ -1,0 +1,39 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.adform_reporting,
+  name: "v_daily",
+  tags: ["adform", "reporting"],
+  description: "Adform day x campaign x line item. The Looker Studio surface for the channel. Roll it up to campaign or client in the dashboard; every ratio is computed over the sums so it stays correct at any level.",
+  columns: {
+    cost: "EUR. No conversion, no spend_eur column — Adform bills in euros, so cost IS the euro figure.",
+    cpm: "Cost per thousand impressions, in EUR.",
+    ctr: "Clicks / impressions. Adform line items here are mostly video and display, so read it against the line item name rather than across the channel."
+  }
+}
+
+-- Reach is deliberately absent. It lives in v_reach_daily, because
+-- unique_reach is non-additive and this view is full of sums. NEVER
+-- blend the two in Looker: the blend fans reach out against delivery
+-- rows and both sides lie.
+
+SELECT
+  f.date,
+  DATE_TRUNC(f.date, WEEK(MONDAY)) AS week,
+  DATE_TRUNC(f.date, MONTH)        AS month,
+
+  f.client_name,
+  f.campaign_id,
+  f.campaign_name,
+  f.line_item_id,
+  f.line_item_name,
+  f.ad_creative_type,
+  f.currency,
+
+  f.impressions,
+  f.clicks,
+  f.cost,
+
+  ${metrics.cpm("f.cost", "f.impressions")}  AS cpm,
+  ${metrics.ctr("f.clicks", "f.impressions")} AS ctr,
+  ${metrics.cpc("f.cost", "f.clicks")}        AS cpc
+FROM ${ref("fct_adform_lineitem_daily")} f

@@ -304,6 +304,32 @@ const TABOOLA_TABLES = [
 ];
 
 // ---------------------------------------------------------------------
+// keboola_adform — Keboola extraction for Adform. ONE table.
+//
+// Arrived 2026-11-05. 1,600 rows over 47 days, one client
+// (HORNBACH RO), four campaigns, 24 line items, EUR. The grain is
+// date x campaign x line item.
+//
+// Better shaped than most sources here: `date` is a real DATE, the
+// currency is EUR so nothing needs converting, and it carries
+// unique_reach, which only DV360, CM360 and Teads otherwise do.
+//
+// IT DUPLICATES INSIDE A RECENT WINDOW. 1,600 rows for 803 distinct
+// grain keys. 725 of the extra rows are byte-identical and fall to
+// SELECT DISTINCT; the remaining 72 keys carry rows that DIFFER, all of
+// them between 2026-10-30 and 11-05, and 66 of those 72 have one row
+// exactly DOUBLE the other. See stg_adform_daily for which row is kept
+// and why.
+//
+// adCreativeType is a single value, 'Pixel Tag', on all 1,600 rows. It
+// is staged but is not a usable dimension yet.
+// ---------------------------------------------------------------------
+const ADFORM_TABLES = [
+  "adform_reports_combined",  // date x campaign x line item. Delivery,
+                              // cost and three reach-shaped columns.
+];
+
+// ---------------------------------------------------------------------
 // google_ads — Weld sync for Google Ads
 //
 // PHASE 1: campaign level only, which is what the cross-channel view
@@ -451,6 +477,14 @@ TABOOLA_TABLES.forEach(name => {
   declare({
     database: constants.RAW_PROJECT,
     schema: constants.DATASETS.taboola,
+    name: name,
+  });
+});
+
+ADFORM_TABLES.forEach(name => {
+  declare({
+    database: constants.RAW_PROJECT,
+    schema: constants.DATASETS.adform,
     name: name,
   });
 });

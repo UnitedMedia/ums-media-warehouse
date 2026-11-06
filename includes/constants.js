@@ -36,6 +36,12 @@ const DATASETS = {
   // one is EUR or converts from RON. That is why MonthlyExchangeRate
   // gained an ExchangeRateUSD column the same day.
   taboola:   "keboola_taboola",
+
+  // Adform (Keboola). Arrived 2026-11-05. ONE table, one client
+  // (HORNBACH RO), EUR. Carries unique_reach, which most channels do
+  // not. Its delivery rows duplicate inside a recent window -- see
+  // stg_adform_daily.
+  adform:    "keboola_adform",
   final:     "FINAL_TABLES",      // hand-built reference data that predates
                                   // this project. Home of MonthlyExchangeRate.
 };
@@ -80,6 +86,10 @@ const SCHEMAS = {
   taboola_marts:     "taboola_marts",
   taboola_reporting: "taboola_reporting",
 
+  adform_staging:    "adform_staging",
+  adform_marts:      "adform_marts",
+  adform_reporting:  "adform_reporting",
+
   core_staging:    "core_staging",
   core:            "core",      // cross-channel, channel-agnostic schema
   core_seeds:      "core_seeds",
@@ -95,6 +105,7 @@ const CHANNEL = {
   gads:   "Google Ads",
   teads:  "Teads",
   taboola: "Taboola",
+  adform:  "Adform",
 };
 
 // Every partitioned fact in this project is PARTITION BY date. Some
