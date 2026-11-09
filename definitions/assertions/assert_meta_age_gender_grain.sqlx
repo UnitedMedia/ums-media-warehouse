@@ -1,31 +1,70 @@
 config {
   type: "assertion",
   tags: ["meta", "monitoring"],
-  description: "facebook_ads_weld.age_gender must stay one row per date + campaign + age + gender. A duplicate would put two different spend figures on the same bucket with no way to tell which is right."
+  description: "stg_meta_age_gender must carry every impression the raw age_gender table holds. This is the guard that was missing on 2026-11-09, when the staging key turned out to be one column short of the source's and had been silently dropping rows for five weeks."
 }
 
--- HISTORY, because the shape of this check changed on 2026-10-12.
+-- An assertion FAILS if it returns rows. Empty result = healthy.
 --
--- This source used to publish ROLLING 7-DAY WINDOWS: no date column, every
--- row spanning date_start..date_stop = 6 days, and a new window opening
--- every day. Each day therefore appeared in seven rows and SUM(spend)
--- returned 29.2M against a true ~4M. Staging kept only Monday starts and
--- this assertion watched for the window length changing.
+-- WHAT THIS REPLACED, AND WHY.
 --
--- Weld switched the report to time_increment: 1 and the columns changed
--- with it -- date_start and date_stop are gone, replaced by a single date.
--- Verified: 600,800 rows, 105 days from 2026-06-30, spend 4,456,568.88.
+-- Until 2026-11-09 this assertion counted duplicates in
+-- fct_meta_age_gender_daily on date + campaign + age + gender. That check
+-- was already done by the uniqueKey assertion in the fact's own config, and
+-- it could not fail: staging de-duplicated on exactly those four columns,
+-- so the fact was unique by construction whatever the source did.
 --
--- So the window check is retired. If Weld ever reverts, date_start and
--- date_stop reappear and stg_meta_age_gender fails on a missing column,
--- which is louder than any assertion. What remains worth watching is
--- duplicates, which the staging QUALIFY would hide if it ever drifted.
+-- It was watching the one thing that could not go wrong, while the thing
+-- that did go wrong went unwatched for five weeks.
+--
+-- THE SOURCE GRAIN WAS ONE COLUMN FINER THAN OURS. age_gender also splits
+-- by ad_format_asset. Staging keyed without it, so the QUALIFY treated a
+-- second asset id as a re-sync of the first and threw it away. Measured
+-- on the raw table that day:
+--   310,121 rows for 300,234 date+campaign+age+gender keys
+--   9,496 keys with more than one row
+--   all 9,496 differing on ad_format_asset, NONE on _weld_synced
+-- Cost in October alone: 694,133 impressions, 3,929.75 spend.
+--
+-- Every assertion in the project passed throughout. Grain was unique,
+-- nothing was null, freshness was current. Loss is invisible to all three.
+--
+-- SO THIS NOW RECONCILES VOLUME instead of checking shape. Staging must
+-- carry what the source holds. It is the only check that would have caught
+-- what happened, and the only one that catches it happening again -- in
+-- either direction, since a QUALIFY that stops de-duplicating a source
+-- that starts re-syncing shows up here as staging being LARGER.
+--
+-- THE SOURCE IS A HAND-BUILT WELD MODEL. It does not follow the
+-- connector's demographics_* naming and it has already changed shape once,
+-- from rolling 7-day windows to daily on 2026-10-12. A new breakdown
+-- column appearing is not a hypothetical.
+--
+-- TOLERANCE IS ZERO. Staging applies no filter, so any difference at all
+-- is a key that no longer matches the source's.
+
+WITH sursa AS (
+  SELECT
+    DATE(date)              AS zi,
+    SUM(CAST(impressions AS INT64)) AS impresii
+  FROM ${ref({ schema: constants.DATASETS.meta, name: "age_gender" })}
+  GROUP BY 1
+),
+
+staging AS (
+  SELECT
+    date                    AS zi,
+    SUM(impressions)        AS impresii
+  FROM ${ref("stg_meta_age_gender")}
+  GROUP BY 1
+)
 
 SELECT
-  'duplicate date + campaign + age + gender' AS problem,
-  CONCAT(CAST(date AS STRING), ' ', campaign_id, ' ',
-         IFNULL(age, 'null'), ' ', IFNULL(gender, 'null')) AS detail,
-  COUNT(*)                                   AS rows_affected
-FROM ${ref("fct_meta_age_gender_daily")}
-GROUP BY 1, 2
-HAVING COUNT(*) > 1
+  s.zi,
+  s.impresii                      AS impresii_in_sursa,
+  IFNULL(g.impresii, 0)           AS impresii_in_staging,
+  s.impresii - IFNULL(g.impresii, 0) AS diferenta,
+  'stg_meta_age_gender does not match facebook_ads_weld.age_gender. A positive difference means staging is dropping rows -- check whether the source gained a breakdown column that is missing from the QUALIFY key. A negative one means it has stopped de-duplicating.' AS actiune
+FROM sursa s
+LEFT JOIN staging g USING (zi)
+WHERE s.impresii <> IFNULL(g.impresii, 0)

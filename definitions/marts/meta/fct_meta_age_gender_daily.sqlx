@@ -14,19 +14,38 @@ config {
   },
   columns: {
     age: "Meta's own bucket: 13-17, 18-24, 25-34, 35-44, 45-54, 55-64, 65+, unknown.",
-    clicks_all: "ALL-INTERACTION clicks. The source has no link clicks, so rates derived here will NOT match v_ad_daily.",
-    spend: "Account currency. v_age_gender_daily converts it."
+    clicks_all: "ALL-INTERACTION clicks — likes, comments, profile taps and photo expands included. Reads higher than link_clicks. Not comparable with the clicks in v_ad_daily.",
+    link_clicks: "Meta's inline_link_clicks. THIS is the one comparable with v_ad_daily and with the cross-channel view. Carried since 2026-11-09.",
+    spend: "Account currency. v_age_gender_daily converts it.",
+    ad_format_assets: "How many Meta asset ids this bucket delivered under. Mostly 1. Above 1 means the row is a sum across assets, which matters only if you then want reach — see the note below."
   }
 }
 
--- Replaces fct_meta_age_gender_weekly, which existed only because the
--- source published rolling 7-day windows. Weld switched it to
--- time_increment: 1 on 2026-10-12 and the weekly workaround is gone.
+-- GRAIN UNCHANGED, NUMBERS CORRECTED, 2026-11-09.
 --
--- NO reach, NO link clicks, NO conversions: the source carries three
--- metrics. fct_meta_demographic_action_daily has age x gender conversions
--- but only at ACCOUNT grain, so the two cannot be joined -- that would be
--- the fan-out this table exists to avoid.
+-- The source is one row finer than this table: it also splits by
+-- ad_format_asset_id. Until today staging collapsed that split by DROPPING
+-- rows instead of adding them up, which cost 694,133 impressions and
+-- 3,929.75 spend in October alone. Staging now carries the format and this
+-- table sums over it, so the grain callers see is identical and the
+-- figures are complete. Read the note in stg_meta_age_gender for the
+-- measurement.
+--
+-- REACH IS NOT HERE, AND THAT IS DELIBERATE. The source does carry it, and
+-- fct_meta_age_gender_reach_daily reads it — quarantined, with no additive
+-- metric beside it, like the DV360, CM360 and Teads reach facts.
+--
+-- The reason is not squeamishness. Meta de-duplicates reach inside each
+-- row it returns, so it is only true at the FULL source grain, this one
+-- plus ad_format_asset_id. Summing it up to this table would count a person
+-- who saw two assets twice, and summing this table up to a campaign would
+-- count a person once per age bucket they could fall in. That second
+-- mistake is already live elsewhere: ad-level reach summed over a campaign
+-- reads 28,830,454 against 29,811,856 impressions, a frequency of 1.03.
+--
+-- STILL MISSING: conversions. fct_meta_demographic_action_daily has age x
+-- gender conversions but only at ACCOUNT grain, so the two cannot be
+-- joined -- that would be the fan-out this table exists to avoid.
 
 SELECT
   date,
@@ -34,9 +53,11 @@ SELECT
   campaign_id,
   age,
   gender,
-  SUM(spend)       AS spend,
-  SUM(impressions) AS impressions,
-  SUM(clicks_all)  AS clicks_all
+  SUM(spend)                      AS spend,
+  SUM(impressions)                AS impressions,
+  SUM(clicks_all)                 AS clicks_all,
+  SUM(link_clicks)                AS link_clicks,
+  COUNT(DISTINCT ad_format_asset_id) AS ad_format_assets
 FROM ${ref("stg_meta_age_gender")}
 WHERE date IS NOT NULL
   AND campaign_id IS NOT NULL

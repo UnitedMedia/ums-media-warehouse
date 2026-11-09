@@ -1,0 +1,59 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.meta_reporting,
+  name: "v_age_gender_reach_daily",
+  tags: ["meta", "reporting"],
+  description: "Meta reach and frequency by age and gender, WITH CAMPAIGN NAME. Its own Looker Studio page, its own scorecards, its own data source. NEVER blend this with v_age_gender_daily: it is the same delivery counted again, and a blend fans reach out against the delivery rows so both sides lie.",
+  columns: {
+    reach: "NON-ADDITIVE. Set the Looker aggregation to MAX, never SUM. True for this one bucket, on this one day, under this one asset id.",
+    frequency: "Impressions per reached person, at this row's grain. Meta publishes the same figure and it matches to four decimals. To aggregate, rebuild it in Looker as SUM(impressions_same_grain) / SUM(reach) — but read the warning below before you do.",
+    impressions_same_grain: "Frequency's denominator, not a delivery figure. v_age_gender_daily owns impressions.",
+    ad_format_asset_id: "PART OF THE GRAIN. A Meta asset id. Remove it from a report and the reach beside it becomes the sum of two overlapping audiences."
+  }
+}
+
+-- WHAT THIS VIEW ANSWERS, AND WHAT IT DOES NOT.
+--
+--   "how often did a 25-34 woman see this campaign on this day"   -> yes
+--   "which bucket was over-exposed"                               -> yes
+--   "how many people did this campaign reach in October"          -> NO
+--
+-- The last one has no answer in the warehouse. It needs campaign-level
+-- reach from facebook_ads_weld.campaign_insight, frozen since 2026-09-22.
+-- Raised with the source owner 2026-11-09. Until it comes back, do not
+-- substitute a SUM over this view: Meta de-duplicates each age bucket
+-- separately, so the overlap between buckets is unbounded and the total
+-- is wrong by an unknown amount rather than by a correctable one.
+--
+-- EVEN AGGREGATING FREQUENCY NEEDS CARE. SUM(impressions) / SUM(reach)
+-- over several rows is arithmetically fine and semantically wrong, because
+-- the denominator counts the overlap once per row. It understates
+-- frequency, and the more buckets you include the worse it gets. The
+-- defensible reading of this view is row by row.
+--
+-- Rate metrics are computed AT THIS ROW GRAIN, like every other reporting
+-- view here -- see CATALOG.md.
+
+SELECT
+  f.date,
+  DATE_TRUNC(f.date, WEEK(MONDAY)) AS week,
+  DATE_TRUNC(f.date, MONTH)        AS month,
+
+  f.account_id,
+  acc.account_name,
+
+  f.campaign_id,
+  c.campaign_name,
+  c.objective,
+  c.campaign_status,
+
+  f.age,
+  f.gender,
+  f.ad_format_asset_id,
+
+  f.reach,
+  f.impressions_same_grain,
+  ${metrics.frequency("f.impressions_same_grain", "f.reach")} AS frequency
+FROM ${ref("fct_meta_age_gender_reach_daily")} f
+LEFT JOIN ${ref("stg_meta_campaign")} c   ON c.campaign_id = f.campaign_id
+LEFT JOIN ${ref("stg_meta_account")}  acc ON acc.account_id = f.account_id

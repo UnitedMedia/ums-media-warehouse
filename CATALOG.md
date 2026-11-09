@@ -366,7 +366,8 @@ Source: Weld → `facebook_ads_weld`. Weld lands about 137 tables; 16 are used.
 |---|---|---|
 | **`v_ad_daily`** | ad × day | **The main one, and it is wide.** Spend, impressions, clicks, link clicks, reach, frequency, CPM, CPC, CTR — plus every conversion metric as its own column, plus cost-per and ROAS for the common ones. Carries account, campaign, ad set and creative attributes including headline, primary text, CTA and thumbnail. |
 | **`v_demographics_daily`** | account × age × gender × day | Spend, impressions, clicks, reach **and conversions** — post engagements, leads, the lot. Account grain: Meta's demographics feed has no campaign or ad key, so campaign name cannot be added. |
-| **`v_age_gender_daily`** | campaign × age × gender × day | **The only demographic view with a campaign name.** Spend (native and euro), impressions, all-interaction clicks, and each bucket's share of its campaign. No reach, no link clicks, no conversions — the source carries three metrics. |
+| **`v_age_gender_daily`** | campaign × age × gender × day | **The only demographic view with a campaign name.** Spend (native and euro), impressions, all-interaction clicks, **link clicks** and each bucket's share of its campaign. Reach is not here on purpose — see `v_age_gender_reach_daily`. Conversions are still missing: `demographics_age_and_gender_actions` has them but only at account grain. |
+| **`v_age_gender_reach_daily`** | campaign × age × gender × asset × day | **Reach and frequency by demographic.** Quarantined like the DV360, CM360 and Teads reach views — never blend it with the one above. Answers "how often did a 25-34 woman see this"; does **not** answer "how many people did this campaign reach", which needs `campaign_insight` (frozen since 2026-09-22). |
 | `v_breakdown_daily` | breakdown slice × day | Age, gender, country, publisher platform, device — the raw five, in one shape. |
 
 **How the conversion columns work.** Meta reports conversions as a long list of
@@ -422,7 +423,8 @@ All three facts **require a date filter on every query**.
 | `fct_meta_ad_daily` | ad × day | Additive metrics only. Source of truth for Meta spend. |
 | `fct_meta_ad_action_daily` | ad × day × metric | **Long, not wide.** A new conversion event adds rows, never columns. Aliases already excluded. |
 | `fct_meta_breakdown_daily` | breakdown slice × day | |
-| `fct_meta_age_gender_daily` | campaign × age × gender × day | The only Meta demographic fact with a campaign key. |
+| `fct_meta_age_gender_daily` | campaign × age × gender × day | The only Meta demographic fact with a campaign key. Complete since 2026-11-09 — before that staging dropped rows differing only by asset id, costing 694,133 impressions in October. |
+| `fct_meta_age_gender_reach_daily` | campaign × age × gender × asset × day | Reach, quarantined. The asset id is part of the key: drop it and the reach above it is two overlapping audiences added together. |
 | `dim_meta_ad` | ad | Account, campaign, ad set and creative flattened into one row. No dates, no metrics, so it cannot double-count. |
 
 ---
@@ -634,9 +636,24 @@ video action in the feed is `video_view`, 417,210 of them.
 half-closed.** `facebook_ads_weld.age_gender` arrived on 2026-10-02 carrying
 `campaign_id`, which no `demographics_*` table does. It is exact but weekly, so
 `v_age_gender_daily` answers both *"how did this campaign's audience split"*
-and *"how much did we spend on women 35-44 in September"*. The remaining gap is
-conversions: the source carries spend, impressions and all-interaction clicks
-only, so an `age_gender_actions` sibling is still needed.
+and *"how much did we spend on women 35-44 in September"*.
+
+**Corrected 2026-11-09.** The source was never limited to three metrics. It
+carries `reach`, `frequency` and `inline_link_clicks` as well, and this
+document, the staging view and the reporting view all said otherwise for five
+weeks. Link clicks are now in `v_age_gender_daily`; reach went to
+`v_age_gender_reach_daily`, quarantined, because it is non-additive and
+everything else in that view is additive.
+
+The same correction found a real defect: the source grain includes
+`ad_format_asset` and the staging key did not, so the de-duplication was
+discarding genuine rows — 694,133 impressions and 3,929.75 spend in October
+alone. `assert_meta_age_gender_grain` now reconciles staging volume against the
+raw table, which is the check that would have caught it.
+
+The remaining gap is conversions: `demographics_age_and_gender_actions` has
+them but only at account grain, so an `age_gender_actions` sibling with a
+campaign key is still needed.
 
 ---
 
@@ -896,7 +913,7 @@ frozen since 2026-09-28 to fresh daily with ~7× the rows.
 
 | Source table | Read by | Note |
 |---|---|---|
-| `age_gender` | `stg_meta_age_gender` | **The only Meta demographic source with `campaign_id`.** Appeared 2026-10-02 as rolling 7-day windows; switched to daily 2026-10-12. Does not follow the `demographics_*` naming, so probably a hand-built Weld model and able to change again. |
+| `age_gender` | `stg_meta_age_gender` | **The only Meta demographic source with `campaign_id`.** Appeared 2026-10-02 as rolling 7-day windows; switched to daily 2026-10-12. Does not follow the `demographics_*` naming, so probably a hand-built Weld model and able to change again — it already has. Its grain includes `ad_format_asset`, a Meta asset id delivered as a FLOAT; missing that column from the staging key cost five weeks of dropped rows. Also carries `reach`, `frequency` and `inline_link_clicks`, all three documented in this repo as absent until 2026-11-09. |
 | `account` | `stg_meta_account` | Meta and Google Ads each have one. For Google Ads it is the only source of `currency_code` and of the manager / test_account flags. |
 | `ad` | `stg_meta_ad` | Meta and TikTok each have one, and they are unrelated tables. |
 | `ad_roas_insight` | `assert_meta_spend_reconciliation`, `stg_meta_ad_insight` | Meta backbone — ad x day metrics. |

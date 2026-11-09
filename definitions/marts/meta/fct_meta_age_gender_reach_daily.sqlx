@@ -1,0 +1,83 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.meta_marts,
+  name: "fct_meta_age_gender_reach_daily",
+  tags: ["meta", "marts"],
+  description: "Meta reach by age and gender, at the FULL source grain including the asset id — the only grain Meta de-duplicated it on. ISOLATED BY DESIGN: the one impression column in here is frequency's denominator, nothing else. Never union or blend this with fct_meta_age_gender_daily: it is the same delivery, counted again.",
+  bigquery: {
+    partitionBy: "date",
+    clusterBy: ["campaign_id", "age", "gender"]
+  },
+  assertions: {
+    uniqueKey: ["date", "campaign_id", "age", "gender", "ad_format_asset_id"],
+    nonNull: ["date", "campaign_id", "reach"]
+  },
+  columns: {
+    reach: "NON-ADDITIVE. People, de-duplicated by Meta inside this row and nowhere else. Valid at exactly this grain. In Looker Studio set the aggregation to MAX, never SUM.",
+    impressions_same_grain: "NOT a delivery figure — fct_meta_age_gender_daily owns those. This exists so frequency has a denominator at the same grain as the reach beside it. Named this way so nobody charts it as impressions.",
+    ad_format_asset_id: "PART OF THE KEY. A Meta asset id, delivered as a FLOAT and cast to a string in staging. Drop it and the reach above it is the sum of two overlapping audiences."
+  }
+}
+
+-- WHY THIS TABLE EXISTS, AND WHAT IT CANNOT ANSWER.
+--
+-- facebook_ads_weld.age_gender carried reach and frequency from the day it
+-- appeared. Three files in this repo said it carried neither, so for five
+-- weeks nobody read them. Measured 2026-11-09: 93,755,137 reach in October,
+-- never NULL, against 116,746,507 impressions.
+--
+-- THE HONEST LIMIT, up front. Meta de-duplicates reach inside each row it
+-- returns, so this figure is true for one bucket on one day in one ad
+-- asset and nowhere above that. It therefore answers:
+--
+--   "how often did a 25-34 woman see this campaign on this day"   -> yes
+--   "how many people did this campaign reach in October"          -> NO
+--
+-- The second question needs campaign-level reach, which is what
+-- facebook_ads_weld.campaign_insight is for. That table has been frozen
+-- since 2026-09-22 and its last sync was 22 September 00:37, so the
+-- question has no answer in the warehouse today. Raised with the source
+-- owner 2026-11-09. Do not answer it by summing this table instead.
+--
+-- WHAT SUMMING IT WOULD DO. A person in one bucket who saw two assets
+-- is two rows here, and summing the assets counts them twice. Summing the
+-- age buckets of a campaign is worse: Meta de-duplicates each bucket
+-- separately, so the overlap between buckets is unbounded. The live proof
+-- is in the ad-level fact, where reach summed over one campaign reads
+-- 28,830,454 against 29,811,856 impressions -- a frequency of 1.03, which
+-- would mean almost every impression went to a new person.
+--
+-- FREQUENCY IS NOT STORED. The source publishes it, and it is exactly
+-- impressions / reach -- verified identical to four decimals on all
+-- 310,005 rows with reach > 0. A stored ratio averages wrong the moment
+-- Looker rolls it up, so v_age_gender_reach_daily rebuilds it with
+-- metrics.frequency over the two columns here.
+--
+-- THE QUARANTINE, and where it bends. fct_dv360_reach_daily and
+-- fct_teads_reach_daily hold nothing additive at all. This one holds one
+-- impression column, for the reason given in its description, exactly as
+-- fct_cm360_reach_daily holds clicks. The defence that remains is the
+-- name: impressions_same_grain cannot be mistaken for delivery, and no
+-- spend, click or conversion column is here to be charted next to reach.
+--
+-- NO GROUP BY, ON PURPOSE. Staging is already one row per this key, and
+-- aggregating anyway would be the wrong instinct here: a SUM(reach) would
+-- quietly absorb a staging grain break into a bigger, plausible-looking
+-- number and the uniqueKey assertion above would still pass. Selecting the
+-- rows straight through means a grain break fails the assertion loudly
+-- instead, which for a non-additive metric is the only safe default.
+
+SELECT
+  date,
+  account_id,
+  campaign_id,
+  age,
+  gender,
+  ad_format_asset_id,
+
+  reach,
+  impressions AS impressions_same_grain
+FROM ${ref("stg_meta_age_gender")}
+WHERE date IS NOT NULL
+  AND campaign_id IS NOT NULL
+  AND reach IS NOT NULL

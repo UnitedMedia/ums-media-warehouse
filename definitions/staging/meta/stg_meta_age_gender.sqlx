@@ -3,43 +3,88 @@ config {
   schema: constants.SCHEMAS.meta_staging,
   name: "stg_meta_age_gender",
   tags: ["meta", "staging"],
-  description: "Meta age x gender at CAMPAIGN x DAY. The only Meta demographic source carrying campaign_id — every demographics_* table stops at account level.",
+  description: "Meta age x gender at CAMPAIGN x DAY x AD FORMAT. The only Meta demographic source carrying campaign_id — every demographics_* table stops at account level.",
   columns: {
     campaign_id: "What makes this table worth having. No demographics_* table has it.",
-    clicks_all: "ALL-INTERACTION clicks, Meta's `clicks`. NOT link clicks — the source carries no inline_link_clicks, so CTR and CPC here are NOT comparable with v_ad_daily, which uses link_clicks."
+    ad_format_asset_id: "PART OF THE GRAIN, and the reason this view was rewritten on 2026-11-09. A Meta asset id, delivered by Weld as a FLOAT and cast to a string here. 99 distinct values, never NULL. What it identifies is not documented by the source beyond the name.",
+    clicks_all: "ALL-INTERACTION clicks, Meta's `clicks`. Likes, comments, profile taps and photo expands are in here, so CTR and CPC built on it read HIGHER than the ones in v_ad_daily. Use link_clicks to compare with that view.",
+    link_clicks: "Meta's inline_link_clicks. Comparable with v_ad_daily. Available since the source appeared and unused until 2026-11-09.",
+    reach: "NON-ADDITIVE. De-duplicated by Meta at exactly this grain. Do not carry it into a table that holds impressions — it belongs in fct_meta_age_gender_reach_daily."
   }
 }
 
+-- AD_FORMAT_ASSET_ID IS PART OF THE GRAIN. Until 2026-11-09 this view keyed on
+-- date + campaign + age + gender only, and the QUALIFY below silently threw
+-- away every row that differed from its neighbour only by asset id.
+--
+-- Measured on the raw table, 2026-11-09:
+--   310,121 rows for 300,234 date+campaign+age+gender keys
+--   9,496 keys carry more than one row
+--   all 9,496 differ on ad_format_asset and NONE on _weld_synced
+--
+-- So the extra rows were never re-syncs. They were real delivery, and
+-- dropping them cost, in October alone:
+--   694,133 impressions, 3,929.75 spend, 12,475 all-interaction clicks
+--
+-- That is also the 0.5% that looked like harmless de-duplication when the
+-- feed's coverage was being measured against ad_roas_insight. It was not
+-- de-duplication. It was loss, on our side.
+--
+-- IT IS AN ID, NOT A FORMAT NAME, AND IT ARRIVES AS A FLOAT. The values are
+-- 13- to 18-digit integers -- 120212630075690050 and the like -- so Weld is
+-- storing a Meta asset id in a FLOAT64 column. Two consequences:
+--
+--   * It cannot be used directly. BigQuery refuses a FLOAT64 in a window
+--     PARTITION BY, and clustering or asserting uniqueness on a float is a
+--     bad idea anyway. It is cast through INT64 to STRING here, once, so
+--     everything downstream gets a clean id.
+--
+--   * The largest values exceed 2^53, which is where FLOAT64 stops being
+--     able to hold consecutive integers. Any precision those ids lost, they
+--     lost in the source before we saw them. It does not affect this view's
+--     job: casting leaves 99 distinct values, the same 99 the float has, so
+--     it still separates exactly the groups the source separated. Do not
+--     treat the id as a key into Meta's own asset tables without checking
+--     it against them first.
+--
+-- THE QUALIFY STAYS, now keyed correctly. There is no re-syncing in this
+-- source today, so it is a no-op — but Weld re-syncs every other table in
+-- the feed, and when it starts here the guard has to already be in place.
+--
 -- DAILY SINCE 2026-10-12. Weld switched this custom report to
 -- time_increment: 1 and the schema changed with it: date_start and
 -- date_stop are gone, replaced by a single `date`.
 --
--- What it used to be, and why the old code looked the way it did: every
--- row was a ROLLING 7-DAY WINDOW, with a new window starting every day, so
--- each day's spend appeared in seven rows. SUM(spend) over the whole table
--- returned 29.2M against a true figure near 4M. Staging kept only Monday
--- starts, which tile the calendar exactly once.
+-- What it used to be: every row was a ROLLING 7-DAY WINDOW, with a new
+-- window starting every day, so each day's spend appeared in seven rows.
+-- SUM(spend) over the whole table returned 29.2M against a true ~4M.
+-- Staging kept only Monday starts, which tile the calendar exactly once.
+-- None of that is needed now.
 --
--- None of that is needed now. Verified 2026-10-12: 600,800 rows, 105 days
--- from 2026-06-30, spend 4,456,568.88 -- about 42k/day, consistent with the
--- 37,867 measured for a single day in September.
---
--- assert_meta_age_gender_grain now watches for duplicates instead of for
--- window length. If Weld ever reverts, date_start/date_stop come back and
--- this view fails on a missing column, which is loud enough.
+-- REACH AND LINK CLICKS ARE CARRIED FROM 2026-11-09. Both were in the
+-- source all along. Three files documented them as absent; they were not
+-- absent, they were unread. frequency is deliberately NOT carried: it is
+-- exactly impressions / reach, verified identical on all 310,005 rows with
+-- reach > 0, and a stored ratio rolls up wrong. metrics.frequency rebuilds
+-- it in the reporting view instead.
 
 SELECT
-  DATE(date)                   AS date,
-  CAST(account_id  AS STRING)  AS account_id,
-  CAST(campaign_id AS STRING)  AS campaign_id,
-  campaign_name                AS campaign_name_raw,
+  DATE(date)                          AS date,
+  CAST(account_id  AS STRING)         AS account_id,
+  CAST(campaign_id AS STRING)         AS campaign_id,
+  campaign_name                       AS campaign_name_raw,
   age,
   gender,
-  CAST(spend       AS NUMERIC) AS spend,
-  CAST(impressions AS INT64)   AS impressions,
-  CAST(clicks      AS INT64)   AS clicks_all
+  CAST(CAST(ad_format_asset AS INT64) AS STRING)
+                                      AS ad_format_asset_id,
+  CAST(spend              AS NUMERIC) AS spend,
+  CAST(impressions        AS INT64)   AS impressions,
+  CAST(clicks             AS INT64)   AS clicks_all,
+  CAST(inline_link_clicks AS INT64)   AS link_clicks,
+  CAST(reach              AS INT64)   AS reach
 FROM ${ref({ schema: constants.DATASETS.meta, name: "age_gender" })}
 QUALIFY ROW_NUMBER() OVER (
-  PARTITION BY DATE(date), CAST(campaign_id AS STRING), age, gender
+  PARTITION BY DATE(date), CAST(campaign_id AS STRING), age, gender,
+               CAST(CAST(ad_format_asset AS INT64) AS STRING)
   ORDER BY _weld_synced DESC
 ) = 1

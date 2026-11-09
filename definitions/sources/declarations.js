@@ -127,13 +127,22 @@ const META_TABLES = [
   // certainly a hand-built Weld model rather than a standard sync — treat
   // it as something that can change without notice.
   //
-  // ROLLING 7-DAY WINDOWS, not days. There is no `date` column: every row
-  // spans date_start..date_stop = 6 days, and a new window starts EVERY
-  // DAY. All 723,638 rows overlap six of their neighbours, so an unfiltered
-  // SUM(spend) returns 28.3M against a true ~3.8M. stg_meta_age_gender
-  // keeps only Monday starts, which tile the calendar exactly once.
-  // Verified 2026-10-02 against ad_roas_insight: every campaign ratio
-  // 1.000, diff 0.00.
+  // DAILY SINCE 2026-10-12. It arrived as ROLLING 7-DAY WINDOWS -- no `date`
+  // column, every row spanning date_start..date_stop = 6 days, a new window
+  // every day, so an unfiltered SUM(spend) returned 28.3M against a true
+  // ~3.8M. Weld switched it to time_increment: 1 and the columns changed
+  // with it. That is the "can change without notice" above, already spent.
+  //
+  // ITS GRAIN IS ONE COLUMN FINER THAN IT LOOKS: date + campaign + age +
+  // gender + ad_format_asset, a Meta asset id delivered as a FLOAT. Staging
+  // keyed without the asset id until 2026-11-09 and its de-duplication was
+  // therefore discarding real rows -- 694,133 impressions in October alone.
+  //
+  // IT ALSO CARRIES reach, frequency AND inline_link_clicks. Three files in
+  // this repo described those as absent, so nobody read them for five weeks.
+  // They are read now. If a further breakdown column ever appears, the same
+  // silent loss happens again; assert_meta_age_gender_grain reconciles
+  // staging volume against this table to catch exactly that.
   "age_gender",
 
   "demographics_age_and_gender",             // no ad_id
