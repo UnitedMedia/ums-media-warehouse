@@ -1,0 +1,77 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.tiktok_reporting,
+  name: "v_campaign_reach_lifetime",
+  tags: ["tiktok", "reporting"],
+  description: "TikTok reach per campaign, cumulative since the campaign started. THE VIEW FOR 'how many people did this campaign reach'. One row per campaign — the latest reading. Never blend it with v_daily or v_campaign_daily.",
+  columns: {
+    reach: "NON-ADDITIVE. People reached since the campaign began. NULL where the source gave zero — see has_reach_figure. Do NOT sum it across campaigns: someone reached by two of them is in both figures.",
+    has_reach_figure: "FALSE where TikTok returned zero. That is NOT the same as reaching nobody: measured 2026-11-10, 160 campaigns with real delivery came back as zero. Filter on this before charting, or the chart shows a confident zero for campaigns that ran.",
+    reach_as_of: "The day this figure was read. For a campaign still running it moves; for a finished one it stops at the last day the campaign was in the feed.",
+    is_still_moving: "TRUE where the figure grew at the most recent reading, so the campaign is still delivering and this number is not final.",
+    days_observed: "How many daily readings exist. 1 means we have only ever seen one value and cannot tell whether it is final."
+  }
+}
+
+-- THE ONLY PLACE THE QUESTION GETS A STRAIGHT ANSWER.
+--
+-- "How many people did this campaign reach" cannot be answered from
+-- v_reach_daily, or from any other reach table in this warehouse. Reach is
+-- de-duplicated within whatever period the platform computed it for, so
+-- daily figures do not add up to a campaign total and line-item figures do
+-- not add up to a campaign either. TikTok computes this one over the
+-- campaign's whole life, which is why it is the one that works.
+--
+-- No other channel has an equivalent. Meta's campaign_insight froze on
+-- 2026-09-22 and covered 2 accounts of 80 while it ran.
+--
+-- ONE ROW PER CAMPAIGN: the latest reading. The history behind it is in
+-- fct_tiktok_campaign_reach_lifetime if you need reach as of a past date.
+--
+-- READ is_still_moving BEFORE QUOTING A NUMBER. A running campaign's reach
+-- is a figure in progress. Where days_observed is 1 the column is NULL,
+-- because a single reading says nothing about whether it has settled --
+-- true for every campaign until this table has been accumulating for two
+-- days.
+--
+-- COVERAGE IS ABOUT 58%, NOT 100%. Of 2,154 campaigns in the source, 220
+-- carry a figure above zero. Of the ~380 that actually delivered in the
+-- window, 220 have one. The rest come back as zero, and 160 of those did
+-- deliver -- so the zero is missing data, not a measurement. This view
+-- turns it into NULL and flags it, because a dashboard bar at zero is a
+-- claim we cannot support.
+--
+-- STILL NOT POSSIBLE: reach for a date range inside the campaign. The
+-- figure is cumulative and the difference between two readings is not the
+-- people reached in between. Ask TikTok for the range.
+
+WITH ultima AS (
+  SELECT
+    campaign_id,
+    advertiser_id,
+    reach,
+    snapshot_date,
+    COUNT(*)  OVER (PARTITION BY campaign_id) AS days_observed,
+    LAG(reach) OVER (PARTITION BY campaign_id ORDER BY snapshot_date) AS reach_anterior
+  FROM ${ref("fct_tiktok_campaign_reach_lifetime")}
+  QUALIFY ROW_NUMBER() OVER (
+    PARTITION BY campaign_id ORDER BY snapshot_date DESC
+  ) = 1
+)
+
+SELECT
+  u.campaign_id,
+  d.campaign_name,
+  u.advertiser_id,
+  d.advertiser_name,
+  d.objective,
+  d.objective_type,
+  d.campaign_status,
+
+  NULLIF(u.reach, 0)   AS reach,
+  (u.reach > 0)        AS has_reach_figure,
+  u.snapshot_date      AS reach_as_of,
+  u.days_observed,
+  IF(u.days_observed > 1, u.reach > IFNULL(u.reach_anterior, 0), NULL) AS is_still_moving
+FROM ultima u
+LEFT JOIN ${ref("dim_tiktok_campaign")} d USING (campaign_id)

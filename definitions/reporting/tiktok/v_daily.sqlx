@@ -9,7 +9,7 @@ config {
     avg_play_time_per_user: "Same caveat, weighted by reach.",
     spend: "Advertiser currency, from dim_tiktok_ad. No TikTok report table carries a currency of its own.",
     results: "Counts whatever the campaign optimised for (objective_type). Two campaigns with different objectives have incomparable results — always show objective_type alongside.",
-    reach: "NON-ADDITIVE above ad x day. Set aggregation to MAX in Looker, never SUM.",
+    reach: "MOVED 2026-11-10 to v_reach_daily, at CAMPAIGN grain. Ad-level reach is not published there on purpose: TikTok de-duplicates inside each ad, so a person reached by two ads of the same campaign is two rows, and no roll-up of this view could have been correct.",
     completion_rate: "video_views_p100 / impressions. TikTok also gives 25/50/75 quartiles for a drop-off curve."
   }
 }
@@ -41,7 +41,6 @@ SELECT
 
   f.impressions,
   f.clicks,
-  f.reach,
   f.spend,
   f.conversions,
   f.results,
@@ -68,7 +67,6 @@ SELECT
   ${metrics.cpm("f.spend", "f.impressions")}                       AS cpm,
   ${metrics.ctr("f.clicks", "f.impressions")}                      AS ctr,
   ${metrics.cpc("f.spend", "f.clicks")}                            AS cpc,
-  ${metrics.frequency("f.impressions", "f.reach")}                 AS frequency,
   ${metrics.completionRate("f.video_views_p100", "f.impressions")} AS completion_rate,
   ${metrics.viewRate("f.video_views_p25", "f.impressions")}        AS view_rate_p25,
   ${metrics.viewRate("f.video_views_p50", "f.impressions")}        AS view_rate_p50,

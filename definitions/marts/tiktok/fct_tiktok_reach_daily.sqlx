@@ -1,0 +1,68 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.tiktok_marts,
+  name: "fct_tiktok_reach_daily",
+  tags: ["tiktok", "marts"],
+  description: "TikTok reach at campaign x day. ISOLATED BY DESIGN: the one impression column here is frequency's denominator and nothing else. Never union or blend this with fct_tiktok_campaign_daily — it is the same delivery, counted again.",
+  bigquery: {
+    partitionBy: "date",
+    clusterBy: ["advertiser_id", "campaign_id"]
+  },
+  assertions: {
+    uniqueKey: ["date", "campaign_id"],
+    nonNull: ["date", "campaign_id"]
+  },
+  columns: {
+    reach: "NON-ADDITIVE. People, de-duplicated by TikTok within this day and nowhere else. In Looker Studio set the aggregation to MAX, never SUM.",
+    impressions_same_grain: "NOT a delivery figure — fct_tiktok_campaign_daily owns those. This exists so frequency has a denominator at the same grain as the reach beside it. Named this way so nobody charts it as impressions."
+  }
+}
+
+-- WHY THIS TABLE EXISTS.
+--
+-- TikTok has carried reach since the feed was built, in
+-- campaign_daily_report and ad_daily_report, and both facts emitted it
+-- straight into the reporting views next to impressions and spend. Every
+-- other channel in this warehouse quarantines reach — DV360, CM360, Teads
+-- and, since 2026-11-09, Meta. TikTok was the one that did not.
+--
+-- WHAT THAT COST, measured 2026-11-10 on the live view. One campaign over
+-- 14 days:
+--   SUM(impressions)  25,448,770
+--   SUM(reach)        24,265,568   -> frequency 1.05
+--   MAX(reach)         2,435,159   <- the largest true figure
+-- A frequency of 1.05 would mean almost every impression went to a person
+-- who had never seen the campaign. It is not a rounding problem; the
+-- summed figure is ten times the real one and looks entirely plausible.
+--
+-- The column documentation already said NON-ADDITIVE in four places. That
+-- is not a defence: Looker sums numeric columns by default and nobody
+-- reads a tooltip before dragging a field. Separation is the defence.
+--
+-- CAMPAIGN GRAIN, NOT AD GRAIN. TikTok de-duplicates reach inside each row
+-- it returns, so ad-level reach cannot be rolled up to a campaign — the
+-- same person reached by two ads is counted twice. Campaign x day is the
+-- coarsest grain TikTok publishes daily, so it is the useful one, and
+-- campaign_daily_report is also the complete spend source while the
+-- ad-level report misses ~1.4%.
+--
+-- WHAT IT STILL CANNOT ANSWER: "how many people did this campaign reach in
+-- October". Daily reach does not sum across days any more than it sums
+-- across ads. That needs either a monthly request to TikTok or the
+-- lifetime figure in fct_tiktok_campaign_reach_lifetime.
+--
+-- FREQUENCY IS NOT STORED. A ratio averages wrong the moment Looker rolls
+-- it up, so v_reach_daily rebuilds it with metrics.frequency over the two
+-- columns here. Same rule as every other view in the project.
+
+SELECT
+  date,
+  advertiser_id,
+  campaign_id,
+
+  SUM(reach)       AS reach,
+  SUM(impressions) AS impressions_same_grain
+FROM ${ref("stg_tiktok_campaign_daily")}
+WHERE date IS NOT NULL
+  AND campaign_id IS NOT NULL
+GROUP BY 1, 2, 3

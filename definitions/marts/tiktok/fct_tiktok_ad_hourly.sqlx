@@ -21,7 +21,6 @@ SELECT
   ad_id,
   SUM(impressions)            AS impressions,
   SUM(clicks)                 AS clicks,
-  SUM(reach)                  AS reach,
   SUM(spend)                  AS spend,
   SUM(conversion)             AS conversions,
   SUM(result)                 AS results,

@@ -1,0 +1,69 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.tiktok_staging,
+  name: "stg_tiktok_campaign_reach_lifetime",
+  tags: ["tiktok", "staging"],
+  description: "TikTok reach per campaign, CUMULATIVE SINCE THE CAMPAIGN STARTED. Three columns and nothing else — the source has no date, no delivery and no money, and none is added here.",
+  columns: {
+    reach: "NON-ADDITIVE, and not a daily figure. People reached since the campaign began, as of the last extraction. Summing it across campaigns double-counts anyone reached by two of them.",
+    snapshot_date: "Added here, not in the source. The date this pipeline read the row — see the note below for why the table has no date of its own."
+  }
+}
+
+-- THE SOURCE HAS NO DATE, AND THAT IS THE WHOLE PROBLEM.
+--
+-- keboola_tiktok.tiktok_campaign_reach_lifetime is three columns:
+-- ex_advertiser_id, campaign_id, reach. One row per campaign, overwritten
+-- on every extraction. 2,154 campaigns across 81 accounts on 2026-11-10.
+--
+-- It is the only campaign-level reach in this warehouse, for any channel.
+-- Meta's equivalent froze on 2026-09-22 and covered 2 accounts when it
+-- ran; DV360, CM360 and Teads publish reach per line item or creative,
+-- which cannot be rolled up to a campaign.
+--
+-- WITHOUT A DATE IT LOSES EXACTLY THE NUMBER PEOPLE WANT. A campaign that
+-- ends leaves the extract, its row disappears, and the final reach figure
+-- is gone. That figure is what anyone reporting on a closed campaign asks
+-- for first.
+--
+-- So snapshot_date is stamped here and fct_tiktok_campaign_reach_lifetime
+-- keeps the history. From 2026-11-10 forward the curve accumulates and a
+-- finished campaign keeps its last reading. Before that date there is one
+-- point per campaign and no more; nothing can recover what was overwritten.
+--
+-- WHAT A DAILY SNAPSHOT STILL CANNOT GIVE YOU: reach between two dates.
+-- The figure is cumulative, so subtracting 1 October from 31 October does
+-- not leave the people reached in between -- anyone counted in both
+-- readings cancels out, and how many that is cannot be known. A date range
+-- has to be requested from TikTok as that range.
+--
+-- VALIDATED 2026-11-10 against campaign_daily_report: 220 campaigns
+-- matched, mean frequency 7.16, and zero campaigns where reach exceeded
+-- impressions -- the one check that would have proved the figure wrong.
+--
+-- ZERO DOES NOT MEAN NOBODY WAS REACHED. Measured the same day: of 2,154
+-- campaigns here, 220 carry a reach above zero and 1,934 carry exactly
+-- zero -- but 160 of those 1,934 DID deliver impressions, some of them
+-- hundreds of thousands. So a zero is "TikTok did not give us a figure"
+-- at least as often as it is "this campaign reached nobody", and from
+-- this table the two are indistinguishable.
+--
+-- The zero is kept here, raw, because staging does not interpret. The
+-- reporting view converts it to NULL: a bar at zero on a dashboard is a
+-- claim, and it is a claim we cannot support for 160 campaigns. NULL says
+-- what is actually true, which is that we do not know.
+--
+-- Of the ~380 campaigns that delivered in the window, 220 have a real
+-- figure. Treat coverage as roughly 58%, not 100%.
+
+SELECT
+  CURRENT_DATE()                      AS snapshot_date,
+  CAST(ex_advertiser_id AS STRING)    AS advertiser_id,
+  CAST(campaign_id      AS STRING)    AS campaign_id,
+  SAFE_CAST(reach AS INT64)           AS reach
+FROM ${ref({ schema: constants.DATASETS.tiktok_keboola, name: "tiktok_campaign_reach_lifetime" })}
+WHERE campaign_id IS NOT NULL
+QUALIFY ROW_NUMBER() OVER (
+  PARTITION BY CAST(campaign_id AS STRING)
+  ORDER BY SAFE_CAST(reach AS INT64) DESC
+) = 1

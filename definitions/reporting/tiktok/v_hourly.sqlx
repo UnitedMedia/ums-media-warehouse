@@ -3,7 +3,10 @@ config {
   schema: constants.SCHEMAS.tiktok_reporting,
   name: "v_hourly",
   tags: ["tiktok", "reporting"],
-  description: "TikTok dayparting: ad x hour. Its own chart and its own Looker data source — the same spend as v_daily at a finer grain, so never blend the two."
+  description: "TikTok dayparting: ad x hour. Its own chart and its own Looker data source — the same spend as v_daily at a finer grain, so never blend the two.",
+  columns: {
+    reach: "MOVED 2026-11-10. Reach per ad per HOUR was the least summable figure in the whole feed: TikTok de-duplicates inside each hour, so adding a day's 24 rows counts one person up to 24 times. Campaign x day reach is in v_reach_daily; a campaign total is in v_campaign_reach_lifetime."
+  }
 }
 
 SELECT
@@ -18,7 +21,6 @@ SELECT
   d.currency,
   f.impressions,
   f.clicks,
-  f.reach,
   f.spend,
   f.conversions,
   f.results,

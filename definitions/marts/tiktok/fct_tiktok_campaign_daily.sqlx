@@ -3,7 +3,7 @@ config {
   schema: constants.SCHEMAS.tiktok_marts,
   name: "fct_tiktok_campaign_daily",
   tags: ["tiktok", "marts"],
-  description: "TikTok campaign x day. THE SOURCE OF TRUTH FOR TIKTOK SPEND — complete, where the ad-level fact is not. This is what core.fct_ad_performance_daily reads.",
+  description: "TikTok campaign x day. THE SOURCE OF TRUTH FOR TIKTOK SPEND — complete, where the ad-level fact is not. This is what core.fct_ad_performance_daily reads. Reach lives in fct_tiktok_reach_daily, quarantined.",
   bigquery: {
     partitionBy: "date",
     clusterBy: ["advertiser_id", "campaign_id"]
@@ -13,7 +13,7 @@ config {
     nonNull: ["date", "campaign_id"]
   },
   columns: {
-    reach: "NON-ADDITIVE. Deduplicated by TikTok at campaign x day; a month's reach is not the sum of its days.",
+    reach: "NOT HERE SINCE 2026-11-10, and it is NOT unavailable — see fct_tiktok_reach_daily. It was removed because it is non-additive and every other column here is additive, which is the pairing that produces a believable wrong number.",
     skan_conversion: "iOS SKAdNetwork. A separate, privacy-limited attribution path — never add it to conversion."
   }
 }
@@ -24,7 +24,6 @@ SELECT
   campaign_id,
   SUM(impressions)                 AS impressions,
   SUM(clicks)                      AS clicks,
-  SUM(reach)                       AS reach,
   SUM(spend)                       AS spend,
   SUM(conversion)                  AS conversions,
   SUM(result)                      AS results,

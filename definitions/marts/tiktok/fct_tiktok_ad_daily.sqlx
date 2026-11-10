@@ -15,7 +15,7 @@ config {
   columns: {
     avg_play_time_per_view: "NON-ADDITIVE. An impression-weighted average of a per-row average — correct at this grain, approximate above it. Set Looker aggregation to MAX or rebuild as a calculated field.",
     avg_play_time_per_user: "Same caveat, weighted by reach. TikTok publishes both per-view and per-user; they are different numbers.",
-    reach: "NON-ADDITIVE above ad x day."
+    reach: "NOT HERE SINCE 2026-11-10 — see fct_tiktok_reach_daily. It is still READ from staging, as the weight for avg_play_time_per_user, but it is not emitted as a column: a non-additive metric sitting beside 30 additive ones is the whole reason that view existed."
   }
 }
 
@@ -25,7 +25,6 @@ SELECT
   ad_id,
   SUM(impressions)                 AS impressions,
   SUM(clicks)                      AS clicks,
-  SUM(reach)                       AS reach,
   SUM(spend)                       AS spend,
   SUM(conversion)                  AS conversions,
   SUM(result)                      AS results,

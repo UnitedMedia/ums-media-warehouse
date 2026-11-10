@@ -221,6 +221,36 @@ const KEBOOLA_TIKTOK_TABLES = [
                        // WAP, UNKNOWN. Carries video_watched_2s,
                        // video_watched_6s and video_play_actions, and
                        // does NOT carry conversion or result.
+
+  // CAMPAIGN LIFETIME REACH. Declared 2026-11-10, five weeks after it
+  // appeared. The header above said "ONE table" and nobody looked again.
+  //
+  // Three columns: ex_advertiser_id, campaign_id, reach. 2,154 campaigns
+  // across 81 accounts. It is the ONLY campaign-level reach in the
+  // warehouse for any channel -- Meta's equivalent, campaign_insight,
+  // has been frozen since 2026-09-22 and covered 2 accounts when it ran.
+  //
+  // CUMULATIVE SINCE CAMPAIGN START, and there is no date column. Each
+  // run overwrites the previous value, so the table answers "how many
+  // people has this campaign reached so far" and nothing else. Two
+  // consequences, both load-bearing:
+  //
+  //   * A finished campaign's final figure is lost the moment the
+  //     campaign leaves the extract. That is exactly the number anyone
+  //     reporting on a closed campaign wants.
+  //   * "Reach in October" cannot be derived. Subtracting the value on
+  //     1 October from the value on 31 October does NOT give the people
+  //     reached in between -- anyone counted in both windows cancels
+  //     out. A date range needs its own request to TikTok.
+  //
+  // fct_tiktok_campaign_reach_lifetime snapshots it daily so the first
+  // problem stops getting worse. The second has no fix on our side.
+  //
+  // Validated 2026-11-10 against campaign_daily_report: 220 campaigns
+  // matched, mean frequency 7.16, and ZERO campaigns where reach
+  // exceeded impressions -- which is the one thing that would prove the
+  // figure wrong.
+  "tiktok_campaign_reach_lifetime",
 ];
 
 // ---------------------------------------------------------------------

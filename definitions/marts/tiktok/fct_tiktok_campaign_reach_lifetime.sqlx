@@ -1,0 +1,70 @@
+config {
+  type: "incremental",
+  schema: constants.SCHEMAS.tiktok_marts,
+  name: "fct_tiktok_campaign_reach_lifetime",
+  tags: ["tiktok", "marts"],
+  description: "TikTok cumulative reach per campaign, one reading per day. THE ONLY CAMPAIGN-LEVEL REACH IN THE WAREHOUSE, for any channel. Append-only on purpose: the source keeps no history and this table is that history.",
+  bigquery: {
+    partitionBy: "snapshot_date",
+    clusterBy: ["campaign_id"]
+  },
+  assertions: {
+    uniqueKey: ["snapshot_date", "campaign_id"],
+    nonNull: ["snapshot_date", "campaign_id"]
+  },
+  columns: {
+    reach: "NON-ADDITIVE, and CUMULATIVE since the campaign started — not the reach of snapshot_date. Do not sum it across days or across campaigns.",
+    snapshot_date: "The day this pipeline read the source. Part of the key."
+  }
+}
+
+-- APPEND-ONLY, AND THIS TIME THAT IS THE CORRECT ANSWER.
+--
+-- On 2026-11-03 four marts in this project were converted FROM
+-- incremental append-only TO full rebuilds, because append-only was
+-- ignoring upstream restatements and had cost 26,900 CM360 clicks. The
+-- rule that came out of it: if the source holds the history, rebuild from
+-- the source.
+--
+-- This table is the case that rule does not cover. The source holds NO
+-- history. keboola_tiktok.tiktok_campaign_reach_lifetime is one row per
+-- campaign, overwritten on every extraction, with no date column at all.
+-- A full rebuild here would produce a single day's reading and discard
+-- everything previously captured -- the exact failure the 03-11 change was
+-- protecting against, arrived at from the opposite direction.
+--
+-- So the history lives here. There is no restatement to miss, because
+-- yesterday's reading is not a worse version of today's: it is a different
+-- measurement, of a different moment, and both are true.
+--
+-- THE GUARD. The incremental filter compares against MAX(snapshot_date)
+-- already stored, so a second run on the same day inserts nothing and the
+-- uniqueKey assertion stays satisfied. Running twice is a no-op, not a
+-- duplicate.
+--
+-- WHAT THIS BUYS. From the first run forward:
+--   * a finished campaign keeps its final figure instead of vanishing
+--     from the extract with it
+--   * "reach as of any past date" becomes answerable
+--   * the cumulative curve can be charted
+--
+-- WHAT IT DOES NOT BUY, and nothing on our side will: reach between two
+-- dates. The figure is cumulative, so the difference between two readings
+-- is not the people reached in between -- anyone present in both cancels
+-- out, and that overlap is unknowable from these numbers. A date range has
+-- to be requested from TikTok as that range.
+--
+-- BACKFILL IS IMPOSSIBLE. Every reading before the first run was
+-- overwritten at source. The table starts with one point per campaign.
+
+SELECT
+  snapshot_date,
+  advertiser_id,
+  campaign_id,
+  reach
+FROM ${ref("stg_tiktok_campaign_reach_lifetime")}
+
+${when(incremental(),
+`WHERE snapshot_date > (
+   SELECT IFNULL(MAX(snapshot_date), DATE '1900-01-01') FROM ${self()}
+ )`)}

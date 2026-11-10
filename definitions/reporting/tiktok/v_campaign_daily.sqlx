@@ -6,7 +6,7 @@ config {
   description: "TikTok campaign x day. COMPLETE spend — use this for any TikTok total. v_daily is ~1.4% lower because TikTok cannot attribute every impression to a named ad.",
   columns: {
     spend: "The complete TikTok figure, in advertiser currency.",
-    reach: "NON-ADDITIVE. Set aggregation to MAX in Looker.",
+    reach: "MOVED 2026-11-10 to v_reach_daily, which also carries frequency. It is not unavailable — it was taken out of this view because every other column here is additive and Looker sums numeric fields by default. Summed over 14 days on one real campaign it read 24,265,568 against 25,448,770 impressions, a frequency of 1.05; the true largest day was 2,435,159.",
     video_watched_2s: "TikTok's own definition of a video VIEW for the Video Views objective. This, not video_plays, is the number a client sees in the TikTok interface.",
     video_watched_6s: "The stricter view definition. Campaigns bought on 6-second views optimise against this one.",
     video_plays: "Times the video STARTED. Always the largest of the video numbers and the least comparable to what TikTok reports as views."
@@ -31,7 +31,6 @@ SELECT
 
   f.impressions,
   f.clicks,
-  f.reach,
   f.spend,
   f.conversions,
   f.results,
@@ -55,7 +54,6 @@ SELECT
   ${metrics.cpm("f.spend", "f.impressions")}                       AS cpm,
   ${metrics.ctr("f.clicks", "f.impressions")}                      AS ctr,
   ${metrics.cpc("f.spend", "f.clicks")}                            AS cpc,
-  ${metrics.frequency("f.impressions", "f.reach")}                 AS frequency,
   ${metrics.completionRate("f.video_views_p100", "f.impressions")} AS completion_rate,
   ${metrics.viewRate("f.video_views_p25", "f.impressions")}        AS view_rate_p25,
   ${metrics.viewRate("f.video_views_p50", "f.impressions")}        AS view_rate_p50,
