@@ -1,9 +1,10 @@
 config {
   type: "incremental",
+  protected: true,
   schema: constants.SCHEMAS.tiktok_marts,
   name: "fct_tiktok_campaign_reach_lifetime",
   tags: ["tiktok", "marts"],
-  description: "TikTok cumulative reach per campaign, one reading per day. THE ONLY CAMPAIGN-LEVEL REACH IN THE WAREHOUSE, for any channel. Append-only on purpose: the source keeps no history and this table is that history.",
+  description: "TikTok cumulative reach per campaign, one reading per day. THE ONLY CAMPAIGN-LEVEL REACH IN THE WAREHOUSE, for any channel. Append-only on purpose: the source keeps no history and this table is that history. PROTECTED — a full refresh would destroy it and nothing could rebuild it.",
   bigquery: {
     partitionBy: "snapshot_date",
     clusterBy: ["campaign_id"]
@@ -56,6 +57,22 @@ config {
 --
 -- BACKFILL IS IMPOSSIBLE. Every reading before the first run was
 -- overwritten at source. The table starts with one point per campaign.
+--
+-- WHICH IS WHY protected: true IS SET. Everywhere else in this project a
+-- full refresh is the safe, correct thing to do -- it is how the CM360 and
+-- DV360 marts pick up restatements. Here it is the one action that
+-- destroys data: rebuilding from scratch writes today's single reading and
+-- deletes every earlier one, and the source cannot supply them again.
+--
+-- protected: true makes Dataform refuse to rebuild this table, so
+-- `dataform run --tags tiktok --full-refresh` stays safe for everything
+-- else in the tag. Without it, one routine full refresh of the TikTok tag
+-- silently erases however many months of curve had accumulated, and the
+-- loss would not show up in any assertion: the table would be freshly
+-- built, unique, non-null and current.
+--
+-- Do not remove protected: true to "clean up" the table. If it genuinely
+-- needs resetting, drop it by hand, knowing the history goes with it.
 
 SELECT
   snapshot_date,
