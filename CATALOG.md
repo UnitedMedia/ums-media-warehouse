@@ -43,9 +43,9 @@ correct no matter how Looker rolls it up; a ratio stored in a table does not.
 | TikTok spend — the complete total | `tiktok_reporting.v_campaign_daily` |
 | TikTok by ad, creative, video performance | `tiktok_reporting.v_daily` |
 | TikTok by hour | `tiktok_reporting.v_hourly` |
-| TikTok by age and gender | `tiktok_reporting.v_demographics_daily` |
-| TikTok by device platform | `tiktok_reporting.v_platform_daily` |
-| TikTok by country, language, or all breakdowns at once | `tiktok_reporting.v_breakdown_daily` |
+| TikTok by age and gender, device, country or language | `tiktok_reporting.v_breakdown_daily` |
+| TikTok **reach and frequency**, campaign × day | `tiktok_reporting.v_reach_daily` |
+| TikTok **how many people a campaign reached** | `tiktok_reporting.v_campaign_reach_lifetime` |
 | Google Ads spend, conversions, ROAS | `gads_reporting.v_daily` |
 | Google Ads by device and network | `gads_reporting.v_device_daily` |
 | Google Ads by ad group or ad | `gads_reporting.v_ad_group_daily`, `gads_reporting.v_ad_daily` |
@@ -431,6 +431,19 @@ All three facts **require a date filter on every query**.
 
 ## TikTok
 
+**Reach moved out of the delivery views on 2026-11-10.** It used to sit in
+`v_daily`, `v_campaign_daily` and `v_hourly` beside impressions and spend,
+where Looker sums it by default. One real campaign over 14 days summed to
+24,265,568 reach against 25,448,770 impressions — a frequency of 1.05, when
+the true largest single day was 2,435,159. It now lives in `v_reach_daily`
+(campaign × day) and `v_campaign_reach_lifetime` (campaign total), with
+nothing additive beside it.
+
+Ad-level and hourly reach are deliberately not republished anywhere. TikTok
+de-duplicates inside each ad and inside each hour, so no roll-up of them was
+ever correct.
+
+
 Source: Weld → `tiktok_ads`. **The only channel currently delivering fresh data
 every day.**
 
@@ -448,6 +461,8 @@ hard-coded, so three views maintained one query.
 | **`v_daily`** | ad × day | **The main one.** Every metric TikTok publishes at ad level, plus campaign, ad group and creative attributes. ~98.6% of spend — TikTok cannot attribute every impression to a named ad. |
 | **`v_campaign_daily`** | campaign × day | **COMPLETE spend.** The source of truth for TikTok money, and what `core` reads. |
 | **`v_breakdown_daily`** | ad × slice × day | Age/gender, country, language and platform. **Filter `breakdown_type`** — four cuts of the same spend. |
+| **`v_reach_daily`** | campaign × day | **Reach and frequency.** Quarantined, like the DV360, CM360, Teads and Meta reach views. Never blend it with the two above: same delivery, counted again. |
+| **`v_campaign_reach_lifetime`** | campaign | **The only campaign-level reach in the warehouse, for any channel.** Cumulative since the campaign started, which is what a report on a finished campaign needs. Coverage is ~58% of delivering campaigns; check `has_reach_figure` before charting. |
 | `v_hourly` | ad × hour | Dayparting. |
 
 **Play-time averages are non-additive.** `avg_play_time_per_view` and
