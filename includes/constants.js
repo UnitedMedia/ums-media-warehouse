@@ -121,6 +121,18 @@ const CHANNEL = {
 // Every partitioned fact in this project is PARTITION BY date. Some
 // carry requirePartitionFilter, which means any query — including a
 // downstream model — must filter on date or BigQuery refuses to run it.
+//
+// AND INCLUDING DATAFORM'S OWN ASSERTIONS. A table with
+// requirePartitionFilter must NOT declare uniqueKey, nonNull or
+// rowConditions in its config: Dataform generates those without a date
+// filter and every one of them fails on every run. Three marts already
+// hit this. Write the grain check by hand instead, with
+// allPartitions() in it — see assert_meta_ad_daily_grain.
+//
+// Null keys are the other half of that rule, and they are checked
+// against STAGING, never the mart: a NULL date lands in the __NULL__
+// partition, which the partition filter excludes, so a mart with
+// requirePartitionFilter cannot see its own null dates.
 // This is the filter those models use: wide enough to be a no-op,
 // narrow enough to satisfy BigQuery. Written once so it is never
 // fat-fingered into something that actually drops rows.

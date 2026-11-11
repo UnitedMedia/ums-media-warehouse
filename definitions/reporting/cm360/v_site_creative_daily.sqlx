@@ -14,7 +14,6 @@ config {
 }
 
 -- WHICH SITE, WHICH CREATIVE -- AND THE CLICKS HOLD UP AT THIS GRAIN.
---
 -- Every other CM360 detail view in this project loses clicks to the
 -- dimension count: v_daily keeps 40.6% of what the interface shows, because
 -- CM360 drops a click it cannot match on placement, ad, country and city all

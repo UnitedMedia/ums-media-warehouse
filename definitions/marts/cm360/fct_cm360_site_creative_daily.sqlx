@@ -9,13 +9,11 @@ config {
     clusterBy: ["campaign_id", "site_id", "creative_id"],
     requirePartitionFilter: true
   },
-  assertions: {
-    uniqueKey: ["date", "campaign_id", "site_id", "creative_id"],
-    nonNull: ["date", "campaign_id", "site_id", "creative_id"],
-    rowConditions: [
-      "impressions >= 0 AND clicks >= 0 AND media_cost >= 0"
-    ]
-  },
+  // NO assertions BLOCK, AND THAT IS NOT AN OVERSIGHT. Dataform generates
+  // uniqueKey / nonNull / rowConditions assertions WITHOUT a date filter,
+  // and this table carries requirePartitionFilter, so BigQuery refuses to
+  // run them. Grain is guarded by assert_cm360_site_creative_grain, which
+  // puts the filter in. Same arrangement as fct_meta_ad_daily.
   columns: {
     clicks: "Reconciled to cm360_reach, the campaign-level figure that matches the CM360 interface, at 99.99% — which is why this table is worth having. It is still NOT the figure anyone quotes: CM360 clicks come from the campaign report through v_campaign_daily, one report and one number. The reporting view exposes this as clicks_site_level for exactly that reason. Use it to rank sites and creatives against each other, which the campaign report cannot do.",
     is_click_tracking_only: "TRUE where there are clicks and no impressions — a tracking tag, not a served placement. 41.5% of all clicks. Exclude these rows from a CTR chart; never exclude them from a click total.",

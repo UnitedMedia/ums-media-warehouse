@@ -1,0 +1,71 @@
+config {
+  type: "assertion",
+  tags: ["meta", "monitoring"],
+  description: "fct_meta_placement_daily must hold one row per date + ad + publisher platform + position + device, with no null keys. A duplicate here double-counts that placement's spend."
+}
+
+-- An assertion FAILS if it returns rows. Empty result = healthy.
+--
+-- THIS REPLACES THE uniqueKey / nonNull / rowConditions ASSERTIONS that
+-- would normally sit in the table's config. Dataform generates those
+-- WITHOUT a date filter, and this table carries requirePartitionFilter, so
+-- BigQuery refuses to run them -- "Cannot query over table ... without a
+-- filter over column(s) 'date'". They failed on every run from the day the
+-- table was deployed, 2026-11-11, with nothing wrong in the data. Written
+-- by hand, the filter goes in.
+--
+-- THE NULL-KEY HALF RUNS AGAINST STAGING, not the mart, for the reason
+-- assert_meta_ad_daily_grain already gives: a row with a NULL date lands in
+-- the __NULL__ partition, which the partition filter excludes, so the mart
+-- cannot see its own null dates.
+--
+-- THE GRAIN IS FIVE COLUMNS. It was checked for a sixth before the key was
+-- set -- only campaign_name varies within a key, and a rename is not a
+-- grain. See stg_meta_placement.
+--
+-- clicks > impressions IS NOT CHECKED HERE, deliberately. 159 rows of
+-- 473,103 carry more clicks than impressions, none above 36 impressions,
+-- and that is Meta attributing a click in a window where the impression
+-- landed on another placement. It is in the column documentation, not in an
+-- assertion that would fire nightly over 0.0001% of delivery.
+
+WITH duplicate AS (
+  SELECT
+    'duplicate date + ad + placement' AS problem,
+    CAST(date AS STRING)              AS date,
+    ad_id,
+    COUNT(*)                          AS rows_affected
+  FROM ${ref("fct_meta_placement_daily")}
+  WHERE ${constants.allPartitions()}
+  GROUP BY date, ad_id, publisher_platform, platform_position, device_platform
+  HAVING COUNT(*) > 1
+),
+
+chei_nule AS (
+  SELECT
+    'null key in staging'             AS problem,
+    CAST(date AS STRING)              AS date,
+    ad_id,
+    COUNT(*)                          AS rows_affected
+  FROM ${ref("stg_meta_placement")}
+  WHERE date IS NULL OR ad_id IS NULL OR account_id IS NULL OR campaign_id IS NULL
+     OR publisher_platform IS NULL OR platform_position IS NULL
+     OR device_platform IS NULL
+  GROUP BY 1, 2, 3
+),
+
+negative AS (
+  SELECT
+    'negative impressions, clicks or spend' AS problem,
+    CAST(date AS STRING)                    AS date,
+    ad_id,
+    COUNT(*)                                AS rows_affected
+  FROM ${ref("fct_meta_placement_daily")}
+  WHERE ${constants.allPartitions()}
+    AND (impressions < 0 OR clicks < 0 OR spend < 0)
+  GROUP BY 1, 2, 3
+)
+
+SELECT * FROM duplicate
+UNION ALL SELECT * FROM chei_nule
+UNION ALL SELECT * FROM negative

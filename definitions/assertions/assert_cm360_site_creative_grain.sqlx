@@ -1,0 +1,69 @@
+config {
+  type: "assertion",
+  tags: ["cm360", "monitoring"],
+  description: "fct_cm360_site_creative_daily must hold one row per date + campaign + site + creative, with no null keys. Also the guard that catches cm360_basic starting to re-append its window the way every other CM360 table does."
+}
+
+-- An assertion FAILS if it returns rows. Empty result = healthy.
+--
+-- THIS REPLACES THE uniqueKey / nonNull / rowConditions ASSERTIONS that
+-- would normally sit in the table's config. Dataform generates those
+-- WITHOUT a date filter, and this table carries requirePartitionFilter, so
+-- BigQuery refuses to run them. They failed on every run from the day the
+-- table was deployed, 2026-11-11, with nothing wrong in the data.
+--
+-- IT CARRIES A SECOND JOB. stg_cm360_basic does not de-duplicate, alone
+-- among the CM360 staging models, because its source does not duplicate:
+-- 45,729 rows for 45,729 keys across all 60 days. Every other CM360 table
+-- re-appends its extraction window -- cm360_hourly at 1.14 copies per key,
+-- the old cm360_reach at 4.55 -- so cm360_basic behaving differently is a
+-- property that could stop being true without notice. This is what notices.
+--
+-- THE NULL-KEY HALF RUNS AGAINST STAGING. A NULL date lands in the
+-- __NULL__ partition, which the partition filter excludes, so the mart
+-- cannot see its own null dates.
+--
+-- clicks > impressions IS NOT CHECKED, deliberately, and it is not an
+-- anomaly here but the normal shape of the data: 41.5% of CM360 clicks
+-- arrive on rows with no impressions, because CM360 tracks clicks for
+-- placements it never served. The column is_click_tracking_only marks them.
+
+WITH duplicate AS (
+  SELECT
+    'duplicate date + campaign + site + creative' AS problem,
+    CAST(date AS STRING)                          AS date,
+    campaign_id,
+    COUNT(*)                                      AS rows_affected
+  FROM ${ref("fct_cm360_site_creative_daily")}
+  WHERE ${constants.allPartitions()}
+  GROUP BY date, campaign_id, site_id, creative_id
+  HAVING COUNT(*) > 1
+),
+
+chei_nule AS (
+  SELECT
+    'null key in staging'                         AS problem,
+    CAST(date AS STRING)                          AS date,
+    campaign_id,
+    COUNT(*)                                      AS rows_affected
+  FROM ${ref("stg_cm360_basic")}
+  WHERE date IS NULL OR campaign_id IS NULL
+     OR site_id IS NULL OR creative_id IS NULL
+  GROUP BY 1, 2, 3
+),
+
+negative AS (
+  SELECT
+    'negative impressions, clicks or media_cost'  AS problem,
+    CAST(date AS STRING)                          AS date,
+    campaign_id,
+    COUNT(*)                                      AS rows_affected
+  FROM ${ref("fct_cm360_site_creative_daily")}
+  WHERE ${constants.allPartitions()}
+    AND (impressions < 0 OR clicks < 0 OR media_cost < 0)
+  GROUP BY 1, 2, 3
+)
+
+SELECT * FROM duplicate
+UNION ALL SELECT * FROM chei_nule
+UNION ALL SELECT * FROM negative
