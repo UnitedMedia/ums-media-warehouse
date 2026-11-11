@@ -1,0 +1,72 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.cm360_reporting,
+  name: "v_site_creative_daily",
+  tags: ["cm360", "reporting"],
+  description: "CM360 by site and creative. THE view for 'which site and which creative got the clicks' — the only CM360 detail source whose clicks match the interface. Its own Looker data source; never blend it with v_daily or v_geo_daily.",
+  columns: {
+    clicks: "Matches the CM360 interface at 99.99%. v_daily, built on the six-dimension report, shows 40.6% of this.",
+    ctr: "Computed ONLY on rows that served impressions. A click-tracking row has no impression to divide by, so its CTR is NULL rather than infinite.",
+    is_click_tracking_only: "TRUE for a tracking tag: clicks, no impressions. Filter these OUT of a CTR or CPM chart and leave them IN a click total. 41.5% of all clicks are here, the bulk of it search click tracking.",
+    media_cost: "AD-SERVING FEE, not media spend. CPM of about 1 RON. Never chart it beside DV360, Meta or Google spend."
+  }
+}
+
+-- WHICH SITE, WHICH CREATIVE -- AND THE CLICKS ARE RIGHT.
+--
+-- Every other CM360 detail view in this project loses clicks to the
+-- dimension count: v_daily keeps 40.6% of what the interface shows, because
+-- CM360 drops a click it cannot match on placement, ad, country and city all
+-- at once. This view asks for three dimensions and keeps 99.99%.
+--
+-- So a creative comparison made here is defensible against the platform, and
+-- the same comparison made in v_daily is not.
+--
+-- WHAT THIS VIEW DOES NOT HAVE: country, city, placement, ad. Those are in
+-- v_geo_daily and v_daily, with their clicks. Pick the view by the question,
+-- and never put two of them in one chart -- they are the same delivery at
+-- different cuts, so a total across them counts it twice.
+--
+-- READ is_click_tracking_only BEFORE BUILDING A RATE. Of 1,148,317 clicks in
+-- the source, 476,367 arrive on rows with zero impressions, and they belong
+-- in the total -- the campaign report counts them too. The single largest is
+-- "DART Search : Google", where the impression happened on Google and CM360
+-- only ever recorded the click.
+--
+-- COVERAGE STARTS 2026-09-11.
+
+SELECT
+  f.date,
+  DATE_TRUNC(f.date, WEEK(MONDAY)) AS week,
+  DATE_TRUNC(f.date, MONTH)        AS month,
+
+  c.advertiser_id,
+  c.advertiser_name,
+  f.campaign_id,
+  COALESCE(c.campaign_name, f.campaign_name) AS campaign_name,
+  f.site_id,
+  f.site_name,
+  p.channel_group,
+  f.creative_id,
+  f.creative_name,
+
+  f.impressions,
+  f.clicks,
+  f.media_cost,
+  f.is_click_tracking_only,
+
+  IF(f.impressions > 0, ${metrics.ctr("f.clicks", "f.impressions")}, NULL)       AS ctr,
+  IF(f.impressions > 0, ${metrics.cpm("f.media_cost", "f.impressions")}, NULL)   AS cpm_serving_fee,
+  ${metrics.cpc("f.media_cost", "f.clicks")}                                     AS cpc_serving_fee,
+
+  SAFE_DIVIDE(f.clicks, SUM(f.clicks) OVER (PARTITION BY f.date, f.campaign_id))
+    AS share_of_campaign_clicks
+FROM ${ref("fct_cm360_site_creative_daily")} f
+LEFT JOIN ${ref("dim_cm360_campaign")} c ON f.campaign_id = c.campaign_id
+LEFT JOIN (
+  SELECT CAST(site_id AS STRING) AS site_id, ANY_VALUE(channel_group) AS channel_group
+  FROM ${ref("dim_cm360_placement")}
+  WHERE site_id IS NOT NULL
+  GROUP BY 1
+) p ON f.site_id = p.site_id
+WHERE ${constants.allPartitions("f")}

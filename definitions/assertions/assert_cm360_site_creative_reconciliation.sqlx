@@ -1,0 +1,78 @@
+config {
+  type: "assertion",
+  tags: ["cm360", "monitoring"],
+  description: "fct_cm360_site_creative_daily must keep the clicks the campaign-level report has. The whole reason this table exists is that the other CM360 detail source does not, and nothing would notice if it stopped."
+}
+
+-- An assertion FAILS if it returns rows. Empty result = healthy.
+--
+-- WHAT IT WATCHES, AND WHY IT IS THE RIGHT CHECK.
+--
+-- CM360 attributes a click to the narrowest row it can match and drops it
+-- when it cannot match every dimension a report requests. The loss is
+-- therefore a property of the REPORT'S SHAPE, not of our SQL -- which means
+-- it cannot be caught by any check of grain, nullity or freshness. The
+-- six-dimension report keeps 40.6% of the clicks and is unique, non-null and
+-- current while doing it.
+--
+-- This table's only claim is that it does not have that problem. A
+-- comparison against the campaign total is the one measurement that tests
+-- the claim, so it is the one that runs.
+--
+-- cm360_reach IS THE BASELINE because it is campaign-level, it is the figure
+-- that matches the CM360 interface, and it comes through a different
+-- extraction. Measured 2026-11-03..09: 140,779 clicks here against 140,790
+-- there, 99.99%.
+--
+-- TOLERANCE IS 2%, AND IT IS NOT ROOM FOR DRIFT. Observed divergence is
+-- 0.01%. The failure this guards against -- a dimension quietly added to the
+-- extraction, or the model repointed at cm360_united -- lands at 40%, twenty
+-- times outside the band. Nothing structural hides inside 2%.
+--
+-- cm360_reach IS DE-DUPLICATED HERE, not read raw: it carries 4.55 copies of
+-- every row, and largest-wins is the same rule stg_cm360_reach applies.
+--
+-- THE LAST TWO DAYS ARE EXCLUDED. CM360 lands two days behind and the two
+-- extractions do not land together, so the newest days disagree by timing.
+
+WITH referinta AS (
+  SELECT
+    date                                      AS zi,
+    CAST(campaignId AS STRING)                AS campanie,
+    SAFE_CAST(clicks AS INT64)                AS clickuri
+  FROM ${ref({ schema: constants.DATASETS.cm360, name: "cm360_reach" })}
+  QUALIFY ROW_NUMBER() OVER (
+    PARTITION BY date, campaignId
+    ORDER BY SAFE_CAST(impressions AS INT64) DESC
+  ) = 1
+),
+
+detaliu AS (
+  SELECT
+    CAST(date AS STRING)                      AS zi,
+    campaign_id                               AS campanie,
+    SUM(clicks)                               AS clickuri
+  FROM ${ref("fct_cm360_site_creative_daily")}
+  WHERE date < DATE_SUB(CURRENT_DATE(), INTERVAL 2 DAY)
+  GROUP BY 1, 2
+),
+
+pe_zi AS (
+  SELECT
+    r.zi,
+    SUM(r.clickuri)                 AS clickuri_campanie,
+    SUM(IFNULL(d.clickuri, 0))      AS clickuri_site_creativ
+  FROM referinta r
+  JOIN detaliu d USING (zi, campanie)
+  GROUP BY 1
+)
+
+SELECT
+  zi,
+  clickuri_campanie,
+  clickuri_site_creativ,
+  ROUND(SAFE_DIVIDE(clickuri_site_creativ, clickuri_campanie), 4) AS raport,
+  'fct_cm360_site_creative_daily no longer keeps the campaign report clicks. A ratio near 0.4 means the model is reading cm360_united, or the extraction gained a dimension -- CM360 drops clicks it cannot match on every requested dimension, so one extra column in the report is enough. Check the column list on the cm360_basic extraction before changing anything here.' AS actiune
+FROM pe_zi
+WHERE clickuri_campanie > 0
+  AND ABS(clickuri_site_creativ - clickuri_campanie) > clickuri_campanie * 0.02

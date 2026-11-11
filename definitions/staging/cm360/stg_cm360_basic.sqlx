@@ -1,0 +1,79 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.cm360_staging,
+  name: "stg_cm360_basic",
+  tags: ["cm360", "staging"],
+  description: "CM360 delivery at day x campaign x site x creative. THE ONLY CM360 SOURCE WHOSE CLICKS SURVIVE THE CUT — 99.99% of the campaign-level figure, against 40.6% for stg_cm360_united at its six dimensions.",
+  columns: {
+    clicks: "Trustworthy at THIS grain, which no other CM360 detail source is. See the measurement below before using any other table for a click question.",
+    is_click_tracking_only: "TRUE where the row has clicks and no impressions. 41.5% of all clicks in this table sit on such rows and they are REAL — CM360 tracks clicks for placements it never served. Read the note below before charting CTR.",
+    media_cost: "THE AD-SERVING FEE, not media spend. Same unresolved column as everywhere else in CM360."
+  }
+}
+
+-- THE CLICK PROBLEM THIS SOLVES.
+--
+-- CM360 attributes a click to the narrowest row it can match, and drops the
+-- click when it cannot match every dimension a report asks for. So the more
+-- dimensions a report carries, the more clicks disappear. Measured
+-- 2026-11-03..2026-11-09 against cm360_reach, which is campaign-level and is
+-- the figure that matches the CM360 interface:
+--
+--   cm360_reach    campaign                           140,790   100%
+--   cm360_basic    campaign x site x creative         140,779   99.99%
+--   cm360_united   + placement, ad, country, city      57,149   40.6%
+--
+-- Impressions tell the same story from the other side: 42.7M here against
+-- the campaign report's 42.8M, while cm360_united reports 60.7M for the same
+-- campaign-days -- 42% MORE than the campaign total, because its extra
+-- dimensions split rows that the campaign report counts once.
+--
+-- So this is the table to answer "which site and which creative", and
+-- stg_cm360_united keeps only what it alone has: country and city.
+--
+-- 41.5% OF THE CLICKS HAVE NO IMPRESSION BESIDE THEM, AND THAT IS CORRECT.
+-- Measured over the full 60 days: 1,148,317 clicks, of which 476,367 sit on
+-- rows with zero impressions. CM360 serves some placements and only tracks
+-- others; a tracking tag records the click and never an impression.
+--
+-- The largest single case is site "DART Search : Google" with creative
+-- "(not set)" -- 455,525 clicks, zero impressions, 180 rows. That is search
+-- click tracking, where the impression happened on Google and CM360 only
+-- ever saw the click.
+--
+-- These clicks are in the campaign total too, which is why this table
+-- reconciles at 99.99% WITH them and only 61.1% without. They are not noise
+-- to be filtered; they are flagged, so a CTR chart can exclude the rows
+-- where CTR is a division by zero without losing them from a click total.
+--
+-- NO DE-DUPLICATION, DELIBERATELY. 45,729 rows for 45,729 keys on
+-- 2026-11-11, across all 60 days. Alone among the CM360 tables this one does
+-- not re-append its window, so a QUALIFY here would do nothing except hide
+-- the day it starts. The uniqueKey assertion on the fact is the guard
+-- instead, and it will turn red rather than quietly pick a winner.
+--
+-- CLICKS CAN EXCEED IMPRESSIONS, see above: 550 rows of 45,729 carry 477,925
+-- clicks against 229 impressions. Not a defect, and not a row condition.
+--
+-- NO ADVERTISER COLUMN. The source carries campaign, site and creative names
+-- but no advertiser; the reporting view joins dim_cm360_campaign for it.
+
+SELECT
+  date,
+  CAST(profileId   AS STRING)        AS profile_id,
+  NULLIF(TRIM(profileName), '')      AS profile_name,
+  CAST(campaignId  AS STRING)        AS campaign_id,
+  NULLIF(TRIM(campaign), '')         AS campaign_name,
+  CAST(siteId      AS STRING)        AS site_id,
+  NULLIF(TRIM(site), '')             AS site_name,
+  CAST(creativeId  AS STRING)        AS creative_id,
+  NULLIF(TRIM(creative), '')         AS creative_name,
+
+  CAST(impressions AS INT64)         AS impressions,
+  CAST(clicks      AS INT64)         AS clicks,
+  CAST(mediaCost   AS FLOAT64)       AS media_cost,
+
+  (CAST(impressions AS INT64) = 0 AND CAST(clicks AS INT64) > 0)
+                                     AS is_click_tracking_only
+FROM ${ref({ schema: constants.DATASETS.cm360, name: "cm360_basic" })}
+WHERE campaignId IS NOT NULL

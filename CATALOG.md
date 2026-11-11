@@ -41,6 +41,7 @@ correct no matter how Looker rolls it up; a ratio stored in a table does not.
 | Meta by age and gender **per campaign** | `meta_reporting.v_age_gender_daily` |
 | Meta by country, platform, device | `meta_reporting.v_breakdown_daily` |
 | Meta by placement — feed, reels, stories, right-hand column | `meta_reporting.v_placement_daily` |
+| CM360 by site or by creative, with clicks that match the interface | `cm360_reporting.v_site_creative_daily` |
 | TikTok spend — the complete total | `tiktok_reporting.v_campaign_daily` |
 | TikTok by ad, creative, video performance | `tiktok_reporting.v_daily` |
 | TikTok by hour | `tiktok_reporting.v_hourly` |
@@ -302,18 +303,21 @@ date alone**:
 | `v_daily` | placement × ad × creative × day | the main one. Delivery with every name resolved |
 | `v_hourly` | the same, × hour | dayparting |
 | `v_campaign_daily` | campaign × day | totals, with Floodlight conversions collapsed |
+| **`v_site_creative_daily`** | campaign × site × creative × day | **which site and which creative got the clicks** — the only detail view whose clicks match the interface |
 | **`v_geo_daily`** | placement × country × city × day | **where delivery happened** |
 | **`v_floodlight_daily`** | activity × ad × creative × day | **what converted, split view-through vs click-through** |
 | `v_metric_catalog` | — | what each CM360 metric means |
 
 Source: Keboola → **`keboola_cm360`** (moved there from `kebooladv` on
-2026-10-12): `cm360_hourly`, `cm360_united`, `cm360_floodlights`, `cm360_reach`.
+2026-10-12): `cm360_hourly`, `cm360_united`, `cm360_floodlightsv2`, `cm360_reach`,
+`cm360_basic`.
 
 ### Reporting views — `cm360_reporting`
 
 | View | Grain | Use it for |
 |---|---|---|
 | **`v_daily`** | placement × ad × creative × day | **The main one.** Impressions, clicks, viewable impressions, video views, media cost, plus click rate, effective CPM, effective CPC, viewable rate and video view rate. Fully labelled with advertiser, campaign, site and landing page. |
+| **`v_site_creative_daily`** | campaign × site × creative × day | **Use this for any question about a site or a creative.** Its clicks match the CM360 interface at 99.99%, where `v_daily` keeps 40.6% — see the clicks section below. Carries `channel_group`, each row's share of its campaign's clicks, and `is_click_tracking_only`. No country, city, placement or ad; those stay in `v_daily` and `v_geo_daily`. Starts **2026-09-11**. |
 | `v_hourly` | the same, plus hour | Its own chart and its own data source. Do not blend with `v_daily` — same money, finer grain. |
 | `v_campaign_daily` | campaign × day | The only view with `total_conversions` and `total_reach`, plus `frequency`. |
 | `v_metric_catalog` | — | Every CM360 metric with an `is_additive` flag. Worth reading once. |
@@ -719,6 +723,36 @@ name is the authoritative count.
 **`cm360_reporting.v_daily` still carries the placement-level clicks**, and
 always will — they are the only figure that exists at placement grain. Right
 for ranking placements against each other, wrong for any total.
+
+**There is now a middle report, and for sites and creatives it is the right
+one.** `cm360_basic` asks for campaign × site × creative — three dimensions
+instead of six — and the clicks survive. Measured 3–9 November against
+`cm360_reach`, the figure that matches the interface:
+
+| Source | Grain | Clicks | Kept |
+|---|---|---|---|
+| `cm360_reach` | campaign | 140,790 | 100% |
+| **`cm360_basic`** | **+ site, creative** | **140,779** | **99.99%** |
+| `cm360_united` | + placement, ad, country, city | 57,149 | 40.6% |
+
+Impressions make the same point from the other side: `cm360_united` reports
+60.7M for those campaign-days against the campaign report's 42.8M — **42%
+more**, because its extra dimensions split rows the campaign total counts once.
+`cm360_basic` reports 42.7M.
+
+So: **`v_site_creative_daily` for a site or creative question, `v_geo_daily`
+for country and city, `v_campaign_daily` for anything quoted against the
+interface.** Never two of them in one chart.
+
+**41.5% of the clicks in `cm360_basic` have no impression beside them, and
+that is correct.** Of 1,148,317 clicks, 476,367 sit on rows with zero
+impressions — CM360 serves some placements and only tracks others. The largest
+single case is site `DART Search : Google` with creative `(not set)`: 455,525
+clicks, zero impressions, which is search click tracking where the impression
+happened on Google. These clicks are in the campaign total too, which is why
+the table reconciles at 99.99% **with** them and 61.1% without. The view flags
+them as `is_click_tracking_only` and returns NULL CTR for them: **filter them
+out of a rate chart, never out of a click total.**
 
 Verified against the CM360 interface on 2026-11-03, ALLIANZ ASIGURARI,
 10–31 October:

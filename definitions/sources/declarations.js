@@ -95,6 +95,27 @@ const CM360_TABLES = [
                        // placementEndDate; it dropped impressions_str, which
                        // was never read. Duplication fell from 40% to 1.3%.
   "cm360_reach",       // NON-ADDITIVE unique reach.
+
+  // THE CLICK-ACCURATE ONE, and it sat here unread until 2026-11-11.
+  // Campaign x site x creative x day. Three dimensions where cm360_united
+  // has six, and CM360 drops a click it cannot match on every dimension a
+  // report requests -- so the shorter list keeps the clicks. Measured over
+  // 2026-11-03..09 against cm360_reach, which matches the CM360 interface:
+  //
+  //   cm360_reach    campaign                        140,790   100%
+  //   cm360_basic    campaign x site x creative      140,779   99.99%
+  //   cm360_united   + placement, ad, country, city   57,149   40.6%
+  //
+  // cm360_united also reports 60.7M impressions for those campaign-days
+  // against the campaign report's 42.8M -- 42% more, from splitting rows the
+  // campaign total counts once. So united is for country and city, and this
+  // is for everything about a site or a creative.
+  //
+  // ALONE AMONG THE CM360 TABLES IT DOES NOT RE-APPEND ITS WINDOW. 45,729
+  // rows for 45,729 keys across all 60 days on 2026-11-11, while cm360_reach
+  // carries 4.55 copies of every row and cm360_hourly 1.14. It is also the
+  // only one delivering `date` as a DATE rather than a string.
+  "cm360_basic",
 ];
 
 // ---------------------------------------------------------------------

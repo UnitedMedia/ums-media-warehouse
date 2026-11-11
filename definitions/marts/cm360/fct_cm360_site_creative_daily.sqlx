@@ -1,0 +1,63 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.cm360_marts,
+  name: "fct_cm360_site_creative_daily",
+  tags: ["cm360", "marts"],
+  description: "CM360 at date x campaign x site x creative. THE CLICK-ACCURATE CM360 DETAIL TABLE — 99.99% of the campaign figure, where fct_cm360_placement_daily keeps 40.6%. Use this for site and creative questions; use the placement fact only for country and city.",
+  bigquery: {
+    partitionBy: "date",
+    clusterBy: ["campaign_id", "site_id", "creative_id"],
+    requirePartitionFilter: true
+  },
+  assertions: {
+    uniqueKey: ["date", "campaign_id", "site_id", "creative_id"],
+    nonNull: ["date", "campaign_id", "site_id", "creative_id"],
+    rowConditions: [
+      "impressions >= 0 AND clicks >= 0 AND media_cost >= 0"
+    ]
+  },
+  columns: {
+    clicks: "The reason this table exists. Reconciled to cm360_reach, the campaign-level figure that matches the CM360 interface, at 99.99%.",
+    is_click_tracking_only: "TRUE where there are clicks and no impressions — a tracking tag, not a served placement. 41.5% of all clicks. Exclude these rows from a CTR chart; never exclude them from a click total.",
+    media_cost: "THE SERVING FEE. Measured 2026-11-03..09: 41,410.60 RON against 42,746,274 impressions, a CPM of 0.97 — against 9.50 for Meta and 19.92 for Google Ads the same week. The media was bought in DV360 or direct and its cost lives there. Never put this next to another channel's spend."
+  }
+}
+
+-- WHY A SECOND DETAIL FACT FOR THE SAME CHANNEL.
+--
+-- fct_cm360_placement_daily is built on cm360_united, which carries six
+-- dimensions and keeps 40.6% of the clicks. That is not a bug in the model:
+-- CM360 drops a click it cannot match on every requested dimension, so the
+-- loss is created by the report's own shape.
+--
+-- This table asks for three dimensions and keeps 99.99%. The two are not
+-- redundant and must not be unioned -- they are the same delivery cut two
+-- ways, and the finer one also inflates impressions by 42% against the
+-- campaign total.
+--
+--   site or creative question            -> this table
+--   country or city question             -> fct_cm360_placement_daily
+--   campaign total, or anything quoted
+--   against the CM360 interface          -> fct_cm360_reach_daily
+--
+-- NOT INCREMENTAL. The source holds 60 days and restates them; a full
+-- rebuild picks restatements up and costs little. Same rule as every other
+-- CM360 mart since 2026-11-03.
+--
+-- NO reach HERE. CM360 publishes unique reach only at campaign level, and it
+-- is in fct_cm360_reach_daily. Reach per site or per creative would not sum
+-- to a campaign anyway.
+
+SELECT
+  date,
+  campaign_id,
+  site_id,
+  creative_id,
+  campaign_name,
+  site_name,
+  creative_name,
+  impressions,
+  clicks,
+  media_cost,
+  is_click_tracking_only
+FROM ${ref("stg_cm360_basic")}
