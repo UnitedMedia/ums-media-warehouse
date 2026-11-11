@@ -5,7 +5,7 @@ config {
   tags: ["cm360", "staging"],
   description: "CM360 delivery at day x campaign x site x creative. THE ONLY CM360 SOURCE WHOSE CLICKS SURVIVE THE CUT — 99.99% of the campaign-level figure, against 40.6% for stg_cm360_united at its six dimensions.",
   columns: {
-    clicks: "Trustworthy at THIS grain, which no other CM360 detail source is. See the measurement below before using any other table for a click question.",
+    clicks: "Trustworthy at THIS grain, which no other CM360 detail source is — but not the figure anyone quotes. CM360 clicks come from the campaign report, through v_campaign_daily; these are for ranking sites and creatives against each other, and the reporting view names them clicks_site_level to keep the two apart.",
     is_click_tracking_only: "TRUE where the row has clicks and no impressions. 41.5% of all clicks in this table sit on such rows and they are REAL — CM360 tracks clicks for placements it never served. Read the note below before charting CTR.",
     media_cost: "THE AD-SERVING FEE, not media spend. Same unresolved column as everywhere else in CM360."
   }

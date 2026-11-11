@@ -3,16 +3,17 @@ config {
   schema: constants.SCHEMAS.cm360_reporting,
   name: "v_site_creative_daily",
   tags: ["cm360", "reporting"],
-  description: "CM360 by site and creative. THE view for 'which site and which creative got the clicks' — the only CM360 detail source whose clicks match the interface. Its own Looker data source; never blend it with v_daily or v_geo_daily.",
+  description: "CM360 by site and creative, for ranking sites and creatives against each other. NOT the source of a CM360 click total — that is v_campaign_daily, from the campaign report. Its own Looker data source; never blend it with v_daily or v_geo_daily.",
   columns: {
-    clicks: "Matches the CM360 interface at 99.99%. v_daily, built on the six-dimension report, shows 40.6% of this.",
-    ctr: "Computed ONLY on rows that served impressions. A click-tracking row has no impression to divide by, so its CTR is NULL rather than infinite.",
-    is_click_tracking_only: "TRUE for a tracking tag: clicks, no impressions. Filter these OUT of a CTR or CPM chart and leave them IN a click total. 41.5% of all clicks are here, the bulk of it search click tracking.",
+    clicks_site_level: "NOT THE OFFICIAL CM360 CLICK FIGURE. That is v_campaign_daily, read from the campaign report. This column is named at length so the two cannot be confused in a field picker. It is good for ranking sites and creatives against each other — measured 2026-11-03..09 it totalled 140,779 against the campaign report's 140,790 — but a number quoted to anyone outside comes from the campaign report, not from here.",
+    ctr_site_level: "Computed ONLY on rows that served impressions. A click-tracking row has no impression to divide by, so its CTR is NULL rather than infinite. Same warning as clicks_site_level: a rate for comparing sites, not a rate to quote.",
+    cpc_serving_fee_site_level: "Serving fee per click, at this grain. Two reasons it is not a CPC anyone should quote: the cost is the ad-serving fee rather than media, and the clicks are the site-level ones.",
+    is_click_tracking_only: "TRUE for a tracking tag: clicks, no impressions. Filter these OUT of a rate chart and leave them IN a click total. 41.5% of all clicks are here, the bulk of it search click tracking.",
     media_cost: "AD-SERVING FEE, not media spend. CPM of about 1 RON. Never chart it beside DV360, Meta or Google spend."
   }
 }
 
--- WHICH SITE, WHICH CREATIVE -- AND THE CLICKS ARE RIGHT.
+-- WHICH SITE, WHICH CREATIVE -- AND THE CLICKS HOLD UP AT THIS GRAIN.
 --
 -- Every other CM360 detail view in this project loses clicks to the
 -- dimension count: v_daily keeps 40.6% of what the interface shows, because
@@ -21,6 +22,24 @@ config {
 --
 -- So a creative comparison made here is defensible against the platform, and
 -- the same comparison made in v_daily is not.
+--
+-- THE CLICK COLUMNS ARE STILL NOT THE OFFICIAL FIGURE, AND ARE NAMED SO.
+-- CM360 clicks quoted to anyone come from the campaign report, through
+-- v_campaign_daily -- one report, one number, whatever grain the question
+-- arrived at. That rule predates this view and this view does not change it.
+--
+-- Hence clicks_site_level, ctr_site_level, cpc_serving_fee_site_level. They
+-- sit one entry away from v_campaign_daily's `clicks` in a Looker field list,
+-- and a short name there would be picked by accident within the week.
+--
+-- What they are for: ranking sites and creatives against each other, which
+-- the campaign report cannot do because it has neither column. What they are
+-- not for: a total, a scorecard, or a figure in a client deck.
+--
+-- A SECOND CAMPAIGN-LEVEL EXTRACTION IS COMING, with two months of history
+-- where cm360_reach holds 43 days. When it lands it becomes the baseline for
+-- assert_cm360_site_creative_reconciliation, which today compares against
+-- cm360_reach. Nothing else here moves.
 --
 -- WHAT THIS VIEW DOES NOT HAVE: country, city, placement, ad. Those are in
 -- v_geo_daily and v_daily, with their clicks. Pick the view by the question,
@@ -51,16 +70,18 @@ SELECT
   f.creative_name,
 
   f.impressions,
-  f.clicks,
+  f.clicks                                                        AS clicks_site_level,
   f.media_cost,
   f.is_click_tracking_only,
 
-  IF(f.impressions > 0, ${metrics.ctr("f.clicks", "f.impressions")}, NULL)       AS ctr,
+  IF(f.impressions > 0, ${metrics.ctr("f.clicks", "f.impressions")}, NULL)       AS ctr_site_level,
   IF(f.impressions > 0, ${metrics.cpm("f.media_cost", "f.impressions")}, NULL)   AS cpm_serving_fee,
-  ${metrics.cpc("f.media_cost", "f.clicks")}                                     AS cpc_serving_fee,
+  ${metrics.cpc("f.media_cost", "f.clicks")}                        AS cpc_serving_fee_site_level,
 
+  SAFE_DIVIDE(f.impressions, SUM(f.impressions) OVER (PARTITION BY f.date, f.campaign_id))
+    AS share_of_campaign_impressions,
   SAFE_DIVIDE(f.clicks, SUM(f.clicks) OVER (PARTITION BY f.date, f.campaign_id))
-    AS share_of_campaign_clicks
+    AS share_of_campaign_clicks_site_level
 FROM ${ref("fct_cm360_site_creative_daily")} f
 LEFT JOIN ${ref("dim_cm360_campaign")} c ON f.campaign_id = c.campaign_id
 LEFT JOIN (

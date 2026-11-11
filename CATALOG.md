@@ -41,7 +41,7 @@ correct no matter how Looker rolls it up; a ratio stored in a table does not.
 | Meta by age and gender **per campaign** | `meta_reporting.v_age_gender_daily` |
 | Meta by country, platform, device | `meta_reporting.v_breakdown_daily` |
 | Meta by placement — feed, reels, stories, right-hand column | `meta_reporting.v_placement_daily` |
-| CM360 by site or by creative, with clicks that match the interface | `cm360_reporting.v_site_creative_daily` |
+| CM360 by site or by creative — which site, which creative delivered | `cm360_reporting.v_site_creative_daily` |
 | TikTok spend — the complete total | `tiktok_reporting.v_campaign_daily` |
 | TikTok by ad, creative, video performance | `tiktok_reporting.v_daily` |
 | TikTok by hour | `tiktok_reporting.v_hourly` |
@@ -317,7 +317,7 @@ Source: Keboola → **`keboola_cm360`** (moved there from `kebooladv` on
 | View | Grain | Use it for |
 |---|---|---|
 | **`v_daily`** | placement × ad × creative × day | **The main one.** Impressions, clicks, viewable impressions, video views, media cost, plus click rate, effective CPM, effective CPC, viewable rate and video view rate. Fully labelled with advertiser, campaign, site and landing page. |
-| **`v_site_creative_daily`** | campaign × site × creative × day | **Use this for any question about a site or a creative.** Its clicks match the CM360 interface at 99.99%, where `v_daily` keeps 40.6% — see the clicks section below. Carries `channel_group`, each row's share of its campaign's clicks, and `is_click_tracking_only`. No country, city, placement or ad; those stay in `v_daily` and `v_geo_daily`. Starts **2026-09-11**. |
+| **`v_site_creative_daily`** | campaign × site × creative × day | **Use this to rank sites and creatives against each other.** Its clicks match the CM360 interface at 99.99%, where `v_daily` keeps 40.6% — but they are still not the quoted figure, so the columns are `clicks_site_level`, `ctr_site_level` and `cpc_serving_fee_site_level`. A CM360 click total comes from `v_campaign_daily`. Carries `channel_group`, share of campaign impressions and clicks, and `is_click_tracking_only`. No country, city, placement or ad. Starts **2026-09-11**. |
 | `v_hourly` | the same, plus hour | Its own chart and its own data source. Do not blend with `v_daily` — same money, finer grain. |
 | `v_campaign_daily` | campaign × day | The only view with `total_conversions` and `total_reach`, plus `frequency`. |
 | `v_metric_catalog` | — | Every CM360 metric with an `is_additive` flag. Worth reading once. |
@@ -743,6 +743,15 @@ more**, because its extra dimensions split rows the campaign total counts once.
 So: **`v_site_creative_daily` for a site or creative question, `v_geo_daily`
 for country and city, `v_campaign_daily` for anything quoted against the
 interface.** Never two of them in one chart.
+
+**That last clause is not softened by the 99.99%.** A CM360 click quoted to
+anyone comes from the campaign report, whatever grain the question arrived at
+— one report, one number. `v_site_creative_daily` therefore names its columns
+`clicks_site_level`, `ctr_site_level` and `cpc_serving_fee_site_level`: they
+sit one entry away from `v_campaign_daily`'s `clicks` in a Looker field list,
+and a short name there gets picked by accident. Use them to rank sites and
+creatives against each other, which the campaign report cannot do because it
+has neither column.
 
 **41.5% of the clicks in `cm360_basic` have no impression beside them, and
 that is correct.** Of 1,148,317 clicks, 476,367 sit on rows with zero
