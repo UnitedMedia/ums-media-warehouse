@@ -23,6 +23,12 @@ config {
 -- __NULL__ partition, which the partition filter excludes, so the mart
 -- cannot see its own null dates.
 --
+-- THE COST COLUMNS ARE serving_fee AND media_cost_eur, not media_cost. The
+-- mart renamed the first and gained the second on 2026-11-11; this file kept
+-- the old name and the assertion failed on the next run with "Unrecognized
+-- name: media_cost". Renaming a mart column means re-running every assertion
+-- that reads it, not just compiling.
+--
 -- clicks > impressions IS NOT CHECKED, deliberately, and it is not an
 -- anomaly here but the normal shape of the data: 41.5% of CM360 clicks
 -- arrive on rows with no impressions, because CM360 tracks clicks for
@@ -54,13 +60,13 @@ chei_nule AS (
 
 negative AS (
   SELECT
-    'negative impressions, clicks or media_cost'  AS problem,
+    'negative impressions, clicks or cost'        AS problem,
     CAST(date AS STRING)                          AS date,
     campaign_id,
     COUNT(*)                                      AS rows_affected
   FROM ${ref("fct_cm360_site_creative_daily")}
   WHERE ${constants.allPartitions()}
-    AND (impressions < 0 OR clicks < 0 OR media_cost < 0)
+    AND (impressions < 0 OR clicks < 0 OR serving_fee < 0 OR media_cost_eur < 0)
   GROUP BY 1, 2, 3
 )
 
