@@ -1,0 +1,79 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.tiktok_reporting,
+  name: "v_age_gender_daily",
+  tags: ["tiktok", "reporting"],
+  description: "TikTok by age and by gender, per campaign, WITH video 2s and 6s. The only TikTok demographic view carrying video metrics. Filter breakdown_type to exactly one — age and gender are separate cuts of the same spend.",
+  columns: {
+    breakdown_type: "'age' or 'gender'. FILTER TO ONE, always. A chart with no filter shows every figure doubled and looks entirely plausible.",
+    retention_6s_of_2s: "Of the people who watched 2 seconds, how many reached 6. The number this view was built for — nothing else in TikTok reporting can split it by age.",
+    video_watched_2s: "NULL before 2026-10-11. The feed does not exist earlier and nothing can supply it.",
+    spend_eur: "Converted through core.dim_fx_rate. NULL where no rate exists for that month and currency — never silently zero."
+  }
+}
+
+-- WHAT THIS ANSWERS THAT NOTHING ELSE DOES: which age group actually
+-- watches the video.
+--
+-- v_breakdown_daily has an age_gender slice and its video columns are NULL
+-- on every row, because Weld's ad_age_gender_report carries no video metric
+-- at all. v_platform_daily has the video metrics but splits by device, not
+-- by person. This view is the intersection, and it only became possible on
+-- 2026-10-11 when the Keboola feed started.
+--
+-- ONE breakdown_type PER CHART. age and gender are two separate TikTok
+-- reports, not a grid. Each totals the campaign on its own, so a scorecard
+-- without the filter reports exactly double and nothing about it looks
+-- wrong.
+--
+-- NEVER BESIDE v_breakdown_daily OR v_campaign_daily either. Same spend,
+-- different cuts, every time.
+--
+-- WHERE IT DISAGREES WITH v_breakdown_daily, BOTH ARE RIGHT. That view is
+-- ad level over 101 days from Weld with age and gender crossed; this is
+-- campaign level over 31 days from Keboola with them separate. Different
+-- vendor, different grain, different window.
+
+SELECT
+  f.date,
+  DATE_TRUNC(f.date, WEEK(MONDAY)) AS week,
+  DATE_TRUNC(f.date, MONTH)        AS month,
+
+  f.advertiser_id,
+  d.advertiser_name,
+  f.campaign_id,
+  COALESCE(d.campaign_name, f.campaign_name) AS campaign_name,
+  d.objective_type,
+  d.campaign_status,
+
+  f.breakdown_type,
+  f.breakdown_value,
+
+  f.impressions,
+  f.clicks,
+  f.spend,
+  fx.currency,
+  SAFE_DIVIDE(f.spend, fx.rate_to_eur)  AS spend_eur,
+  (fx.rate_to_eur IS NOT NULL)          AS is_fx_converted,
+
+  f.video_plays,
+  f.video_watched_2s,
+  f.video_watched_6s,
+
+  ${metrics.cpm("f.spend", "f.impressions")}  AS cpm,
+  ${metrics.ctr("f.clicks", "f.impressions")} AS ctr,
+  ${metrics.cpc("f.spend", "f.clicks")}       AS cpc,
+
+  SAFE_DIVIDE(f.video_watched_6s, NULLIF(f.video_watched_2s, 0))
+    AS retention_6s_of_2s,
+  SAFE_DIVIDE(f.video_watched_2s, NULLIF(f.video_plays, 0))
+    AS rata_2s_din_plays,
+
+  SAFE_DIVIDE(f.impressions, SUM(f.impressions) OVER (
+    PARTITION BY f.date, f.campaign_id, f.breakdown_type))
+    AS share_of_campaign_impressions
+FROM ${ref("fct_tiktok_demographic_daily")} f
+LEFT JOIN ${ref("dim_tiktok_campaign")} d ON f.campaign_id = d.campaign_id
+LEFT JOIN ${ref("stg_tiktok_advertiser")} a ON f.advertiser_id = a.advertiser_id
+LEFT JOIN ${ref("dim_fx_rate")} fx
+       ON fx.month = DATE_TRUNC(f.date, MONTH) AND fx.currency = a.currency

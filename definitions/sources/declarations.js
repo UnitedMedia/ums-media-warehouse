@@ -323,6 +323,33 @@ const KEBOOLA_TIKTOK_TABLES = [
   // exceeded impressions -- which is the one thing that would prove the
   // figure wrong.
   "tiktok_campaign_reach_lifetime",
+
+  // THE ONLY TIKTOK DEMOGRAPHICS WITH VIDEO METRICS. Arrived 2026-11-11.
+  // Campaign x day x age, and campaign x day x gender, each carrying
+  // video_play_actions, video_watched_2s and video_watched_6s.
+  //
+  // WELD'S ad_age_gender_report HAS NO VIDEO COLUMN AT ALL, which is why
+  // fct_tiktok_breakdown_daily shows NULL video on all 239,111 of its
+  // age_gender rows while the platform breakdown has figures. These two
+  // tables are the answer to that, and the reason for a separate fact.
+  //
+  // THEY ARE CAMPAIGN GRAIN, NOT AD. No ad_id column at all, where the
+  // Weld breakdown is keyed on ad_id and leaves campaign_id NULL. The two
+  // are mirror images and must not share a model.
+  //
+  // EVERY ROW APPEARS TWICE on 2026-11-11: 30,596 rows for 15,331 keys and
+  // 19,810 for 9,925. Incremental load with no primary key. Staging
+  // de-duplicates largest-wins; the fix belongs in Keboola.
+  //
+  // 31 DAYS, FROM 2026-10-11, and nothing before it. Weld's equivalent has
+  // 101 days but no video. Between 22 September, when
+  // campaign_age_gender_report froze, and 10 October, there is no
+  // campaign-level demographic data from any source.
+  //
+  // stat_time_day IS A TIMESTAMP here, where every other TikTok table
+  // delivers it as a string. metrics.parseTiktokDate does not apply.
+  "tiktok_age_clean",
+  "tiktok_gender_clean",
 ];
 
 // ---------------------------------------------------------------------

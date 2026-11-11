@@ -1,0 +1,73 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.tiktok_marts,
+  name: "fct_tiktok_demographic_daily",
+  tags: ["tiktok", "marts"],
+  description: "TikTok at campaign x day x age, and campaign x day x gender, WITH video_watched_2s and video_watched_6s. The only TikTok demographic data carrying video metrics — fct_tiktok_breakdown_daily has the columns and they are NULL on all 239,111 of its age_gender rows.",
+  bigquery: {
+    partitionBy: "date",
+    clusterBy: ["breakdown_type", "campaign_id", "breakdown_value"]
+  },
+  assertions: {
+    uniqueKey: ["date", "advertiser_id", "campaign_id", "breakdown_type", "breakdown_value"],
+    nonNull: ["date", "campaign_id", "breakdown_type", "breakdown_value"],
+    rowConditions: [
+      "impressions >= 0 AND clicks >= 0 AND spend >= 0",
+      "breakdown_type IN ('age', 'gender')"
+    ]
+  },
+  columns: {
+    breakdown_type: "'age' or 'gender'. FILTER TO ONE. They are two separate cuts of the same spend, so a total across both is exactly double.",
+    video_watched_2s: "People who watched at least 2 seconds. Why this table exists.",
+    video_watched_6s: "At least 6 seconds, so normally a subset of the 2s figure. Their ratio is the retention number worth looking at — measured over 2026-10-11..11-09 it runs 27.4% for 13-17 and 33.1% for 18-24. IT EXCEEDS THE 2s FIGURE ON 8 ROWS of 25,256, none above 6 impressions and six of them on the unknown age bucket: TikTok rounding a near-empty cell, not a defect. Deliberately not a rowCondition — it would fail the run nightly over 5 video views.",
+    video_plays: "Video STARTS. Larger than either watched figure.",
+    spend: "Advertiser currency. Most TikTok accounts here bill in RON or EUR — see core.fct_ad_performance_daily for the converted figure."
+  }
+}
+
+-- NO requirePartitionFilter ON THIS ONE, AND THAT IS DELIBERATE. It is a
+-- small table and the config carries uniqueKey, nonNull and rowConditions,
+-- which Dataform generates WITHOUT a date filter. The two together cannot
+-- work: the assertions fail on every run. Three marts in this project
+-- already had to have their config assertions replaced by hand-written ones
+-- for exactly that reason. Here there is no reason to pay that cost.
+--
+-- IT IS A SIXTH CUT OF THE SAME MONEY. fct_tiktok_breakdown_daily holds
+-- four -- age_gender, country, language, platform -- and
+-- fct_tiktok_campaign_daily holds the total. This is two more. Every one of
+-- them covers the SAME spend, so a figure summed across any two of them is
+-- that spend counted twice.
+--
+--   age or gender WITH video        -> this table, one breakdown_type
+--   age x gender AT AD LEVEL        -> fct_tiktok_breakdown_daily, no video
+--   country, language, platform     -> fct_tiktok_breakdown_daily
+--   campaign total                  -> fct_tiktok_campaign_daily
+--
+-- THE OVERLAP WITH THE BREAKDOWN FACT IS REAL AND NEEDS SAYING OUT LOUD.
+-- Both answer "age and gender" and they disagree on purpose:
+--
+--   fct_tiktok_breakdown_daily   ad level, 101 days, age x gender crossed,
+--                                NO video
+--   this table                   campaign level, 31 days from 2026-10-11,
+--                                age and gender separately, WITH video
+--
+-- Neither supersedes the other and they come from different vendors -- Weld
+-- against Keboola. Pick by the question, never union them.
+--
+-- FULL REBUILD. The source holds 31 days and restates the current one; a
+-- rebuild picks that up and costs nothing at this size.
+
+SELECT
+  date,
+  advertiser_id,
+  campaign_id,
+  campaign_name,
+  breakdown_type,
+  breakdown_value,
+  impressions,
+  clicks,
+  spend,
+  video_plays,
+  video_watched_2s,
+  video_watched_6s
+FROM ${ref("stg_tiktok_demographic")}

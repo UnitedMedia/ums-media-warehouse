@@ -46,6 +46,7 @@ correct no matter how Looker rolls it up; a ratio stored in a table does not.
 | TikTok by ad, creative, video performance | `tiktok_reporting.v_daily` |
 | TikTok by hour | `tiktok_reporting.v_hourly` |
 | TikTok by age and gender, device, country or language | `tiktok_reporting.v_breakdown_daily` |
+| TikTok by age or gender **with video 2s / 6s** | `tiktok_reporting.v_age_gender_daily` |
 | TikTok **reach and frequency**, campaign × day | `tiktok_reporting.v_reach_daily` |
 | TikTok **how many people a campaign reached** | `tiktok_reporting.v_campaign_reach_lifetime` |
 | Google Ads spend, conversions, ROAS | `gads_reporting.v_daily` |
@@ -498,6 +499,29 @@ Ad-level and hourly reach are deliberately not republished anywhere. TikTok
 de-duplicates inside each ad and inside each hour, so no roll-up of them was
 ever correct.
 
+
+### Two places answer "age and gender", and they disagree on purpose
+
+| | `v_breakdown_daily`, `breakdown_type = 'age_gender'` | **`v_age_gender_daily`** |
+|---|---|---|
+| vendor | Weld | Keboola |
+| grain | **ad** × age × gender | **campaign** × age *or* gender |
+| history | 101 days | 31 days, from **2026-10-11** |
+| video 2s / 6s | **none** — the source has no video column at all | **yes** |
+
+Neither supersedes the other. `v_breakdown_daily` crosses age with gender and
+goes back further; `v_age_gender_daily` is the only place in TikTok reporting
+where a video metric can be split by person rather than by device. Pick by the
+question and **never union them** — same spend, different cuts.
+
+Inside `v_age_gender_daily`, **always filter `breakdown_type` to exactly one.**
+Age and gender arrive as two separate TikTok reports, not as a grid, and each
+totals the campaign on its own. A scorecard with no filter reports exactly
+double and nothing about it looks wrong.
+
+`retention_6s_of_2s` is what the view was built for: of the people who watched
+two seconds, how many reached six. Measured 11 Oct – 9 Nov it runs 27.8% for
+13-17 and 33.0% for 18-24, with 45-54 lowest at 28.8% despite heavy delivery.
 
 Source: Weld → `tiktok_ads`. **The only channel currently delivering fresh data
 every day.**

@@ -1,0 +1,68 @@
+config {
+  type: "assertion",
+  tags: ["tiktok", "monitoring"],
+  description: "Each demographic cut must total the campaign report on its own. Also the guard on the de-duplication: the source ships every row twice, so a QUALIFY that stops matching the source grain shows up here as exactly 2.0."
+}
+
+-- An assertion FAILS if it returns rows. Empty result = healthy.
+--
+-- WHY THIS CHECK AND NOT A GRAIN CHECK. The source ships every row twice --
+-- 30,596 rows for 15,331 age keys on 2026-11-11 -- and staging removes the
+-- copies with a QUALIFY. A uniqueKey assertion on the fact confirms the
+-- QUALIFY produced unique rows, which it will whatever the source does,
+-- because that is what a QUALIFY is for. It cannot tell whether the right
+-- rows survived.
+--
+-- Comparing the total against fct_tiktok_campaign_daily can. Measured
+-- 2026-11-11, before de-duplication the ratio was exactly 2.0000 on every
+-- closed day and after it 1.0000. So:
+--
+--   near 2.0   de-duplication stopped working, or the source gained a
+--              column that belongs in the QUALIFY key
+--   near 0.5   the QUALIFY key is too coarse and is discarding real rows,
+--              which is what stg_meta_age_gender did for five weeks
+--   near 1.0   healthy
+--
+-- EACH breakdown_type IS CHECKED SEPARATELY, because each is a complete cut
+-- of the campaign on its own. Checking them together would compare 2x the
+-- campaign against 1x and fail forever.
+--
+-- TOLERANCE IS 2%. TikTok's demographic report and its campaign report are
+-- separate extractions and the smallest buckets get suppressed, so exact
+-- equality is not expected. The failures this guards against land at 2.0 or
+-- 0.5, nowhere near the band.
+--
+-- THE LAST TWO DAYS ARE EXCLUDED. The Keboola feed lands at 09:48 UTC and
+-- the Weld one at 00:06, so the newest days disagree by timing alone.
+
+WITH demografic AS (
+  SELECT
+    date                      AS zi,
+    breakdown_type            AS taietura,
+    SUM(impressions)          AS impresii
+  FROM ${ref("fct_tiktok_demographic_daily")}
+  WHERE date < DATE_SUB(CURRENT_DATE(), INTERVAL 2 DAY)
+  GROUP BY 1, 2
+),
+
+campanie AS (
+  SELECT
+    date                      AS zi,
+    SUM(impressions)          AS impresii
+  FROM ${ref("fct_tiktok_campaign_daily")}
+  WHERE date >= (SELECT MIN(date) FROM ${ref("fct_tiktok_demographic_daily")})
+    AND date < DATE_SUB(CURRENT_DATE(), INTERVAL 2 DAY)
+  GROUP BY 1
+)
+
+SELECT
+  d.zi,
+  d.taietura,
+  c.impresii                                        AS impresii_campanie,
+  d.impresii                                        AS impresii_demografic,
+  ROUND(SAFE_DIVIDE(d.impresii, c.impresii), 4)     AS raport,
+  'fct_tiktok_demographic_daily no longer totals fct_tiktok_campaign_daily. A ratio near 2.0 means the de-duplication in stg_tiktok_demographic stopped removing the source duplicates -- check whether tiktok_age_clean gained a column that belongs in the QUALIFY key. A ratio near 0.5 means the key is too coarse and is discarding real rows.' AS actiune
+FROM demografic d
+JOIN campanie c USING (zi)
+WHERE c.impresii > 0
+  AND ABS(d.impresii - c.impresii) > c.impresii * 0.02
