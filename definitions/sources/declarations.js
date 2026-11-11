@@ -150,6 +150,28 @@ const META_TABLES = [
                                              // The ONLY way to get post
                                              // engagements and leads at this
                                              // grain. Also has no ad_id.
+  // AD x PUBLISHER PLATFORM x PLATFORM POSITION x DEVICE, daily. Not Weld
+  // at all -- Keboola writes it straight into facebook_ads_weld, so this
+  // dataset now holds one table from a different vendor. Declared where it
+  // physically sits.
+  //
+  // THE ONLY SOURCE OF platform_position IN THE WAREHOUSE. feed, reels,
+  // stories, right-hand column, marketplace, search. The five Weld
+  // breakdowns stop at publisher_platform and cannot separate a reels
+  // impression from a feed one.
+  //
+  // IT HAS NO _weld_synced. De-duplication is largest-wins, not
+  // newest-wins -- see stg_meta_placement.
+  //
+  // THE _v3_insights SUFFIX IS LOAD-BEARING. Its predecessor,
+  // platform_position_device_keboola, is still in the dataset and still
+  // being written. That one also requested `actions`, which the extractor
+  // flattens into child rows that destroy the parent metrics row, so it
+  // holds only the placement rows that had zero clicks: 0.7% of delivery,
+  // with correct values. It is NOT declared, must not be staged, and the
+  // nearly-identical name is the whole reason this comment is this long.
+  "platform_position_device_keboola_v3_insights",
+
   "demographics_country_ad",
   "demographics_delivery_platform_ad",
   "demographics_delivery_platform_and_device", // no ad_id

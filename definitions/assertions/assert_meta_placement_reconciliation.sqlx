@@ -1,0 +1,88 @@
+config {
+  type: "assertion",
+  tags: ["meta", "monitoring"],
+  description: "fct_meta_placement_daily must total what fct_meta_ad_daily holds, per day. The guard that the first placement feed needed and did not have — it ran for two months holding 0.7% of delivery while every assertion in the project passed."
+}
+
+-- An assertion FAILS if it returns rows. Empty result = healthy.
+--
+-- WHAT IT IS WATCHING FOR, in the words of what already happened.
+-- platform_position_device_keboola, this feed's predecessor, requested
+-- `actions` alongside the placement breakdowns. The extractor flattened
+-- the actions array and the parent metrics row did not survive, so every
+-- placement row carrying a click vanished and every row carrying none came
+-- through with the correct value. The result was a report whose numbers
+-- were right and whose volume was 0.7% of the truth.
+--
+-- Nothing caught it. Grain was unique, nothing was null, freshness was
+-- current, the values that were present matched the API exactly. Only a
+-- comparison against a total that is known to be complete finds this
+-- class of failure, which is why that is what this does.
+--
+-- WHY ad-LEVEL IS THE RIGHT BASELINE. fct_meta_ad_daily comes from a
+-- different vendor (Weld, ad_roas_insight) through a different pipeline,
+-- and is reconciled in turn by assert_meta_spend_reconciliation. Two
+-- independent paths to the same number.
+--
+-- TOLERANCE IS TWO-TIERED, and the second tier is not slack, it is a
+-- measured fact about when each feed lands.
+--
+--   settled days, 3 or more back   0.5%
+--   the last two closed days       5%
+--
+-- The two feeds are extracted hours apart -- Keboola wrote the placement
+-- table at 02:18 on 2026-11-11, Dataform rebuilt the ad fact from Weld at
+-- 03:30 -- and Meta restates recent days throughout. So the newest closed
+-- day disagrees by ordinary timing, not by error. Measured 2026-11-11:
+--
+--   30 closed days, 29 EXACT on impressions, 30 exact on clicks
+--   the single settled difference was 29 impressions of 13,183,790
+--   the newest closed day, 10 November, sat at 0.9881
+--
+-- ONE TIER WOULD HAVE BEEN WRONG EITHER WAY. At 0.5% flat this fires
+-- every morning on a difference that resolves itself by lunch, and an
+-- assertion that cries daily is one nobody reads. At 5% flat it stops
+-- watching the settled history, which is the part that stays wrong once
+-- it goes wrong.
+--
+-- 5% IS STILL NOWHERE NEAR LOOSE. The failure this exists to catch put
+-- 0.7% of delivery in the table -- a ratio of 0.007. A dropped account, a
+-- lost dimension or `actions` back in the config all land in the same
+-- territory. Nothing structural hides inside 5%.
+--
+-- THE CURRENT DAY IS EXCLUDED ENTIRELY. It is partial in both feeds by
+-- definition and would fire every morning for no reason at all.
+
+WITH plasament AS (
+  SELECT
+    date                      AS zi,
+    SUM(impressions)          AS impresii,
+    SUM(clicks)               AS clickuri
+  FROM ${ref("fct_meta_placement_daily")}
+  WHERE date < CURRENT_DATE()
+  GROUP BY 1
+),
+
+nivel_ad AS (
+  SELECT
+    date                      AS zi,
+    SUM(impressions)          AS impresii,
+    SUM(clicks)               AS clickuri
+  FROM ${ref("fct_meta_ad_daily")}
+  WHERE date >= (SELECT MIN(date) FROM ${ref("fct_meta_placement_daily")} WHERE date < CURRENT_DATE())
+    AND date < CURRENT_DATE()
+  GROUP BY 1
+)
+
+SELECT
+  a.zi,
+  a.impresii                                  AS impresii_nivel_ad,
+  IFNULL(p.impresii, 0)                       AS impresii_plasament,
+  ROUND(SAFE_DIVIDE(IFNULL(p.impresii, 0), a.impresii), 4) AS raport,
+  a.clickuri                                  AS clickuri_nivel_ad,
+  IFNULL(p.clickuri, 0)                       AS clickuri_plasament,
+  'fct_meta_placement_daily does not total fct_meta_ad_daily. A ratio well below 1 means the placement feed is dropping rows -- check first whether `actions` or `action_breakdowns` came back into the Keboola config, which is what broke its predecessor. A ratio above 1 means de-duplication in stg_meta_placement has stopped matching the source grain.' AS actiune
+FROM nivel_ad a
+LEFT JOIN plasament p USING (zi)
+WHERE ABS(IFNULL(p.impresii, 0) - a.impresii) > a.impresii *
+      IF(a.zi >= DATE_SUB(CURRENT_DATE(), INTERVAL 2 DAY), 0.05, 0.005)

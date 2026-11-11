@@ -1,0 +1,75 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.meta_marts,
+  name: "fct_meta_placement_daily",
+  tags: ["meta", "marts"],
+  description: "Meta delivery at ad x publisher platform x platform position x device x day. THE SAME SPEND as fct_meta_ad_daily, cut finer — union the two and it is counted twice. The only place platform_position exists.",
+  bigquery: {
+    partitionBy: "date",
+    clusterBy: ["account_id", "campaign_id", "ad_id"],
+    requirePartitionFilter: true
+  },
+  assertions: {
+    uniqueKey: ["date", "ad_id", "publisher_platform", "platform_position", "device_platform"],
+    nonNull: ["date", "ad_id", "account_id", "campaign_id",
+              "publisher_platform", "platform_position", "device_platform"],
+    rowConditions: [
+      "impressions >= 0 AND clicks >= 0 AND spend >= 0"
+    ]
+  },
+  columns: {
+    platform_position: "Why this table exists. feed, facebook_reels, facebook_stories, instagram_reels, right_hand_column, marketplace, search, instream_video, an_classic, threads_feed and ten more.",
+    clicks: "CAN EXCEED impressions on very small rows, and that is Meta, not a bug. Measured 2026-11-11: 159 rows of 473,103, none above 36 impressions, 439 impressions against 732 clicks in total. A click attributed in a window where the impression landed on another placement, plus privacy rounding on tiny cells. Deliberately NOT a rowCondition — it would fail the pipeline nightly over 0.03% of rows carrying 0.0001% of delivery.",
+    spend: "Account currency. 81 accounts, most RON and EUR — see core.fct_ad_performance_daily for the converted figure."
+  }
+}
+
+-- A SIXTH CUT OF THE SAME MONEY, and the rule that governs the other five
+-- governs this one. fct_meta_breakdown_daily holds five slices of the
+-- spend that already sits in fct_meta_ad_daily; this is a sixth, finer
+-- than all of them. Summing it alongside any of the others multiplies the
+-- total by however many were summed.
+--
+-- IT IS NOT IN fct_meta_breakdown_daily ON PURPOSE. That model's shape is
+-- breakdown_1 + breakdown_2 -- two columns. This grain is three, and
+-- folding a third dimension into it would either lose one or change the
+-- shape of five working breakdowns to accommodate a sixth.
+--
+-- It is also a different vendor. The five are Weld; this is Keboola,
+-- de-duplicated on a different rule because the table carries no load
+-- timestamp. Mixing those in one model hides which rows obey which rule.
+--
+-- WHAT IT ANSWERS that nothing else can: whether delivery went to feed or
+-- to reels, to stories or to the right-hand column, and on which device.
+-- publisher_platform alone -- which fct_meta_breakdown_daily does have --
+-- stops at "facebook" and cannot separate a reels impression from a
+-- marketplace one.
+--
+-- NO reach COLUMN, and that is correct. The source does not publish reach
+-- at this grain, and reach at a placement grain would be the least
+-- summable figure in the warehouse: Meta de-duplicates people inside each
+-- placement, so adding 17 placement rows counts one person up to 17 times.
+-- Reach stays where it is de-duplicated.
+--
+-- NO CONVERSIONS, and that is what makes it work at all. See the note in
+-- stg_meta_placement: asking this report for actions is what destroyed its
+-- predecessor.
+--
+-- FULL REBUILD, not incremental. The source restates recent days and holds
+-- 31 of them; a full rebuild picks the restatements up and costs little.
+-- This is the rule the project settled on 2026-11-03 after append-only
+-- cost 26,900 CM360 clicks. The one exception in the project is
+-- fct_tiktok_campaign_reach_lifetime, whose source keeps no history.
+
+SELECT
+  date,
+  account_id,
+  campaign_id,
+  ad_id,
+  publisher_platform,
+  platform_position,
+  device_platform,
+  spend,
+  impressions,
+  clicks
+FROM ${ref("stg_meta_placement")}

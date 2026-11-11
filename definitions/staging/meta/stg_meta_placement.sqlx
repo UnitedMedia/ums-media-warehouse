@@ -1,0 +1,90 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.meta_staging,
+  name: "stg_meta_placement",
+  tags: ["meta", "staging"],
+  description: "Meta ad x publisher platform x platform POSITION x device, daily. The only source in this warehouse that carries platform_position — feed, reels, stories, right-hand column. De-duplicated largest-wins: the table has no load timestamp.",
+  columns: {
+    platform_position: "The column that justifies this model. Nothing else in the warehouse has it. Values are Meta's own: feed, facebook_reels, facebook_stories, instagram_reels, right_hand_column, marketplace, search, instream_video, an_classic, threads_feed and ten more.",
+    campaign_name: "VOLATILE, and not to be relied on. Measured 2026-11-11: of 4,683 duplicate keys, 3,108 differed on this column alone — the campaign had been renamed between two extractions. Join dim_meta_ad on campaign_id for a stable name.",
+    spend: "Account currency, like every other Meta model. Converted to EUR only in core.fct_ad_performance_daily."
+  }
+}
+
+-- THE SECOND ATTEMPT, AND THE FIRST ONE THAT WORKS.
+--
+-- The source is Keboola, not Weld, despite living in facebook_ads_weld.
+-- Keboola writes platform_position_device_keboola_v3_insights into that
+-- dataset directly, so the dataset name is now a lie in one table. It is
+-- declared where it physically sits rather than where it logically
+-- belongs, because ref() resolves addresses, not intentions.
+--
+-- WHAT THE FIRST ATTEMPT DID, because it will be tried again otherwise.
+-- platform_position_device_keboola, same breakdowns, ALSO requested
+-- `actions` with `action_breakdowns`. Generic Extractor flattens the
+-- actions array into child rows and the parent metrics row does not
+-- survive it. A placement row with at least one action -- which is any row
+-- with a click -- was replaced by its action children, and those children
+-- carry publisher_platform but NOT platform_position or device_platform.
+--
+-- Measured 2026-11-11 against a manual export of one account over 28 days:
+--   rows with 0 clicks   2,867 in the export ->  2,332 arrived  (81.3%)
+--   rows with >0 clicks  1,917 in the export ->     75 arrived  ( 3.9%)
+--   impressions lost on click-bearing rows: 5,833,327
+--   impressions lost on the rest:              11,238
+--
+-- The surviving values were CORRECT -- 2,404 of 2,407 matched the export
+-- exactly -- which is what made it dangerous. The table looked like a
+-- working placement report and held 0.7% of the delivery. Across all
+-- accounts in October: 8.6M impressions against a true 511M.
+--
+-- So: no actions in this report, ever. Conversions at ad level are in
+-- fct_meta_ad_action_daily and do not need a placement key.
+--
+-- DE-DUPLICATION IS LARGEST-WINS, not newest-wins, because the table has
+-- no _weld_synced and no extracted_at. Nothing in it says which read came
+-- last. Impressions climb as a day settles, so the largest reading is the
+-- most complete one -- the same reasoning as stg_cm360_reach, arrived at
+-- for the same reason.
+--
+-- 477,786 rows for 473,103 keys on 2026-11-11. The 4,683 extras are the
+-- Keboola config having no primary key, so an incremental load appends
+-- instead of replacing. That should be fixed at source; this QUALIFY is
+-- the net under it, not the solution.
+--
+-- THE GRAIN IS FIVE COLUMNS AND WAS CHECKED FOR A SIXTH. The age_gender
+-- model lost 694,133 October impressions for five weeks by keying one
+-- column short of its source, so every other column was tested here:
+-- ex_account_id, parent_id, fb_graph_node, account_id, campaign_id,
+-- ad_name and date_stop are constant within a key. Only campaign_name
+-- varies, and a rename is not a grain.
+--
+-- RECONCILED 2026-11-11 against fct_meta_ad_daily, 30 closed days:
+-- 476,142,179 impressions here against 476,142,150 there, clicks exact on
+-- all 30 days, spend 1,476,246.26 against 1,476,246.05. The 29-impression
+-- difference is 9 November, which Meta was still restating.
+--
+-- COVERAGE STARTS 2026-10-11. The extraction has no history before that
+-- and the broken v1 cannot supply it -- what it holds for September is the
+-- 1% that had no clicks.
+
+SELECT
+  date_start                           AS date,
+  CAST(account_id  AS STRING)          AS account_id,
+  account_name,
+  CAST(campaign_id AS STRING)          AS campaign_id,
+  campaign_name,
+  CAST(ad_id       AS STRING)          AS ad_id,
+  ad_name,
+  NULLIF(TRIM(publisher_platform), '') AS publisher_platform,
+  NULLIF(TRIM(platform_position),  '') AS platform_position,
+  NULLIF(TRIM(device_platform),    '') AS device_platform,
+  CAST(spend       AS NUMERIC)         AS spend,
+  CAST(impressions AS INT64)           AS impressions,
+  CAST(clicks      AS INT64)           AS clicks
+FROM ${ref({ schema: constants.DATASETS.meta, name: "platform_position_device_keboola_v3_insights" })}
+QUALIFY ROW_NUMBER() OVER (
+  PARTITION BY date_start, CAST(ad_id AS STRING),
+               publisher_platform, platform_position, device_platform
+  ORDER BY impressions DESC, clicks DESC, spend DESC
+) = 1

@@ -40,6 +40,7 @@ correct no matter how Looker rolls it up; a ratio stored in a table does not.
 | Meta by age and gender, with conversions | `meta_reporting.v_demographics_daily` |
 | Meta by age and gender **per campaign** | `meta_reporting.v_age_gender_daily` |
 | Meta by country, platform, device | `meta_reporting.v_breakdown_daily` |
+| Meta by placement — feed, reels, stories, right-hand column | `meta_reporting.v_placement_daily` |
 | TikTok spend — the complete total | `tiktok_reporting.v_campaign_daily` |
 | TikTok by ad, creative, video performance | `tiktok_reporting.v_daily` |
 | TikTok by hour | `tiktok_reporting.v_hourly` |
@@ -359,6 +360,8 @@ name anywhere.
 ## Meta
 
 Source: Weld → `facebook_ads_weld`. Weld lands about 137 tables; 16 are used.
+One further table in that dataset is written by **Keboola**, not Weld:
+`platform_position_device_keboola_v3_insights`, the placement feed.
 
 ### Reporting views — `meta_reporting`
 
@@ -369,6 +372,7 @@ Source: Weld → `facebook_ads_weld`. Weld lands about 137 tables; 16 are used.
 | **`v_age_gender_daily`** | campaign × age × gender × day | **The only demographic view with a campaign name.** Spend (native and euro), impressions, all-interaction clicks, **link clicks** and each bucket's share of its campaign. Reach is not here on purpose — see `v_age_gender_reach_daily`. Conversions are still missing: `demographics_age_and_gender_actions` has them but only at account grain. |
 | **`v_age_gender_reach_daily`** | campaign × age × gender × asset × day | **Reach and frequency by demographic.** Quarantined like the DV360, CM360 and Teads reach views — never blend it with the one above. Answers "how often did a 25-34 woman see this"; does **not** answer "how many people did this campaign reach", which needs `campaign_insight` (frozen since 2026-09-22). |
 | `v_breakdown_daily` | breakdown slice × day | Age, gender, country, publisher platform, device — the raw five, in one shape. |
+| **`v_placement_daily`** | ad × platform × position × device × day | **The only view with `platform_position`.** Feed vs reels vs stories vs right-hand column vs marketplace, split by device, with each placement's share of its campaign's impressions. Spend, impressions, clicks, CPM, CPC, CTR. No reach and no conversions — neither exists at this grain. Starts **2026-10-11**; a chart spanning September shows it empty. |
 
 **How the conversion columns work.** Meta reports conversions as a long list of
 action types. `v_ad_daily` pivots 33 of them into columns:
@@ -393,6 +397,23 @@ seed, its results come back NULL and `assert_meta_results_coverage` goes red.
   Meta's own per-breakdown rounding and privacy suppression.)
 - **Never union `v_breakdown_daily` with `v_ad_daily`** either — that is the
   same spend a sixth time.
+- **`v_placement_daily` is a seventh cut of that same spend**, and the finest.
+  It reconciles exactly to ad level — 476,142,179 impressions against
+  476,142,150 over the 30 days to 2026-11-09, clicks identical every day —
+  which is precisely why it must stand alone. One chart, one data source.
+- **Its `cpc` is over all clicks, not link clicks**, because the placement feed
+  carries no `inline_link_clicks`. `v_ad_daily`'s `cpc` uses link clicks. The
+  two numbers are not comparable; compare placement to placement.
+- **Take `campaign_name` from the view, never from the raw feed.** The feed
+  stores whatever the campaign was called at extraction time. Measured
+  2026-11-11: of 4,683 duplicate rows, 3,108 differed on nothing but that
+  column. The view joins `dim_meta_ad` on `campaign_id` instead.
+- **One Keboola table in `facebook_ads_weld` is poison and keeps the same
+  name as the good one.** `platform_position_device_keboola` — no `_v3_insights`
+  suffix — also requests `actions`, which the extractor flattens into child
+  rows that destroy the parent metrics row. It holds only placement rows that
+  had zero clicks: 0.7% of delivery, with correct values, which is what makes
+  it convincing. Nothing in this project reads it.
 - Three of the five breakdowns (age/gender, platform+device, region) have **no
   `ad_id`**, so those rows carry no campaign or ad labels at all. Weld does not
   sync it. Sized in `reporting.v_data_gaps`.

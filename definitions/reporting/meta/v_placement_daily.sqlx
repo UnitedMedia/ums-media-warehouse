@@ -1,0 +1,69 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.meta_reporting,
+  name: "v_placement_daily",
+  tags: ["meta", "reporting"],
+  description: "Meta by placement: ad x publisher platform x position x device x day. THE view for 'feed or reels, stories or right-hand column'. Its own Looker data source — union it with v_ad_daily or v_breakdown_daily and the same spend is counted twice.",
+  columns: {
+    platform_position: "The reason to use this view. Nothing else in the warehouse separates a reels impression from a feed one.",
+    campaign_name: "Taken from dim_meta_ad, not from the placement feed. The feed's own copy is whatever the campaign was called at extraction time and changes under you — 3,108 of 4,683 duplicate rows differed on nothing else.",
+    cpc: "Over ALL clicks, not link clicks. This feed has no inline_link_clicks, so the figure is not comparable with v_ad_daily's cpc, which uses link clicks. Compare placement to placement, not to the ad view."
+  }
+}
+
+-- ONE PLACEMENT PER ROW, SIX DIMENSIONS DEEP, AND IT ADDS UP.
+--
+-- Reconciled 2026-11-11 against fct_meta_ad_daily over 30 closed days:
+-- impressions 476,142,179 here against 476,142,150 there, clicks identical
+-- on every one of the 30 days. So a placement breakdown of a campaign
+-- totals that campaign, which is the property the previous attempt at this
+-- report did not have.
+--
+-- AND THAT IS EXACTLY WHY IT MUST NOT BE BLENDED. It carries the whole
+-- spend, cut finer. Put it beside v_ad_daily in one chart and every figure
+-- doubles; beside v_breakdown_daily, which is itself five cuts of the same
+-- money, and it is worse.
+--
+--   one placement question  -> this view, alone
+--   one breakdown question  -> v_breakdown_daily, one breakdown_type
+--   everything else         -> v_ad_daily
+--
+-- COVERAGE STARTS 2026-10-11, and nothing can push it earlier. A chart
+-- spanning September shows this view as empty, not as zero.
+--
+-- NO reach AND NO CONVERSIONS HERE. Neither exists at a placement grain --
+-- see the notes in fct_meta_placement_daily for why asking for the second
+-- one destroyed the first version of this feed.
+
+SELECT
+  p.date,
+  DATE_TRUNC(p.date, WEEK(MONDAY)) AS week,
+  DATE_TRUNC(p.date, MONTH)        AS month,
+
+  p.account_id,
+  d.account_name,
+  d.account_currency AS currency,
+  p.campaign_id,
+  d.campaign_name,
+  d.adset_name,
+  p.ad_id,
+  d.ad_name,
+
+  p.publisher_platform,
+  p.platform_position,
+  p.device_platform,
+  CONCAT(p.publisher_platform, ' / ', p.platform_position) AS placement,
+
+  p.spend,
+  p.impressions,
+  p.clicks,
+
+  ${metrics.cpm("p.spend", "p.impressions")}  AS cpm,
+  ${metrics.cpc("p.spend", "p.clicks")}       AS cpc,
+  ${metrics.ctr("p.clicks", "p.impressions")} AS ctr,
+
+  SAFE_DIVIDE(p.impressions, SUM(p.impressions) OVER (PARTITION BY p.date, p.campaign_id))
+    AS share_of_campaign_impressions
+FROM ${ref("fct_meta_placement_daily")} p
+LEFT JOIN ${ref("dim_meta_ad")} d ON p.ad_id = d.ad_id
+WHERE ${constants.allPartitions("p")}
