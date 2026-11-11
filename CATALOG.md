@@ -41,7 +41,7 @@ correct no matter how Looker rolls it up; a ratio stored in a table does not.
 | Meta by age and gender **per campaign** | `meta_reporting.v_age_gender_daily` |
 | Meta by country, platform, device | `meta_reporting.v_breakdown_daily` |
 | Meta by placement — feed, reels, stories, right-hand column | `meta_reporting.v_placement_daily` |
-| CM360 by site or by creative — which site, which creative delivered | `cm360_reporting.v_site_creative_daily` |
+| CM360 by site or by creative, **with the real media cost in EUR** | `cm360_reporting.v_site_creative_daily` |
 | TikTok spend — the complete total | `tiktok_reporting.v_campaign_daily` |
 | TikTok by ad, creative, video performance | `tiktok_reporting.v_daily` |
 | TikTok by hour | `tiktok_reporting.v_hourly` |
@@ -205,6 +205,36 @@ sides come out wrong.
 CM360 has no currency column at all. Break out or filter by currency before
 summing across advertisers.
 
+### CM360 cost: two columns, one of them is not media
+
+CM360 does not know what the media cost. It knows what it charged to serve the
+ad, and that is what `mediaCost` in every Keboola CM360 table is — about
+**0.20 EUR CPM**. The media cost comes from the booked rate in the media plan,
+which the legacy pipeline joins in and writes to `FINAL_TABLES.CM360` — about
+**3.27 EUR CPM**, sixteen times larger.
+
+`v_site_creative_daily` carries both, named so that picking the wrong one takes
+effort:
+
+| column | what it is | rate column |
+|---|---|---|
+| **`media_cost_eur`** | **what the media cost** | `cpm_eur` |
+| `serving_fee` | what CM360 charged to serve | `cpm_serving_fee` |
+
+Validated 2026-11-11 against the AOS display page for
+`UMS_Novo Nordisk_Menopauza`, 1 Oct – 11 Nov: 13 sites against 13, impressions
+and clicks identical on every row, 13,694.91 € against 13,694.34 €, agreeing to
+the cent per site.
+
+**`media_cost_eur` is NULL for programmatic, and that is correct.** A
+`BidManager_*` campaign was bought in DV360, so there is no media plan and no
+booked rate — its cost lives in the DV360 views. 24 of the 25 campaigns without
+cost are BidManager. Anything else that appears shows up in
+`reporting.v_data_gaps` as `cm360_campaign_without_media_cost`.
+
+No other CM360 view has `media_cost_eur`. `v_daily`, `v_hourly`,
+`v_geo_daily` and `v_campaign_daily` all carry the serving fee only.
+
 **Euros.** Two views carry `spend_eur` alongside native `spend`:
 `reporting.v_ad_performance_daily` and `meta_reporting.v_ad_daily`. Both convert
 through `core.dim_fx_rate`, the single definition of a rate in this warehouse —
@@ -317,7 +347,7 @@ Source: Keboola → **`keboola_cm360`** (moved there from `kebooladv` on
 | View | Grain | Use it for |
 |---|---|---|
 | **`v_daily`** | placement × ad × creative × day | **The main one.** Impressions, clicks, viewable impressions, video views, media cost, plus click rate, effective CPM, effective CPC, viewable rate and video view rate. Fully labelled with advertiser, campaign, site and landing page. |
-| **`v_site_creative_daily`** | campaign × site × creative × day | **Use this to rank sites and creatives against each other.** Its clicks match the CM360 interface at 99.99%, where `v_daily` keeps 40.6% — but they are still not the quoted figure, so the columns are `clicks_site_level`, `ctr_site_level` and `cpc_serving_fee_site_level`. A CM360 click total comes from `v_campaign_daily`. Carries `channel_group`, share of campaign impressions and clicks, and `is_click_tracking_only`. No country, city, placement or ad. Starts **2026-09-11**. |
+| **`v_site_creative_daily`** | campaign × site × creative × day | **The only CM360 view with real media cost, and the one to rank sites and creatives.** `media_cost_eur` is the booked rate from the media plan — the same figure the AOS display pages show. Clicks match the interface at 99.99% but are still not the quoted figure, so they are `clicks_site_level` / `ctr_site_level` / `cpc_eur_site_level`; a click total comes from `v_campaign_daily`. Also `channel_group`, shares of campaign, `is_click_tracking_only`. No country, city, placement or ad. Starts **2026-09-11**. |
 | `v_hourly` | the same, plus hour | Its own chart and its own data source. Do not blend with `v_daily` — same money, finer grain. |
 | `v_campaign_daily` | campaign × day | The only view with `total_conversions` and `total_reach`, plus `frequency`. |
 | `v_metric_catalog` | — | Every CM360 metric with an `is_additive` flag. Worth reading once. |

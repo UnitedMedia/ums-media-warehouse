@@ -3,13 +3,15 @@ config {
   schema: constants.SCHEMAS.cm360_reporting,
   name: "v_site_creative_daily",
   tags: ["cm360", "reporting"],
-  description: "CM360 by site and creative, for ranking sites and creatives against each other. NOT the source of a CM360 click total — that is v_campaign_daily, from the campaign report. Its own Looker data source; never blend it with v_daily or v_geo_daily.",
+  description: "CM360 by site and creative, WITH THE REAL MEDIA COST IN EUR. The two tables every AOS display page shows — Top Sites and Top Creatives — reproduced in SQL. NOT the source of a CM360 click total; that is v_campaign_daily.",
   columns: {
     clicks_site_level: "NOT THE OFFICIAL CM360 CLICK FIGURE. That is v_campaign_daily, read from the campaign report. This column is named at length so the two cannot be confused in a field picker. It is good for ranking sites and creatives against each other — measured 2026-11-03..09 it totalled 140,779 against the campaign report's 140,790 — but a number quoted to anyone outside comes from the campaign report, not from here.",
     ctr_site_level: "Computed ONLY on rows that served impressions. A click-tracking row has no impression to divide by, so its CTR is NULL rather than infinite. Same warning as clicks_site_level: a rate for comparing sites, not a rate to quote.",
     cpc_serving_fee_site_level: "Serving fee per click, at this grain. Two reasons it is not a CPC anyone should quote: the cost is the ad-serving fee rather than media, and the clicks are the site-level ones.",
     is_click_tracking_only: "TRUE for a tracking tag: clicks, no impressions. Filter these OUT of a rate chart and leave them IN a click total. 41.5% of all clicks are here, the bulk of it search click tracking.",
-    media_cost: "AD-SERVING FEE, not media spend. CPM of about 1 RON. Never chart it beside DV360, Meta or Google spend."
+    serving_fee: "WHAT CM360 CHARGED TO SERVE THE AD, in account currency, CPM about 1 RON. Not media. It is named serving_fee rather than media_cost precisely because media_cost_eur sits beside it.",
+    media_cost_eur: "WHAT THE MEDIA COST, in EUR. The booked rate from the media plan times the delivery, via FINAL_TABLES.CM360 — the same figure the AOS dashboards show, validated to the cent. NULL for programmatic: a BidManager campaign was bought in DV360 and its cost lives there.",
+    cpm_eur: "The real CPM, from media_cost_eur. Around 3.27 EUR, which is a media CPM and comparable with other channels. cpm_serving_fee is not."
   }
 }
 
@@ -51,6 +53,25 @@ config {
 -- "DART Search : Google", where the impression happened on Google and CM360
 -- only ever recorded the click.
 --
+-- THE COST IS REAL MONEY AND IT DOES NOT COME FROM CM360. CM360 only knows
+-- what it charged to serve the ad, which is about 0.20 EUR CPM. The media
+-- cost comes from the booked rate in the media plan, through
+-- FINAL_TABLES.CM360, and is about 3.27 EUR CPM. Both columns are here and
+-- they are named so that picking the wrong one takes effort:
+--
+--   media_cost_eur   what the media cost        cpm_eur
+--   serving_fee      what CM360 charged         cpm_serving_fee
+--
+-- Validated 2026-11-11 against the AOS display page for
+-- UMS_Novo Nordisk_Menopauza, 1 Oct - 11 Nov: 13 sites against 13, 12,842
+-- clicks against 12,842 to the unit, 13,694.91 EUR against 13,694.34, and
+-- per site it agrees to the cent.
+--
+-- media_cost_eur IS NULL FOR PROGRAMMATIC, which is correct and not a gap.
+-- A BidManager campaign was bought in DV360, so there is no booked rate and
+-- no media plan; its cost lives in the DV360 views. 24 of 25 campaigns
+-- without cost are BidManager.
+--
 -- COVERAGE STARTS 2026-09-11.
 
 SELECT
@@ -70,12 +91,14 @@ SELECT
 
   f.impressions,
   f.clicks                                                        AS clicks_site_level,
-  f.media_cost,
+  f.media_cost_eur,
+  f.serving_fee,
   f.is_click_tracking_only,
 
-  IF(f.impressions > 0, ${metrics.ctr("f.clicks", "f.impressions")}, NULL)       AS ctr_site_level,
-  IF(f.impressions > 0, ${metrics.cpm("f.media_cost", "f.impressions")}, NULL)   AS cpm_serving_fee,
-  ${metrics.cpc("f.media_cost", "f.clicks")}                        AS cpc_serving_fee_site_level,
+  IF(f.impressions > 0, ${metrics.ctr("f.clicks", "f.impressions")}, NULL)        AS ctr_site_level,
+  IF(f.impressions > 0, ${metrics.cpm("f.media_cost_eur", "f.impressions")}, NULL) AS cpm_eur,
+  IF(f.impressions > 0, ${metrics.cpm("f.serving_fee", "f.impressions")}, NULL)   AS cpm_serving_fee,
+  ${metrics.cpc("f.media_cost_eur", "f.clicks")}                     AS cpc_eur_site_level,
 
   SAFE_DIVIDE(f.impressions, SUM(f.impressions) OVER (PARTITION BY f.date, f.campaign_id))
     AS share_of_campaign_impressions,

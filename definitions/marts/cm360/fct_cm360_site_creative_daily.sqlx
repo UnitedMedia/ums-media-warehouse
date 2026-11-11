@@ -17,7 +17,8 @@ config {
   columns: {
     clicks: "Reconciled to cm360_reach, the campaign-level figure that matches the CM360 interface, at 99.99% — which is why this table is worth having. It is still NOT the figure anyone quotes: CM360 clicks come from the campaign report through v_campaign_daily, one report and one number. The reporting view exposes this as clicks_site_level for exactly that reason. Use it to rank sites and creatives against each other, which the campaign report cannot do.",
     is_click_tracking_only: "TRUE where there are clicks and no impressions — a tracking tag, not a served placement. 41.5% of all clicks. Exclude these rows from a CTR chart; never exclude them from a click total.",
-    media_cost: "THE SERVING FEE. Measured 2026-11-03..09: 41,410.60 RON against 42,746,274 impressions, a CPM of 0.97 — against 9.50 for Meta and 19.92 for Google Ads the same week. The media was bought in DV360 or direct and its cost lives there. Never put this next to another channel's spend."
+    serving_fee: "WHAT CM360 CHARGED TO SERVE THE AD, in account currency. Renamed from media_cost on 2026-11-11 because media_cost_eur now sits beside it and two columns of money with almost the same name is how this goes wrong. Measured 2026-11-03..09: 41,410.60 against 42,746,274 impressions, a CPM of 0.97. Never put it next to another channel's spend.",
+    media_cost_eur: "WHAT THE MEDIA COST, in EUR, from FINAL_TABLES.CM360 — the booked rate in the media plan times the delivery. NULL for programmatic: a BidManager campaign was bought in DV360 and its cost lives there, so 24 of 142 campaigns have none and that is correct. Validated against the AOS dashboard to the cent."
   }
 }
 
@@ -57,16 +58,77 @@ config {
 -- is in fct_cm360_reach_daily. Reach per site or per creative would not sum
 -- to a campaign anyway.
 
+-- THE COST JOIN, AND WHY IT IS SHAPED THIS WAY.
+--
+-- CM360 does not know what the media cost. The legacy pipeline does: it
+-- multiplies the booked rate from the media plan by the delivery and writes
+-- the product to FINAL_TABLES.CM360.media_cost, in EUR. That table is still
+-- produced daily and is where the AOS dashboards get their figures.
+--
+-- JOINED ON creative_id, NOT ON NAMES. FINAL_TABLES.CM360 carries no
+-- campaign_id and no site_id, so a name join was the obvious route and is
+-- the worse one: measured over October it matched 60.51% of impressions
+-- against 60.91% for date + creative_id + site, the difference being
+-- campaigns renamed on one side and not the other.
+--
+-- THE COST IS SPREAD BY IMPRESSION SHARE, which is the part worth reading
+-- twice. 60 of 45,669 date + creative_id + site keys belong to more than
+-- one campaign on our side, while the cost table has exactly one row per
+-- such key. A plain join would attach the whole cost to each of them and
+-- invent money. Splitting by impressions gives each row its part and keeps
+-- the total exact; where the key has one campaign, which is 99.87% of them,
+-- the share is 1 and nothing happens.
+--
+-- THE COALESCE IS NOT DEFENSIVE PADDING, it carries 7,837.09 EUR. An
+-- impression share is undefined when the key served no impressions at all,
+-- and 352 keys are exactly that: click-tracking placements, which are 41.5%
+-- of CM360 clicks and were booked and paid for like any other. Dividing by
+-- their zero impressions returned NULL and dropped their cost -- measured
+-- before the fix, 343,105.30 arrived out of 350,942.39. So when there are
+-- no impressions to weight by, the cost splits evenly across the rows.
+--
+-- VERIFIED: 350,942.39 in FINAL_TABLES.CM360 over 2026-09-11..11-09, and
+-- 350,942.39 in this table. Every euro that has a matching row arrives.
+--
+-- 61% OF IMPRESSIONS GET A COST, AND THAT IS THE RIGHT ANSWER. Of the
+-- campaigns with none, 24 of 25 are BidManager -- programmatic, bought in
+-- DV360, so there is no media plan and no booked rate. The 25th is
+-- UMS_HelpNet_White Label, which looks like a plan that was never entered;
+-- assert_cm360_media_cost_coverage names anything else that appears.
+
+WITH cost AS (
+  SELECT
+    date,
+    CAST(creative_id AS STRING) AS creative_id,
+    NULLIF(TRIM(site), '')      AS site_name,
+    SUM(media_cost)             AS media_cost_eur
+  FROM ${ref({ schema: constants.DATASETS.final, name: "CM360" })}
+  WHERE media_cost IS NOT NULL
+  GROUP BY 1, 2, 3
+)
+
 SELECT
-  date,
-  campaign_id,
-  site_id,
-  creative_id,
-  campaign_name,
-  site_name,
-  creative_name,
-  impressions,
-  clicks,
-  media_cost,
-  is_click_tracking_only
-FROM ${ref("stg_cm360_basic")}
+  f.date,
+  f.campaign_id,
+  f.site_id,
+  f.creative_id,
+  f.campaign_name,
+  f.site_name,
+  f.creative_name,
+  f.impressions,
+  f.clicks,
+  f.media_cost AS serving_fee,
+
+  c.media_cost_eur * COALESCE(
+    SAFE_DIVIDE(f.impressions, NULLIF(SUM(f.impressions) OVER (
+      PARTITION BY f.date, f.creative_id, f.site_name), 0)),
+    SAFE_DIVIDE(1, COUNT(*) OVER (
+      PARTITION BY f.date, f.creative_id, f.site_name))
+  ) AS media_cost_eur,
+
+  f.is_click_tracking_only
+FROM ${ref("stg_cm360_basic")} f
+LEFT JOIN cost c
+  ON  f.date        = c.date
+  AND f.creative_id = c.creative_id
+  AND f.site_name   = c.site_name

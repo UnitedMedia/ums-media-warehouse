@@ -225,6 +225,29 @@ WITH gaps AS (
   -- ones. These are the extraction splitting one hour across two rows with
   -- different numbers. fct_cm360_placement_hourly SUMs them, which is the
   -- only sensible reading, so nothing reported is wrong.
+  -- CM360: a campaign that delivered and has no media cost. The cost comes
+  -- from FINAL_TABLES.CM360, the legacy pipeline's join of the CM360 report
+  -- to the booked rate in the media plan. A campaign absent from it has no
+  -- plan entered, which is not something this project can fix -- hence a gap
+  -- and not an assertion. BidManager is excluded: it is programmatic, bought
+  -- in DV360, and correctly has no media plan at all.
+  SELECT
+    '${constants.CHANNEL.cm360}',
+    'cm360_campaign_without_media_cost',
+    campaign_name,
+    'Campaign delivered impressions but carries no media_cost_eur. The booked rate is missing from FINAL_TABLES.CM360, so this campaign is absent from any euro cost total. Ask whoever maintains the media plan to enter it. Programmatic campaigns are excluded and are not expected to have one.',
+    SUM(impressions),
+    CAST(NULL AS FLOAT64)
+  FROM ${ref("fct_cm360_site_creative_daily")}
+  WHERE ${constants.allPartitions()}
+    AND NOT STARTS_WITH(campaign_name, 'BidManager_')
+  GROUP BY campaign_name
+  HAVING SUM(impressions) > 0
+     AND SAFE_DIVIDE(SUM(IF(media_cost_eur IS NOT NULL, impressions, 0)),
+                     SUM(impressions)) < 0.90
+
+  UNION ALL
+
   SELECT
     '${constants.CHANNEL.cm360}',
     'cm360_hourly_split_rows',

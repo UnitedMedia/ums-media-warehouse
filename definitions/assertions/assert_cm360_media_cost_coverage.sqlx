@@ -1,0 +1,71 @@
+config {
+  type: "assertion",
+  tags: ["cm360", "monitoring"],
+  description: "Names any non-programmatic CM360 campaign whose media cost did not arrive, and catches the join breaking. The cost comes from a pipeline this project does not control, on a key that has no campaign_id in it."
+}
+
+-- An assertion FAILS if it returns rows. Empty result = healthy.
+--
+-- WHAT CAN GO WRONG, AND WHY NOTHING ELSE WOULD SEE IT.
+--
+-- media_cost_eur is joined from FINAL_TABLES.CM360, which the legacy
+-- pipeline writes and this project neither produces nor schedules. The join
+-- key is date + creative_id + site_name, because that table carries no
+-- campaign_id and no site_id. A site renamed on one side, a creative_id
+-- retyped, or the legacy pipeline stopping, all produce the same result: the
+-- column quietly goes NULL. Grain stays unique, nothing is null that is
+-- declared non-null, freshness is current, and the money is gone.
+--
+-- PROGRAMMATIC IS EXCLUDED, BY NAME AND ON PURPOSE. A BidManager campaign
+-- was bought in DV360; there is no media plan, no booked rate, and no cost
+-- to find. Measured 2026-11-11, 24 of the 25 campaigns without cost are
+-- BidManager. Asserting on them would fire forever over something correct.
+--
+-- SO THE CHECK IS THE TOTAL, AND NOTHING ELSE: everything
+-- FINAL_TABLES.CM360 holds for a date-creative-site that exists on our side
+-- must arrive in this table, to the euro. It is what caught the cost being
+-- dropped for click-tracking placements -- 7,837.09 EUR, lost because an
+-- impression share is undefined when there are no impressions to weight by.
+--
+-- A CAMPAIGN WITH NO COST IS NOT AN ASSERTION, and the distinction is the
+-- one this project already draws. An assertion turns the workflow red and
+-- is for something being wrong HERE. A campaign the legacy pipeline never
+-- costed is something missing THERE -- today that is
+-- UMS_HelpNet_White Label, 241,897 impressions, which looks like a plan
+-- nobody entered. Asserting on it would paint the run red every night over
+-- a thing this project cannot fix, and a red that is always on is a red
+-- nobody reads. It is in reporting.v_data_gaps as
+-- cm360_campaign_without_media_cost instead, where it is visible and
+-- someone can decide.
+--
+-- The split holds in general: our join breaking shows up here, their data
+-- not existing shows up there.
+
+WITH total_pierdut AS (
+  SELECT
+    'media cost in FINAL_TABLES.CM360 did not reach this table' AS problem,
+    CAST(ROUND(sursa - ajuns, 2) AS STRING)                     AS campaign_name,
+    CAST(ROUND(sursa - ajuns) AS INT64)                         AS rows_affected,
+    ROUND(100 * SAFE_DIVIDE(ajuns, NULLIF(sursa, 0)), 2)        AS pct_acoperit
+  FROM (
+    SELECT
+      (SELECT SUM(c.media_cost)
+       FROM ${ref({ schema: constants.DATASETS.final, name: "CM360" })} c
+       JOIN (
+         SELECT DISTINCT date, creative_id, site_name
+         FROM ${ref("fct_cm360_site_creative_daily")}
+         WHERE ${constants.allPartitions()}
+       ) f
+         ON  c.date                      = f.date
+         AND CAST(c.creative_id AS STRING) = f.creative_id
+         AND NULLIF(TRIM(c.site), '')    = f.site_name
+      ) AS sursa,
+      (SELECT SUM(media_cost_eur)
+       FROM ${ref("fct_cm360_site_creative_daily")}
+       WHERE ${constants.allPartitions()}
+      ) AS ajuns
+  )
+  WHERE ABS(IFNULL(sursa, 0) - IFNULL(ajuns, 0)) > 1
+)
+
+SELECT * FROM total_pierdut

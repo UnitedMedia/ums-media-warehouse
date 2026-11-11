@@ -578,6 +578,36 @@ const FINAL_TABLES = [
   "MonthlyExchangeRate",  // Date (first of month) + ExchangeRate. No
                           // currency column: it is implicitly RON per
                           // 1 EUR. Covers 2026-04 onwards.
+
+  // THE ONLY PLACE CM360 MEDIA COST EXISTS, and it is not CM360's own
+  // figure. The legacy pipeline joins the CM360 delivery report to the
+  // booked rate from the media plan -- flight_booked_rate -- and the
+  // product is media_cost, in EUR.
+  //
+  // DO NOT CONFUSE IT WITH keboola_cm360 mediaCost. Two columns, nearly
+  // the same name, an order of magnitude apart:
+  //
+  //   FINAL_TABLES.CM360.media_cost        media       CPM 3.27 EUR
+  //   keboola_cm360.cm360_basic.mediaCost  serving fee CPM 0.20 EUR
+  //
+  // VALIDATED 2026-11-11 against the AOS dashboard, campaign
+  // UMS_Novo Nordisk_Menopauza, 1 Oct - 11 Nov: 13 sites against 13,
+  // 12,842 clicks against 12,842 to the unit, 13,694.91 EUR against
+  // 13,694.34. Per site it agrees to the cent.
+  //
+  // GRAIN IS date + campaign + site + creative, the same as cm360_basic,
+  // but it carries NO campaign_id and NO site_id -- only creative_id and
+  // advertiser_id. 36.3M rows, 433 campaigns, 2025-12-01 onwards, no null
+  // costs, and it is still written daily by the old pipeline.
+  //
+  // IT COVERS DIRECT BUYS ONLY, which is correct rather than a gap.
+  // Measured over October: 118 campaigns carry cost, and the 24 that do
+  // not are all BidManager -- programmatic bought in DV360, whose cost
+  // lives there. One campaign is genuinely missing, HelpNet White Label.
+  //
+  // calculated_media_cost IS NULL ON EVERY ROW. The column exists and is
+  // not filled. media_cost is the one to read.
+  "CM360",
 ];
 
 KEBOOLA_TABLES.forEach(name => {
