@@ -3,44 +3,58 @@ config {
   schema: constants.SCHEMAS.cm360_staging,
   name: "stg_cm360_reach",
   tags: ["cm360", "staging"],
-  description: "CM360 reach, isolated on purpose. uniqueReachTotalReach arrives as STRING because CM360 suppresses reach under its privacy threshold and returns text instead of a number. Both the parsed value and the raw string are kept.",
+  description: "CM360 reach and the authoritative click count, at campaign x day. Reads cm360_reachv2 since 2026-11-11 — the first CM360 source with no duplication, so the first that needs no de-duplication.",
   columns: {
-    total_reach: "NON-ADDITIVE. Deduplicated by CM360 per row. Monthly reach is not the sum of daily reach.",
-    is_reach_suppressed: "TRUE where CM360 returned something non-numeric — a privacy suppression, not a zero."
+    total_reach: "NON-ADDITIVE. De-duplicated by CM360 per row. Monthly reach is not the sum of daily reach.",
+    is_reach_suppressed: "TRUE where CM360 returned something non-numeric — a privacy suppression, not a zero. 620 of 3,981 rows on 2026-11-11, 15.6%.",
+    clicks: "THE authoritative CM360 click count. The detail reports lose clicks to their own dimension count; this one does not."
   }
 }
 
-
--- COUNTS ARE CAST TO INT64. keboola_cm360 delivers impressions, clicks,
--- activeViewViewableImpressions and richMediaVideoViews as FLOAT64, where
--- the old kebooladv tables gave INT64. Without these casts the incremental
--- marts fail on insert -- "Query column 9 has type FLOAT64 which cannot be
--- inserted into column impressions, which has type INT64" -- and the
--- warehouse would end up storing counts as floats, which nothing else here
--- does. media_cost stays FLOAT64: it is money, not a count.
-
-
--- SELECT DISTINCT since 2026-10-15. The Keboola extraction began inserting
--- instead of replacing: cm360_hourly went from 82,413 rows to 268,317, with
--- 80,347 beyond its distinct date + hour + placement + ad + creative keys.
--- cm360_united 0.2%. The floodlight table was 40% duplicated until
--- cm360_floodlightsv2 replaced it on 2026-10-17; v2 is 1.3%
--- (27 rows in 2,066). Better, not fixed -- DISTINCT stays.
+-- REPOINTED TO cm360_reachv2 ON 2026-11-11, AND THE DE-DUPLICATION CAME OUT
+-- WITH IT.
 --
--- DISTINCT, not a QUALIFY, and the difference matters. Checked 2026-10-15:
--- every duplicate pair is IDENTICAL in every column -- same impressions,
--- cost, site, campaign and landing page. Identical rows are interchangeable,
--- so removing one cannot lose anything.
+-- cm360_reach appended its extraction window instead of replacing it: 12,547
+-- rows for 2,756 keys, 4.55 copies each. This file carried a largest-wins
+-- QUALIFY to survive that, ordering by impressions because impressions climb
+-- across snapshots while reach wobbles downward as CM360 refines it.
 --
--- These tables carry no sync timestamp, so there is no "newest wins" tiebreak
--- available. A QUALIFY would have to pick arbitrarily, which is exactly what
--- this file's own grain note warns against.
+-- THAT QUALIFY WAS NOT FREE. Taking the maximum impressions across up to
+-- seven reads overstates them, because the maximum is whichever snapshot ran
+-- highest, not whichever ran last. Reconciled over the 43 overlapping days,
+-- every single difference ran the same direction:
 --
--- It also keeps the right failure mode: if the source ever duplicates rows
--- that DIFFER, DISTINCT keeps both and assert_cm360_hourly_grain fires. The
--- fix defends against the known problem without hiding a new one.
+--   impressions   199,321,788 (v2)  vs  199,373,820 (old)   -0.03%
+--   clicks            613,912       vs      613,936         -0.004%
+--
+-- Small, and it was a bias rather than noise. v2 has one row per key, so
+-- there is nothing to choose between and nothing to bias.
+--
+-- NO QUALIFY AND NO DISTINCT, DELIBERATELY. 3,981 rows for 3,981 keys on
+-- 2026-11-11, across all 60 days. A de-duplication that currently removes
+-- nothing would still be there on the day the source changes, quietly
+-- absorbing it. fct_cm360_reach_daily already asserts uniqueKey on date +
+-- advertiser_id + campaign_id, so that day turns the workflow red instead.
+--
+-- WHAT ELSE v2 BROUGHT: 60 days where the old table held 43, 174 campaigns
+-- against 156, 88 advertisers against 83, and one day fresher.
+--
+-- CROSS-VALIDATED AGAINST A DIFFERENT EXTRACTION. Over the full 60 days
+-- cm360_basic, which is campaign x site x creative and comes through its own
+-- report, totals 1,130,840 clicks. So does this. To the unit. Impressions
+-- land 125 apart in 284 million.
+--
+-- REACH CAN EXCEED IMPRESSIONS ON 136 ROWS, and both cases are benign.
+-- "DART Search" carries clicks and reach against zero impressions, because
+-- CM360 only ever tracked the click -- the impression happened on Google.
+-- The rest are BidManager campaigns where a modelled reach rounds about 0.1%
+-- above a small impression count: 8,430 against 8,422.
+--
+-- STILL STRING DATE AND FLOAT CLICKS. parseCm360Date handles the first.
+-- The second has no fractional values, checked, so CAST is safe. Neither is
+-- worth a workaround here; both are on the list for Keboola.
 
-SELECT DISTINCT
+SELECT
   CAST(profileId AS STRING)         AS profile_id,
   profileName                       AS profile_name,
   ${metrics.parseCm360Date("date")} AS date,
@@ -58,28 +72,4 @@ SELECT DISTINCT
 
   CAST(impressions AS INT64) AS impressions,
   CAST(clicks      AS INT64) AS clicks
-FROM ${ref({ schema: constants.DATASETS.cm360, name: "cm360_reach" })}
-
--- SNAPSHOT DE-DUPLICATION, 2026-10-21. Same Keboola defect as the other
--- three CM360 sources and stg_dv360_lineitem: a new extract of a row is
--- appended rather than replacing the old one. 545 rows above 1,393 keys --
--- 39%, the worst of the four, because date + campaign_id is the ENTIRE
--- grain here. There is no site, placement or geography for extra rows to
--- legitimately come from.
---
--- ORDER BY impressions, NOT total_reach, and the distinction matters.
--- Impressions climb monotonically across snapshots -- campaign 35649696 on
--- 2026-10-09 runs 307,467 / 307,469 / 307,470 -- but total_reach WOBBLES:
--- 110,946 / 110,940 / 110,940. Reach is a modelled estimate and revises
--- DOWN as it refines. Ordering by total_reach would pick the earliest,
--- crudest estimate. Ordering by impressions picks the latest snapshot and
--- carries whatever reach belongs to it.
---
--- This matters more here than anywhere else in the project: total_reach is
--- NON-ADDITIVE. Summing two reach figures for one campaign-day counts the
--- same people twice, so the duplication was not merely inflating a total,
--- it was producing a number with no meaning at all.
-QUALIFY ROW_NUMBER() OVER (
-  PARTITION BY date, campaignId
-  ORDER BY impressions DESC, clicks DESC
-) = 1
+FROM ${ref({ schema: constants.DATASETS.cm360, name: "cm360_reachv2" })}

@@ -94,7 +94,36 @@ const CM360_TABLES = [
                        // columns v1 did, plus placementStartDate and
                        // placementEndDate; it dropped impressions_str, which
                        // was never read. Duplication fell from 40% to 1.3%.
-  "cm360_reach",       // NON-ADDITIVE unique reach.
+  "cm360_reach",       // NON-ADDITIVE unique reach. SUPERSEDED 2026-11-11 by
+                       // cm360_reachv2 below; nothing reads it any more.
+                       // Kept declared for one week as a fallback, then
+                       // remove this line and drop the table.
+
+  // THE CAMPAIGN-LEVEL REPORT, DONE PROPERLY. Arrived 2026-11-11 and
+  // replaces cm360_reach for every purpose. Measured the day it landed:
+  //
+  //                        cm360_reachv2   cm360_reach
+  //   rows                        3,981        12,547
+  //   real keys                   3,981         2,756
+  //   copies per key               1.00          4.55
+  //   days                           60            43
+  //   campaigns                     174           156
+  //   advertisers                    88            83
+  //
+  // IT IS THE FIRST CM360 TABLE WITH NO DUPLICATION AT ALL, which is why
+  // stg_cm360_reach no longer de-duplicates. The old largest-wins QUALIFY
+  // was not free: picking the maximum impressions across up to seven
+  // snapshots OVERSTATED them. Reconciled over the overlapping 43 days,
+  // every difference ran one way -- v2 is 52,032 impressions lower on
+  // 199.3M, 0.03%, and 24 clicks lower on 613,936.
+  //
+  // CROSS-VALIDATED AGAINST cm360_basic, a different extraction, over the
+  // full 60 days: 1,130,840 clicks on both sides, to the unit, and
+  // 284,349,327 impressions against 284,349,452 -- 125 apart in 284M.
+  //
+  // STILL DELIVERS date AS STRING and clicks AS FLOAT (no fractional
+  // values, so the cast is safe), and carries no extracted_at. Asked for.
+  "cm360_reachv2",
 
   // THE CLICK-ACCURATE ONE, and it sat here unread until 2026-11-11.
   // Campaign x site x creative x day. Three dimensions where cm360_united

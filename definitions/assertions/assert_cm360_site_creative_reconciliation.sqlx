@@ -19,18 +19,28 @@ config {
 -- comparison against the campaign total is the one measurement that tests
 -- the claim, so it is the one that runs.
 --
--- cm360_reach IS THE BASELINE because it is campaign-level, it is the figure
--- that matches the CM360 interface, and it comes through a different
--- extraction. Measured 2026-11-03..09: 140,779 clicks here against 140,790
--- there, 99.99%.
+-- cm360_reachv2 IS THE BASELINE because it is campaign-level, it is the
+-- figure that matches the CM360 interface, and it comes through a different
+-- extraction. Measured over its full 60 days on 2026-11-11: 1,130,840 clicks
+-- on this table and 1,130,840 on that one, to the unit.
+--
+-- IT REPLACED cm360_reach AS THE BASELINE THE DAY IT ARRIVED. The old table
+-- appended its window, 4.55 copies per key, so reading it here meant
+-- de-duplicating largest-wins and comparing against a figure that was itself
+-- slightly overstated. v2 has one row per key and 60 days where the old had
+-- 43, so this assertion now covers the whole history of the fact rather than
+-- its last six weeks.
 --
 -- TOLERANCE IS 2%, AND IT IS NOT ROOM FOR DRIFT. Observed divergence is
 -- 0.01%. The failure this guards against -- a dimension quietly added to the
 -- extraction, or the model repointed at cm360_united -- lands at 40%, twenty
 -- times outside the band. Nothing structural hides inside 2%.
 --
--- cm360_reach IS DE-DUPLICATED HERE, not read raw: it carries 4.55 copies of
--- every row, and largest-wins is the same rule stg_cm360_reach applies.
+-- NOTHING IS DE-DUPLICATED HERE ANY MORE. cm360_reachv2 has 3,981 rows for
+-- 3,981 keys, so the QUALIFY that used to sit in this query came out with
+-- the one in stg_cm360_reach. If duplication ever returns, this assertion
+-- reports a ratio BELOW 1 and the uniqueKey assertion on
+-- fct_cm360_reach_daily fires at the same time.
 --
 -- THE LAST TWO DAYS ARE EXCLUDED. CM360 lands two days behind and the two
 -- extractions do not land together, so the newest days disagree by timing.
@@ -40,11 +50,7 @@ WITH referinta AS (
     date                                      AS zi,
     CAST(campaignId AS STRING)                AS campanie,
     SAFE_CAST(clicks AS INT64)                AS clickuri
-  FROM ${ref({ schema: constants.DATASETS.cm360, name: "cm360_reach" })}
-  QUALIFY ROW_NUMBER() OVER (
-    PARTITION BY date, campaignId
-    ORDER BY SAFE_CAST(impressions AS INT64) DESC
-  ) = 1
+  FROM ${ref({ schema: constants.DATASETS.cm360, name: "cm360_reachv2" })}
 ),
 
 detaliu AS (
