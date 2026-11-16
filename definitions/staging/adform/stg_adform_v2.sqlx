@@ -1,0 +1,108 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.adform_staging,
+  name: "stg_adform_v2",
+  tags: ["adform", "staging"],
+  description: "The three Adform v2 reports joined into one row per date x campaign x line item x creative type. This is the join Keboola was doing with UNION ALL, done properly -- a union stacks the three reports into separate rows, a join widens them into one. NOTHING READS THIS YET; see the coverage note below.",
+  columns: {
+    impressions: "Delivered impressions, from adform_reportsv2. The only ADDITIVE impression column here.",
+    unique_reach: "NON-ADDITIVE. De-duplicated by Adform within line item x day. Summing it across line items counts the same person once per line item they saw.",
+    impressions_campaign_unique: "NON-ADDITIVE, and campaign-scoped despite sitting on a line-item row. Adform de-duplicates the user across the whole campaign, so this is the SMALLEST of the three impression columns.",
+    impressions_campaign_day_unique: "NON-ADDITIVE, the same figure scoped to the day. Sits between impressions_campaign_unique and impressions.",
+    cost: "EUR. Adform is one of the three channels that needs no conversion at all."
+  }
+}
+
+-- WHY THREE TABLES AND NOT ONE.
+--
+-- Adform publishes these as three separate reports that share one grain:
+-- date x campaign x line item x creative type. They differ only in how
+-- the impression column is de-duplicated.
+--
+--   adform_reportsv2                     impressions, clicks, cost,
+--                                        uniqueReach
+--   adform_reports_campaign_uniquev2     impressions, de-duplicated per
+--                                        user per CAMPAIGN
+--   adform_reports_campaign_day_uniquev2 impressions, de-duplicated per
+--                                        user per campaign per DAY
+--
+-- Keboola was combining them with UNION ALL into adform_reports_combinedv2.
+-- A union of three tables that share a key and disagree on what
+-- `impressions` means does not produce one wide row -- it produces three
+-- rows per key carrying three different measurements in the same column.
+-- There is no de-duplication rule that can recover from that, because none
+-- of the three rows is the right answer on its own.
+--
+-- THIS IS WHAT BROKE adform_reports_combined (v1). Measured 2026-11-16:
+-- 6,552 rows for 842 keys, and on 109 of those keys the copies GROW rather
+-- than repeat -- line item 15048077 on 11-10 reads 357, then 4,301, then
+-- 8,245 impressions for the same day. The largest-wins tiebreak in
+-- stg_adform_daily therefore keeps 8,245 where the delivered figure is
+-- 3,944, and fct_adform_lineitem_daily carries 96,153 impressions for
+-- campaign 4288223 on 11-10 against the 44,768 these three tables agree
+-- on. A factor of 2.15.
+--
+-- THE JOIN IS 1:1 AND WAS VERIFIED AS SUCH, 2026-11-16. All three tables
+-- hold 41 rows for 41 keys. A FULL JOIN returns 41 rows with no unmatched
+-- side. Every descriptive column -- campaign, lineItem, client,
+-- campaignCurrency, adCreativeType -- is identical across the three, zero
+-- rows differing, so the join is safe on the key alone and the labels can
+-- come from the delivery report.
+--
+-- NO DE-DUPLICATION HERE, DELIBERATELY, and the same reasoning as
+-- stg_cm360_basic. These sources do not duplicate today. A tiebreak that
+-- removes nothing now would still be here on the day one of them starts
+-- appending, quietly absorbing it. assert_adform_v2_grain is what notices
+-- instead.
+--
+-- COVERAGE IS NOT YET ENOUGH TO REPLACE v1. As of 2026-11-16:
+--
+--                        v1 (combined)        v2 (these three)
+--   campanii             4                    2
+--   zile                 53  (09-21..11-12)    7  (11-10..11-16)
+--   line items           24                   8
+--
+-- v1 is wrong but long; v2 is right but short. Switching the marts today
+-- would trade 46 days of inflated history for 7 days of correct data, and
+-- the marts are type: "table", so the history goes immediately. The switch
+-- is two ref() changes in stg_adform_daily and stg_adform_reach, and it
+-- waits until these three carry the same four campaigns and the same start
+-- date as v1.
+--
+-- EACH OF THE THREE HAS BEEN WRITTEN EXACTLY ONCE -- created and last
+-- modified at 10:23, 10:25 and 10:26 on 2026-11-16. Zero duplicates after
+-- a single load proves nothing about the primary key; adform_reports_
+-- combinedv2 looked just as clean after its first run and sat at 2.00
+-- copies per key after its second. The second run is the test.
+
+SELECT
+  DATE(r.date)                 AS date,
+  CAST(r.campaignID AS STRING) AS campaign_id,
+  r.campaign                   AS campaign_name,
+  CAST(r.lineItemID AS STRING) AS line_item_id,
+  r.lineItem                   AS line_item_name,
+  r.client                     AS client_name,
+  r.campaignCurrency           AS currency,
+  r.adCreativeType             AS ad_creative_type,
+
+  CAST(r.impressions AS INT64)   AS impressions,
+  CAST(r.clicks      AS INT64)   AS clicks,
+  CAST(r.cost        AS FLOAT64) AS cost,
+
+  CAST(r.uniqueReach   AS INT64) AS unique_reach,
+  CAST(cu.impressions  AS INT64) AS impressions_campaign_unique,
+  CAST(cdu.impressions AS INT64) AS impressions_campaign_day_unique
+
+FROM ${ref({ schema: constants.DATASETS.adform, name: "adform_reportsv2" })} r
+
+LEFT JOIN ${ref({ schema: constants.DATASETS.adform, name: "adform_reports_campaign_uniquev2" })} cu
+  ON  cu.date           = r.date
+  AND cu.campaignID     = r.campaignID
+  AND cu.lineItemID     = r.lineItemID
+  AND cu.adCreativeType = r.adCreativeType
+
+LEFT JOIN ${ref({ schema: constants.DATASETS.adform, name: "adform_reports_campaign_day_uniquev2" })} cdu
+  ON  cdu.date           = r.date
+  AND cdu.campaignID     = r.campaignID
+  AND cdu.lineItemID     = r.lineItemID
+  AND cdu.adCreativeType = r.adCreativeType

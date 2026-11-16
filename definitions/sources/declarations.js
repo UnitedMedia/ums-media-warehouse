@@ -462,9 +462,37 @@ const TABOOLA_TABLES = [
 // adCreativeType is a single value, 'Pixel Tag', on all 1,600 rows. It
 // is staged but is not a usable dimension yet.
 // ---------------------------------------------------------------------
+// THE v2 REPLACEMENT ARRIVED AS THREE TABLES, 2026-11-16. Adform
+// publishes delivery and the two user-de-duplicated impression counts as
+// separate reports sharing one grain. Keboola was stitching them with
+// UNION ALL into adform_reports_combinedv2 -- three rows per key, each
+// carrying a different meaning of `impressions` in the same column. The
+// join belongs here instead; see stg_adform_v2.
+//
+// adform_reports_combinedv2 IS NOT DECLARED and should not be used. It
+// is the broken union: 78 rows for 41 keys, exactly 2.00 copies on every
+// day present in both of its two runs.
+//
+// THE THREE ARE CLEAN AND ALIGN EXACTLY -- 41 rows for 41 keys each, the
+// same 7 days, 2 campaigns and 8 line items, and every descriptive column
+// identical across all three. But each has been written exactly once, so
+// nothing is yet proven about their primary key.
+//
+// COVERAGE IS SHORT. v1 holds 4 campaigns over 53 days from 09-21; these
+// hold 2 campaigns over 7 days from 11-10. The marts stay on v1 until
+// that closes, even though v1 is the inflated one.
 const ADFORM_TABLES = [
-  "adform_reports_combined",  // date x campaign x line item. Delivery,
-                              // cost and three reach-shaped columns.
+  "adform_reports_combined",             // v1. date x campaign x line item.
+                                         // Delivery, cost and three
+                                         // reach-shaped columns, all in one
+                                         // table, all duplicated.
+
+  "adform_reportsv2",                    // v2 delivery: impressions, clicks,
+                                         // cost, uniqueReach.
+  "adform_reports_campaign_uniquev2",    // v2 impressions, de-duplicated per
+                                         // user per campaign.
+  "adform_reports_campaign_day_uniquev2",// v2 impressions, de-duplicated per
+                                         // user per campaign per day.
 ];
 
 // ---------------------------------------------------------------------

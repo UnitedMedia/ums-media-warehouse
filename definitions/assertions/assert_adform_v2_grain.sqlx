@@ -1,0 +1,122 @@
+config {
+  type: "assertion",
+  tags: ["adform", "monitoring"],
+  description: "The three Adform v2 reports must each hold one row per date + campaign + line item + creative type, must cover the same keys as each other, and must keep campaign_unique <= campaign_day_unique <= impressions. This is the guard that catches Keboola re-appending the window the way adform_reports_combined and adform_reports_combinedv2 both do."
+}
+
+-- An assertion FAILS if it returns rows. Empty result = healthy.
+--
+-- WHY EACH SOURCE IS CHECKED SEPARATELY RATHER THAN JUST THE JOIN.
+-- stg_adform_v2 LEFT JOINs from the delivery report. If one of the two
+-- unique reports starts appending, the join fans out and the duplicate
+-- shows up in the joined view -- but so would a duplicate in the delivery
+-- report, and the two need different fixes. Naming the table that broke
+-- saves the half hour of working out which one it was.
+--
+-- THE ORPHAN CHECKS RUN IN BOTH DIRECTIONS for the same reason. A key
+-- present in campaign_uniquev2 but missing from the delivery report is
+-- silently dropped by the LEFT JOIN; without this it would never surface.
+--
+-- THE HIERARCHY IS NOT A STYLE RULE. The three impression columns are
+-- the same measurement de-duplicated over a widening window, so they can
+-- only shrink in one direction: unique per campaign, then per
+-- campaign-day, then raw. Verified on all 41 rows on 2026-11-16, zero
+-- violations. An inversion means the three reports have been joined to
+-- the wrong columns, which a union-shaped source would produce without
+-- any row count looking wrong.
+--
+-- unique_reach IS DELIBERATELY NOT IN THAT CHAIN. It is scoped to line
+-- item x day, not to the campaign, so it is not nested inside the other
+-- three and has no guaranteed ordering against them. Measured 2026-11-16:
+-- it exceeds impressions_campaign_unique on 6 of the 41 rows. It stays
+-- bounded by impressions -- 0 of 41 violate that -- but asserting
+-- anything tighter would fail on correct data.
+--
+-- NO DATE FILTER AND NO allPartitions(). stg_adform_v2 is a view over
+-- three small tables with no partition filter requirement.
+
+WITH
+reports AS (
+  SELECT * FROM ${ref({ schema: constants.DATASETS.adform, name: "adform_reportsv2" })}
+),
+camp_unique AS (
+  SELECT * FROM ${ref({ schema: constants.DATASETS.adform, name: "adform_reports_campaign_uniquev2" })}
+),
+camp_day_unique AS (
+  SELECT * FROM ${ref({ schema: constants.DATASETS.adform, name: "adform_reports_campaign_day_uniquev2" })}
+),
+
+-- 1. one row per key, in each source separately
+grain AS (
+  SELECT 'adform_reportsv2 has duplicate keys' AS problema,
+         FORMAT('%t | campanie %t | line item %t', DATE(date), campaignID, lineItemID) AS detaliu,
+         COUNT(*) AS randuri
+  FROM reports GROUP BY date, campaignID, lineItemID, adCreativeType HAVING COUNT(*) > 1
+  UNION ALL
+  SELECT 'adform_reports_campaign_uniquev2 has duplicate keys',
+         FORMAT('%t | campanie %t | line item %t', DATE(date), campaignID, lineItemID),
+         COUNT(*)
+  FROM camp_unique GROUP BY date, campaignID, lineItemID, adCreativeType HAVING COUNT(*) > 1
+  UNION ALL
+  SELECT 'adform_reports_campaign_day_uniquev2 has duplicate keys',
+         FORMAT('%t | campanie %t | line item %t', DATE(date), campaignID, lineItemID),
+         COUNT(*)
+  FROM camp_day_unique GROUP BY date, campaignID, lineItemID, adCreativeType HAVING COUNT(*) > 1
+),
+
+-- 2. the three must cover the same keys
+orphans AS (
+  SELECT 'key in campaign_uniquev2 with no delivery row' AS problema,
+         FORMAT('%t | campanie %t | line item %t', DATE(cu.date), cu.campaignID, cu.lineItemID) AS detaliu,
+         1 AS randuri
+  FROM camp_unique cu
+  LEFT JOIN reports r
+    ON  r.date = cu.date AND r.campaignID = cu.campaignID
+    AND r.lineItemID = cu.lineItemID AND r.adCreativeType = cu.adCreativeType
+  WHERE r.date IS NULL
+  UNION ALL
+  SELECT 'key in campaign_day_uniquev2 with no delivery row',
+         FORMAT('%t | campanie %t | line item %t', DATE(cdu.date), cdu.campaignID, cdu.lineItemID),
+         1
+  FROM camp_day_unique cdu
+  LEFT JOIN reports r
+    ON  r.date = cdu.date AND r.campaignID = cdu.campaignID
+    AND r.lineItemID = cdu.lineItemID AND r.adCreativeType = cdu.adCreativeType
+  WHERE r.date IS NULL
+  UNION ALL
+  SELECT 'delivery row with no campaign_unique match',
+         FORMAT('%t | campanie %t | line item %t', date, campaign_id, line_item_id),
+         1
+  FROM ${ref("stg_adform_v2")}
+  WHERE impressions_campaign_unique IS NULL
+  UNION ALL
+  SELECT 'delivery row with no campaign_day_unique match',
+         FORMAT('%t | campanie %t | line item %t', date, campaign_id, line_item_id),
+         1
+  FROM ${ref("stg_adform_v2")}
+  WHERE impressions_campaign_day_unique IS NULL
+),
+
+-- 3. null keys and impossible values
+sanity AS (
+  SELECT 'null key or negative metric' AS problema,
+         FORMAT('%t | campanie %t | line item %t', date, campaign_id, line_item_id) AS detaliu,
+         1 AS randuri
+  FROM ${ref("stg_adform_v2")}
+  WHERE date IS NULL OR campaign_id IS NULL OR line_item_id IS NULL
+     OR impressions < 0 OR clicks < 0 OR cost < 0 OR unique_reach < 0
+  UNION ALL
+  SELECT 'de-duplication hierarchy inverted',
+         FORMAT('%t | campanie %t | line item %t | reach %t, camp %t, zi %t, impr %t',
+                date, campaign_id, line_item_id,
+                unique_reach, impressions_campaign_unique,
+                impressions_campaign_day_unique, impressions),
+         1
+  FROM ${ref("stg_adform_v2")}
+  WHERE impressions_campaign_unique     > impressions_campaign_day_unique
+     OR impressions_campaign_day_unique > impressions
+)
+
+SELECT * FROM grain
+UNION ALL SELECT * FROM orphans
+UNION ALL SELECT * FROM sanity
