@@ -3,56 +3,84 @@ config {
   schema: constants.SCHEMAS.cm360_staging,
   name: "stg_cm360_reach",
   tags: ["cm360", "staging"],
-  description: "CM360 reach and the authoritative click count, at campaign x day. Reads cm360_reachv2 since 2026-11-11 — the first CM360 source with no duplication, so the first that needs no de-duplication.",
+  description: "CM360 reach and the authoritative click count, at campaign x day. Reads cm360_reachv2 since 2026-11-11, de-duplicated largest-wins since 2026-11-16.",
   columns: {
     total_reach: "NON-ADDITIVE. De-duplicated by CM360 per row. Monthly reach is not the sum of daily reach.",
     is_reach_suppressed: "TRUE where CM360 returned something non-numeric — a privacy suppression, not a zero. 620 of 3,981 rows on 2026-11-11, 15.6%.",
-    clicks: "THE authoritative CM360 click count. The detail reports lose clicks to their own dimension count; this one does not."
+    clicks: "THE authoritative CM360 click count, and what v_campaign_daily publishes. The detail reports lose clicks to their own dimension count; this one does not."
   }
 }
 
--- REPOINTED TO cm360_reachv2 ON 2026-11-11, AND THE DE-DUPLICATION CAME OUT
--- WITH IT.
+-- THE DE-DUPLICATION IS BACK, 2026-11-16, AND TAKING IT OUT WAS A
+-- MISTAKE. This file explains both halves honestly because the second
+-- half is the useful part.
 --
--- cm360_reach appended its extraction window instead of replacing it: 12,547
--- rows for 2,756 keys, 4.55 copies each. This file carried a largest-wins
--- QUALIFY to survive that, ordering by impressions because impressions climb
--- across snapshots while reach wobbles downward as CM360 refines it.
+-- WHY IT CAME OUT ON 11-11. cm360_reachv2 arrived holding 3,981 rows for
+-- 3,981 keys across all 60 days, the first CM360 source with no
+-- duplication at all. The old cm360_reach appended its window instead of
+-- replacing it -- 12,547 rows for 2,756 keys, 4.55 copies each -- and the
+-- largest-wins QUALIFY written to survive that was not free: taking the
+-- maximum impressions across up to seven reads overstates them, because
+-- the maximum is whichever snapshot ran highest, not whichever ran last.
+-- Reconciled over the 43 overlapping days it ran 0.03% high on
+-- impressions and 0.004% on clicks -- small, but a bias rather than
+-- noise. On a source with one row per key there was nothing to choose
+-- between and nothing to bias, so it went.
 --
--- THAT QUALIFY WAS NOT FREE. Taking the maximum impressions across up to
--- seven reads overstates them, because the maximum is whichever snapshot ran
--- highest, not whichever ran last. Reconciled over the 43 overlapping days,
--- every single difference ran the same direction:
+-- THE REASONING FOR LEAVING IT OUT WAS WRONG, and this is the part worth
+-- remembering. The file said: fct_cm360_reach_daily already asserts
+-- uniqueKey on date + advertiser_id + campaign_id, so the day the source
+-- changes the workflow turns red instead. It cannot. The mart is
 --
---   impressions   199,321,788 (v2)  vs  199,373,820 (old)   -0.03%
---   clicks            613,912       vs      613,936         -0.004%
+--   SELECT date, advertiser_id, campaign_id, SUM(impressions), ...
+--   GROUP BY 1, 2, 3
 --
--- Small, and it was a bias rather than noise. v2 has one row per key, so
--- there is nothing to choose between and nothing to bias.
+-- Two source rows on one key are ADDED into one mart row. The key is
+-- unique by construction, the assertion passes on every run, and the
+-- metrics are silently doubled. A uniqueKey assertion on a mart that
+-- aggregates tests the GROUP BY, not the data.
 --
--- NO QUALIFY AND NO DISTINCT, DELIBERATELY. 3,981 rows for 3,981 keys on
--- 2026-11-11, across all 60 days. A de-duplication that currently removes
--- nothing would still be there on the day the source changes, quietly
--- absorbing it. fct_cm360_reach_daily already asserts uniqueKey on date +
--- advertiser_id + campaign_id, so that day turns the workflow red instead.
+-- WHAT HAPPENED ON 11-16. CM360 resumed after five days frozen and
+-- re-appended its window. 4,429 rows for 4,390 keys: 39 duplicated keys,
+-- all pairs, all on 11-07 to 11-10, each pair the same campaign-day read
+-- twice about 0.2% apart. Summed by the mart:
 --
--- WHAT ELSE v2 BROUGHT: 60 days where the old table held 43, 174 campaigns
--- against 156, 88 advertisers against 83, and one day fresher.
+--   zi            clickuri raport   corect
+--   2026-11-07    20,310            19,186     +5.9%
+--   2026-11-08    21,406            19,592     +9.3%
+--   2026-11-09    31,338            20,997    +49.2%
+--   2026-11-10    35,035            27,115    +29.2%
 --
--- CROSS-VALIDATED AGAINST A DIFFERENT EXTRACTION. Over the full 60 days
--- cm360_basic, which is campaign x site x creative and comes through its own
--- report, totals 1,130,840 clicks. So does this. To the unit. Impressions
--- land 125 apart in 284 million.
+-- Published through v_campaign_daily as THE CM360 click count, with
+-- every assertion green.
+--
+-- SO: QUALIFY HERE, AND A SEPARATE ASSERTION THAT READS THE SOURCE.
+-- The QUALIFY makes the numbers right today. assert_cm360_reach_grain
+-- reads cm360_reachv2 directly, where the mart's GROUP BY cannot hide
+-- anything, so the duplication stays VISIBLE instead of being silently
+-- absorbed. Neither alone is enough -- that was the whole lesson.
+--
+-- ORDERED BY IMPRESSIONS, as it was before, because impressions climb
+-- across snapshots while reach wobbles as CM360 refines it. The known
+-- cost is the one measured above: a fraction of a percent high. That is
+-- the right trade against tens of percent wrong.
+--
+-- CROSS-VALIDATED AGAINST A DIFFERENT EXTRACTION, 2026-11-11. Over the
+-- full 60 days cm360_basic, which is campaign x site x creative and comes
+-- through its own report, totalled 1,130,840 clicks. So did this. To the
+-- unit. Impressions landed 125 apart in 284 million. That test is worth
+-- repeating once both sources are clean again -- cm360_basic started
+-- duplicating on the same morning and for the same reason.
 --
 -- REACH CAN EXCEED IMPRESSIONS ON 136 ROWS, and both cases are benign.
--- "DART Search" carries clicks and reach against zero impressions, because
--- CM360 only ever tracked the click -- the impression happened on Google.
--- The rest are BidManager campaigns where a modelled reach rounds about 0.1%
--- above a small impression count: 8,430 against 8,422.
+-- "DART Search" carries clicks and reach against zero impressions,
+-- because CM360 only ever tracked the click -- the impression happened on
+-- Google. The rest are BidManager campaigns where a modelled reach rounds
+-- about 0.1% above a small impression count: 8,430 against 8,422.
 --
 -- STILL STRING DATE AND FLOAT CLICKS. parseCm360Date handles the first.
--- The second has no fractional values, checked, so CAST is safe. Neither is
--- worth a workaround here; both are on the list for Keboola.
+-- The second has no fractional values, checked, so CAST is safe. Neither
+-- is worth a workaround here; both are on the list for Keboola.
 
 SELECT
   CAST(profileId AS STRING)         AS profile_id,
@@ -73,3 +101,7 @@ SELECT
   CAST(impressions AS INT64) AS impressions,
   CAST(clicks      AS INT64) AS clicks
 FROM ${ref({ schema: constants.DATASETS.cm360, name: "cm360_reachv2" })}
+QUALIFY ROW_NUMBER() OVER (
+  PARTITION BY date, advertiserId, campaignId
+  ORDER BY impressions DESC, clicks DESC
+) = 1

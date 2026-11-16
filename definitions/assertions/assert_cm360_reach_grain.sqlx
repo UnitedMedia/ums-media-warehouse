@@ -1,0 +1,55 @@
+config {
+  type: "assertion",
+  tags: ["cm360", "monitoring"],
+  description: "cm360_reachv2 must hold one row per date + advertiser + campaign. The uniqueKey assertion on fct_cm360_reach_daily CANNOT catch this -- the mart groups by exactly those three columns, so duplicate source rows are summed into one before the assertion ever sees them."
+}
+
+-- An assertion FAILS if it returns rows. Empty result = healthy.
+--
+-- THIS EXISTS BECAUSE THE MART'S OWN ASSERTION IS BLIND TO IT, and that
+-- was learned the expensive way on 2026-11-16.
+--
+-- stg_cm360_reach was repointed to cm360_reachv2 on 11-11 and its
+-- largest-wins QUALIFY was taken out, on the stated reasoning that
+-- fct_cm360_reach_daily asserts uniqueKey on date + advertiser_id +
+-- campaign_id and would turn the workflow red if the source ever started
+-- appending. That reasoning was wrong. The mart is
+--
+--   SELECT date, advertiser_id, campaign_id, SUM(impressions), ...
+--   GROUP BY 1, 2, 3
+--
+-- so two source rows on one key collapse into one mart row with their
+-- metrics ADDED. The key is unique by construction and the assertion
+-- passes on every run. Nothing can make it fail.
+--
+-- WHAT THAT COST. CM360 resumed on 11-16 after five days frozen and
+-- re-appended its window instead of replacing it. 4,429 rows for 4,390
+-- keys -- 39 duplicated keys, all pairs, all on 11-07 to 11-10. The two
+-- copies are the same campaign-day read twice, about 0.2% apart. Summed:
+--
+--   zi            clickuri raport   corect    impresii raport   corect
+--   2026-11-07    20,310            19,186    8,888,213         6,455,576
+--   2026-11-08    21,406            19,592   10,006,582         6,856,127
+--   2026-11-09    31,338            20,997   10,770,170         7,030,879
+--   2026-11-10    35,035            27,115   10,653,263         7,244,293
+--
+-- Clicks up to 49% high, impressions up to 53%, and clicks_check is what
+-- v_campaign_daily publishes as THE CM360 click count. Four days of
+-- reporting were wrong with every assertion green.
+--
+-- THE LESSON IS GENERAL. A uniqueKey assertion on a mart that aggregates
+-- tests the GROUP BY, not the data. Wherever the source grain and the
+-- mart grain are the same columns, the guard has to read the source.
+-- assert_cm360_site_creative_grain is the same shape and caught its
+-- source on the same morning, because it reads the grain rather than
+-- the mart.
+
+SELECT
+  date,
+  CAST(advertiserId AS STRING) AS advertiser_id,
+  CAST(campaignId   AS STRING) AS campaign_id,
+  'duplicate date + advertiser + campaign in cm360_reachv2' AS problem,
+  COUNT(*) AS rows_affected
+FROM ${ref({ schema: constants.DATASETS.cm360, name: "cm360_reachv2" })}
+GROUP BY date, advertiserId, campaignId
+HAVING COUNT(*) > 1
