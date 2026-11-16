@@ -3,53 +3,45 @@ config {
   schema: constants.SCHEMAS.adform_staging,
   name: "stg_adform_reach",
   tags: ["adform", "staging"],
-  description: "Adform reach at day x campaign x line item. NOTHING ELSE. The source carries impressions and cost on the same rows; they are dropped here so only one view in the warehouse answers how much was delivered.",
+  description: "Adform reach at day x campaign x line item x creative type. NOTHING ELSE. stg_adform_v2 carries impressions and cost on the same rows; they are dropped here so only one view in the warehouse answers how much was delivered.",
   columns: {
-    unique_reach: "NON-ADDITIVE. De-duplicated by Adform within line item x day — verified 2026-11-05, five line items on one campaign-day carry five different values, so it is scoped to the line item and not the campaign. Summing it across line items counts the same person once per line item they saw.",
-    impressions_campaign_unique: "NON-ADDITIVE and campaign-scoped despite sitting on a line-item row. Adform's count of impressions against uniquely-reached users for the whole campaign.",
-    impressions_campaign_day_unique: "NON-ADDITIVE, the same figure scoped to the day."
+    unique_reach: "NON-ADDITIVE. De-duplicated by Adform within line item x day -- verified 2026-11-05, five line items on one campaign-day carry five different values, so it is scoped to the line item and not the campaign. Summing it across line items counts the same person once per line item they saw.",
+    impressions_campaign_unique: "NON-ADDITIVE and campaign-scoped despite sitting on a line-item row. Adform's count of impressions against uniquely-reached users for the whole campaign, so it is the SMALLEST of the three impression columns.",
+    impressions_campaign_day_unique: "NON-ADDITIVE, the same figure scoped to the day. Sits between impressions_campaign_unique and impressions."
   }
 }
 
 -- Quarantined, like fct_dv360_reach_daily and fct_teads_reach_daily.
--- A table holding nothing additive is the only structural defence
+-- A view holding nothing additive is the only structural defence
 -- against SUM(unique_reach) sitting next to SUM(impressions).
 --
--- The same conditional de-duplication as stg_adform_daily, and it has
--- to be driven by IMPRESSIONS rather than by reach. On a duplicated
--- key, impressions double and unique_reach stays IDENTICAL -- line item
--- 15048079 on 11-02 reads 13,539 on both rows while impressions read
--- 208,871 and 417,742. Ordering by reach would therefore pick
--- arbitrarily between two equal values; ordering by impressions picks
--- the row we decided is real and carries its reach along.
-
-WITH deduped AS (
-  SELECT DISTINCT * FROM ${ref({ schema: constants.DATASETS.adform, name: "adform_reports_combined" })}
-),
-bounds AS (
-  SELECT
-    *,
-    MIN(impressions) OVER (PARTITION BY date, campaignID, lineItemID) AS impr_min,
-    MAX(impressions) OVER (PARTITION BY date, campaignID, lineItemID) AS impr_max
-  FROM deduped
-)
+-- REPOINTED TO stg_adform_v2 ON 2026-11-16 alongside stg_adform_daily,
+-- and the conditional de-duplication came out with it. See that file for
+-- what the old rule did and why no tiebreak could have been right.
+--
+-- THE THREE COLUMNS NOW COME FROM THREE DIFFERENT REPORTS, which is what
+-- they always were -- v1 just presented them pre-stitched, and stitched
+-- wrongly. unique_reach comes from the delivery report; the other two are
+-- each a whole report whose only metric is a differently de-duplicated
+-- impression count.
+--
+-- THE TWO CAMPAIGN COLUMNS ARE NESTED, unique_reach IS NOT. Measured on
+-- all 41 rows, 2026-11-16: impressions_campaign_unique never exceeds
+-- impressions_campaign_day_unique, which never exceeds impressions. But
+-- unique_reach is scoped to line item x day rather than to the campaign,
+-- so it sits outside that chain and runs ABOVE
+-- impressions_campaign_unique on 6 of the 41 rows. That is not a fault
+-- and assert_adform_v2_grain does not treat it as one.
 
 SELECT
   date,
-  CAST(campaignID AS STRING) AS campaign_id,
-  campaign                   AS campaign_name,
-  CAST(lineItemID AS STRING) AS line_item_id,
-  lineItem                   AS line_item_name,
-  client                     AS client_name,
+  campaign_id,
+  campaign_name,
+  line_item_id,
+  line_item_name,
+  client_name,
 
-  CAST(unique_reach                    AS INT64) AS unique_reach,
-  CAST(impressions_campaign_unique     AS INT64) AS impressions_campaign_unique,
-  CAST(impressions_campaign_day_unique AS INT64) AS impressions_campaign_day_unique
-FROM bounds
-QUALIFY ROW_NUMBER() OVER (
-  PARTITION BY date, campaignID, lineItemID
-  ORDER BY CASE
-    WHEN impr_max = 2 * impr_min THEN impressions
-    ELSE -impressions
-  END
-) = 1
+  unique_reach,
+  impressions_campaign_unique,
+  impressions_campaign_day_unique
+FROM ${ref("stg_adform_v2")}

@@ -32,6 +32,15 @@ config {
 -- bounded by impressions -- 0 of 41 violate that -- but asserting
 -- anything tighter would fail on correct data.
 --
+-- THE CREATIVE-TYPE CHECK EXISTS BECAUSE THE GRAIN WIDENED. stg_adform_v2
+-- keys on date + campaign + line item + creative type, one column more
+-- than the staging views it replaced. Both marts still GROUP BY date +
+-- campaign + line item and aggregate, so a line-item day with two
+-- creative types would SUM them -- harmless for impressions, wrong for
+-- unique_reach, which is non-additive. adCreativeType is 'Pixel Tag' on
+-- every row today and has never been anything else; this is what notices
+-- the day that stops being true.
+--
 -- NO DATE FILTER AND NO allPartitions(). stg_adform_v2 is a view over
 -- three small tables with no partition filter requirement.
 
@@ -115,6 +124,15 @@ sanity AS (
   FROM ${ref("stg_adform_v2")}
   WHERE impressions_campaign_unique     > impressions_campaign_day_unique
      OR impressions_campaign_day_unique > impressions
+  UNION ALL
+  SELECT 'line-item day carries two creative types',
+         FORMAT('%t | campanie %t | line item %t | tipuri: %t',
+                date, campaign_id, line_item_id,
+                STRING_AGG(DISTINCT ad_creative_type, ', ')),
+         COUNT(DISTINCT ad_creative_type)
+  FROM ${ref("stg_adform_v2")}
+  GROUP BY date, campaign_id, line_item_id
+  HAVING COUNT(DISTINCT ad_creative_type) > 1
 )
 
 SELECT * FROM grain

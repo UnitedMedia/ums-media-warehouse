@@ -478,14 +478,20 @@ const TABOOLA_TABLES = [
 // identical across all three. But each has been written exactly once, so
 // nothing is yet proven about their primary key.
 //
-// COVERAGE IS SHORT. v1 holds 4 campaigns over 53 days from 09-21; these
-// hold 2 campaigns over 7 days from 11-10. The marts stay on v1 until
-// that closes, even though v1 is the inflated one.
+// THE MARTS MOVED TO THESE ON 2026-11-16 and the history went with the
+// move. v1 held 4 campaigns over 53 days from 09-21; these hold 2
+// campaigns over 7 days from 11-10, and the Adform marts are
+// type: "table". That was deliberate: v1 was wrong in both directions,
+// 2.15x too high on 11-10 and 7.5x too low on 11-12. Backfilling the
+// older days is a request to Keboola, not a reason to keep reading a
+// broken table. See stg_adform_daily.
 const ADFORM_TABLES = [
-  "adform_reports_combined",             // v1. date x campaign x line item.
-                                         // Delivery, cost and three
-                                         // reach-shaped columns, all in one
-                                         // table, all duplicated.
+  "adform_reports_combined",             // v1. NOTHING READS THIS ANY MORE.
+                                         // Kept declared so the old series
+                                         // can still be queried by hand while
+                                         // the v2 backfill is outstanding.
+                                         // 6,552 rows for 842 keys, and on
+                                         // 109 of them the copies grow.
 
   "adform_reportsv2",                    // v2 delivery: impressions, clicks,
                                          // cost, uniqueReach.
