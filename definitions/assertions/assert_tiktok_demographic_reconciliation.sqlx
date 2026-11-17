@@ -1,26 +1,34 @@
 config {
   type: "assertion",
   tags: ["tiktok", "monitoring"],
-  description: "Each demographic cut must total the campaign report on its own. Also the guard on the de-duplication: the source ships every row twice, so a QUALIFY that stops matching the source grain shows up here as exactly 2.0."
+  description: "Each demographic cut must total the campaign report on its own. Since stg_tiktok_demographic dropped its QUALIFY on 2026-11-17 this is the ONLY guard left on the source: if the v2 tables ever start re-appending their window, it shows up here as exactly 2.0."
 }
 
 -- An assertion FAILS if it returns rows. Empty result = healthy.
 --
--- WHY THIS CHECK AND NOT A GRAIN CHECK. The source ships every row twice --
--- 30,596 rows for 15,331 age keys on 2026-11-11 -- and staging removes the
--- copies with a QUALIFY. A uniqueKey assertion on the fact confirms the
--- QUALIFY produced unique rows, which it will whatever the source does,
--- because that is what a QUALIFY is for. It cannot tell whether the right
--- rows survived.
+-- WHY THIS CHECK AND NOT A GRAIN CHECK. A uniqueKey assertion on the fact
+-- confirms the rows are unique, which they will be whatever the source
+-- does, because staging groups on that key. It cannot tell whether the
+-- right rows survived, or whether a day was counted twice.
 --
--- Comparing the total against fct_tiktok_campaign_daily can. Measured
--- 2026-11-11, before de-duplication the ratio was exactly 2.0000 on every
--- closed day and after it 1.0000. So:
+-- Comparing the total against fct_tiktok_campaign_daily can. The two are
+-- independent extractions of the same spend, so the ratio is the test.
 --
---   near 2.0   de-duplication stopped working, or the source gained a
---              column that belongs in the QUALIFY key
---   near 0.5   the QUALIFY key is too coarse and is discarding real rows,
---              which is what stg_meta_age_gender did for five weeks
+-- THIS GOT MORE IMPORTANT ON 2026-11-17. Until then the source shipped
+-- every row twice -- 30,596 rows for 15,331 age keys on 2026-11-11 -- and
+-- stg_tiktok_demographic removed the copies with a largest-wins QUALIFY.
+-- The model now reads tiktok_agev2 and titktok_genderv2, which hold one
+-- row per key, and the QUALIFY is gone. Nothing downstream absorbs a
+-- duplicate any more, so a source that starts re-appending arrives here
+-- undisguised. Measured 2026-11-11 the ratio was exactly 2.0000 on every
+-- closed day before de-duplication and 1.0000 after. So:
+--
+--   near 2.0   the v2 tables are re-appending their window -- check the
+--              Load Type on the Keboola BigQuery writer, which was the
+--              cause both previous times
+--   near 0.5   a key is too coarse somewhere and real rows are being
+--              discarded, which is what stg_meta_age_gender did for five
+--              weeks
 --   near 1.0   healthy
 --
 -- EACH breakdown_type IS CHECKED SEPARATELY, because each is a complete cut
@@ -61,7 +69,7 @@ SELECT
   c.impresii                                        AS impresii_campanie,
   d.impresii                                        AS impresii_demografic,
   ROUND(SAFE_DIVIDE(d.impresii, c.impresii), 4)     AS raport,
-  'fct_tiktok_demographic_daily no longer totals fct_tiktok_campaign_daily. A ratio near 2.0 means the de-duplication in stg_tiktok_demographic stopped removing the source duplicates -- check whether tiktok_age_clean gained a column that belongs in the QUALIFY key. A ratio near 0.5 means the key is too coarse and is discarding real rows.' AS actiune
+  'fct_tiktok_demographic_daily no longer totals fct_tiktok_campaign_daily. A ratio near 2.0 means tiktok_agev2 or titktok_genderv2 started re-appending its extraction window -- check the Load Type on the Keboola BigQuery writer, it must be Full load. A ratio near 0.5 means a key is too coarse and is discarding real rows.' AS actiune
 FROM demografic d
 JOIN campanie c USING (zi)
 WHERE c.impresii > 0

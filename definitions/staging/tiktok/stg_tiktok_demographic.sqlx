@@ -3,7 +3,7 @@ config {
   schema: constants.SCHEMAS.tiktok_staging,
   name: "stg_tiktok_demographic",
   tags: ["tiktok", "staging"],
-  description: "TikTok at campaign x day x age, and campaign x day x gender, WITH THE VIDEO METRICS. Two separate cuts of the same spend stacked into one shape — never sum across breakdown_type.",
+  description: "TikTok at campaign x day x age, and campaign x day x gender, WITH THE VIDEO METRICS. Two separate cuts of the same spend stacked into one shape — never sum across breakdown_type. Reads the v2 pair since 2026-11-17 and has nothing left to de-duplicate.",
   columns: {
     breakdown_type: "'age' or 'gender'. The two are SEPARATE CUTS of the same delivery, not a cross-tab: TikTok publishes them as two reports and there is no row that is both. Summing across them doubles everything.",
     video_watched_2s: "THE REASON THIS MODEL EXISTS. Weld's ad_age_gender_report carries no video column at all, so fct_tiktok_breakdown_daily has NULL video on every one of its 239,111 age_gender rows.",
@@ -13,11 +13,10 @@ config {
 
 -- TWO REPORTS, ONE SHAPE, AND THEY ARE NOT A CROSS-TAB.
 --
--- tiktok_age_clean is campaign x day x age. tiktok_gender_clean is
--- campaign x day x gender. There is no row anywhere that is both an age and
--- a gender, so this is not Meta's age x gender grid -- it is two
--- independent slices of the same spend, stacked the way
--- stg_tiktok_breakdown stacks its five.
+-- tiktok_agev2 is campaign x day x age. titktok_genderv2 is campaign x day
+-- x gender. There is no row anywhere that is both an age and a gender, so
+-- this is not Meta's age x gender grid -- it is two independent slices of
+-- the same spend, stacked the way stg_tiktok_breakdown stacks its five.
 --
 -- Each slice totals the campaign on its own. Summing the two totals it
 -- twice.
@@ -27,48 +26,62 @@ config {
 -- have no ad_id at all and only campaign_id. They are mirror images, and a
 -- consumer of the breakdown fact reasonably expects an ad key.
 --
--- DE-DUPLICATION IS LARGEST-WINS. Measured 2026-11-11: 30,596 rows for
--- 15,331 age keys and 19,810 for 9,925 gender keys -- every row exactly
--- twice, on all 31 days, no exceptions. Incremental load with no primary
--- key in Keboola. The two copies are identical except on the day in
--- progress, where one read caught the day earlier than the other, so the
--- larger reading is the more complete one. Same rule as stg_cm360_reach had
--- before cm360_reachv2 removed the need for it.
+-- REPOINTED TO THE v2 PAIR ON 2026-11-17, AND THE LARGEST-WINS
+-- DE-DUPLICATION CAME OUT WITH IT.
 --
--- VERIFIED AFTER DE-DUPLICATION against fct_tiktok_campaign_daily: ratio
--- 1.0000 on every closed day. Before it, exactly 2.0000.
+-- WHAT THE QUALIFY USED TO DO. Measured 2026-11-11: tiktok_age_clean held
+-- 30,596 rows for 15,331 keys and tiktok_gender_clean 19,810 for 9,925 --
+-- every row exactly twice, on all 31 days, no exceptions. The Keboola
+-- BigQuery writer was on incremental load, which has no primary key field
+-- and so can only append. The rule kept the largest reading, on the
+-- argument that the two copies are identical except on the day in
+-- progress, where the later read is the more complete one.
 --
--- stat_time_day IS A TIMESTAMP, where every other TikTok source delivers it
--- as a string. metrics.parseTiktokDate would return NULL on it; DATE() is
--- the right cast and the only place in the TikTok stack where that is true.
+-- THE SOURCE STOPPED DUPLICATING. The writers moved to Full load on
+-- 2026-11-17. Measured the same day, tiktok_agev2 holds 18,195 rows for
+-- 18,195 keys and titktok_genderv2 11,809 for 11,809.
+--
+-- NO QUALIFY NOW, DELIBERATELY. A de-duplication that currently removes
+-- nothing would still be sitting here on the day the source starts
+-- appending again, quietly absorbing it and hiding the regression. Same
+-- decision as stg_adform_daily. assert_tiktok_demographic_reconciliation
+-- turns the workflow red instead: it compares each cut against
+-- fct_tiktok_campaign_daily, and a re-appending source lands at a ratio of
+-- 2.0, nowhere near its 2% band.
+--
+-- NO HISTORY WAS GIVEN UP, unlike the Adform repoint. Measured 2026-11-17,
+-- v2 is a strict superset: same first day, five days longer, and of v1's
+-- 15,814 age keys and 10,247 gender keys ZERO are missing from v2. v1
+-- froze with 2026-11-11 as its last day.
+--
+-- stat_time_day IS A STRING IN v2, where v1 delivered a TIMESTAMP. That
+-- reverses the note this file used to carry: metrics.parseTiktokDate is
+-- the right cast now and DATE() would fail on it. Verified 2026-11-17 that
+-- it returns NULL on no row of either table.
 --
 -- COVERAGE STARTS 2026-10-11 and nothing can push it earlier.
 
 SELECT
-  'age'                                AS breakdown_type,
-  DATE(stat_time_day)                  AS date,
-  CAST(ex_advertiser_id AS STRING)     AS advertiser_id,
-  CAST(campaign_id      AS STRING)     AS campaign_id,
-  NULLIF(TRIM(campaign_name), '')      AS campaign_name,
-  age                                  AS breakdown_value,
-  CAST(impressions        AS INT64)    AS impressions,
-  CAST(clicks             AS INT64)    AS clicks,
-  CAST(spend              AS NUMERIC)  AS spend,
-  CAST(video_play_actions AS INT64)    AS video_plays,
-  CAST(video_watched_2s   AS INT64)    AS video_watched_2s,
-  CAST(video_watched_6s   AS INT64)    AS video_watched_6s
-FROM ${ref({ schema: constants.DATASETS.tiktok_keboola, name: "tiktok_age_clean" })}
+  'age'                                      AS breakdown_type,
+  ${metrics.parseTiktokDate("stat_time_day")} AS date,
+  CAST(ex_advertiser_id AS STRING)           AS advertiser_id,
+  CAST(campaign_id      AS STRING)           AS campaign_id,
+  NULLIF(TRIM(campaign_name), '')            AS campaign_name,
+  age                                        AS breakdown_value,
+  CAST(impressions        AS INT64)          AS impressions,
+  CAST(clicks             AS INT64)          AS clicks,
+  CAST(spend              AS NUMERIC)        AS spend,
+  CAST(video_play_actions AS INT64)          AS video_plays,
+  CAST(video_watched_2s   AS INT64)          AS video_watched_2s,
+  CAST(video_watched_6s   AS INT64)          AS video_watched_6s
+FROM ${ref({ schema: constants.DATASETS.tiktok_keboola, name: "tiktok_agev2" })}
 WHERE campaign_id IS NOT NULL
-QUALIFY ROW_NUMBER() OVER (
-  PARTITION BY ex_advertiser_id, campaign_id, stat_time_day, age
-  ORDER BY impressions DESC, clicks DESC, spend DESC
-) = 1
 
 UNION ALL
 
 SELECT
   'gender',
-  DATE(stat_time_day),
+  ${metrics.parseTiktokDate("stat_time_day")},
   CAST(ex_advertiser_id AS STRING),
   CAST(campaign_id      AS STRING),
   NULLIF(TRIM(campaign_name), ''),
@@ -79,9 +92,5 @@ SELECT
   CAST(video_play_actions AS INT64),
   CAST(video_watched_2s   AS INT64),
   CAST(video_watched_6s   AS INT64)
-FROM ${ref({ schema: constants.DATASETS.tiktok_keboola, name: "tiktok_gender_clean" })}
+FROM ${ref({ schema: constants.DATASETS.tiktok_keboola, name: "titktok_genderv2" })}
 WHERE campaign_id IS NOT NULL
-QUALIFY ROW_NUMBER() OVER (
-  PARTITION BY ex_advertiser_id, campaign_id, stat_time_day, gender
-  ORDER BY impressions DESC, clicks DESC, spend DESC
-) = 1
