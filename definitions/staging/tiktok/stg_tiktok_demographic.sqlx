@@ -54,16 +54,25 @@ config {
 -- 15,814 age keys and 10,247 gender keys ZERO are missing from v2. v1
 -- froze with 2026-11-11 as its last day.
 --
--- stat_time_day IS A STRING IN v2, where v1 delivered a TIMESTAMP. That
--- reverses the note this file used to carry: metrics.parseTiktokDate is
--- the right cast now and DATE() would fail on it. Verified 2026-11-17 that
--- it returns NULL on no row of either table.
+-- THE CAST AROUND stat_time_day IS NOT REDUNDANT. The two v2 tables
+-- disagree on its type: STRING in tiktok_agev2, TIMESTAMP in
+-- titktok_genderv2. v1 had TIMESTAMP in both. Three tables in one family,
+-- two types, no pattern -- Keboola infers it per table and tells nobody,
+-- and the first deploy of this file failed in two seconds on exactly that.
+--
+-- CAST(... AS STRING) FIRST, THEN parseTiktokDate, ON BOTH BRANCHES. The
+-- helper takes the first ten characters, which is '2026-10-11' whether
+-- the cast produced '2026-10-11 00:00:00' or '2026-10-11 00:00:00+00'. A
+-- branch-specific DATE() would read better and would break the next time
+-- Keboola flips a type. Verified 2026-11-17 on titktok_genderv2: this
+-- expression equals DATE(stat_time_day) on all 11,809 rows and returns
+-- NULL on none.
 --
 -- COVERAGE STARTS 2026-10-11 and nothing can push it earlier.
 
 SELECT
   'age'                                      AS breakdown_type,
-  ${metrics.parseTiktokDate("stat_time_day")} AS date,
+  ${metrics.parseTiktokDate("CAST(stat_time_day AS STRING)")} AS date,
   CAST(ex_advertiser_id AS STRING)           AS advertiser_id,
   CAST(campaign_id      AS STRING)           AS campaign_id,
   NULLIF(TRIM(campaign_name), '')            AS campaign_name,
@@ -81,7 +90,7 @@ UNION ALL
 
 SELECT
   'gender',
-  ${metrics.parseTiktokDate("stat_time_day")},
+  ${metrics.parseTiktokDate("CAST(stat_time_day AS STRING)")},
   CAST(ex_advertiser_id AS STRING),
   CAST(campaign_id      AS STRING),
   NULLIF(TRIM(campaign_name), ''),

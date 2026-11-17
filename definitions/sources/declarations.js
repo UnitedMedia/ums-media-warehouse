@@ -338,10 +338,11 @@ const KEBOOLA_TIKTOK_TABLES = [
   // Weld breakdown is keyed on ad_id and leaves campaign_id NULL. The two
   // are mirror images and must not share a model.
   //
-  // v2 CARRIES THE SAME ELEVEN COLUMNS AS v1, name for name. The only
-  // difference that reaches SQL is stat_time_day: a TIMESTAMP in v1 and a
-  // STRING in v2, so metrics.parseTiktokDate applies to v2 and did not
-  // apply to v1. Verified 2026-11-17 that it returns NULL on no row.
+  // v2 CARRIES THE SAME ELEVEN COLUMNS AS v1, name for name, BUT NOT THE
+  // SAME TYPES. stat_time_day is STRING in tiktok_agev2 and TIMESTAMP in
+  // titktok_genderv2, where v1 had TIMESTAMP in both. Keboola infers the
+  // type per table and announces nothing; do not assume the pair agrees.
+  // stg_tiktok_demographic casts to STRING before parsing for that reason.
   //
   // v1 SHIPPED EVERY ROW TWICE AND v2 DOES NOT. On 2026-11-11 v1 held
   // 30,596 rows for 15,331 age keys and 19,810 for 9,925 gender keys --
