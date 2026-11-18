@@ -1,7 +1,7 @@
 config {
   type: "assertion",
   tags: ["cm360", "dv360", "monitoring"],
-  description: "Fails if a Keboola staging window collapses to a handful of days. This is the guard on every mart that was switched from incremental append-only to a full rebuild on 2026-11-03 — a full rebuild of a one-day source writes a one-day mart and throws the history away."
+  description: "Fails if a Keboola staging window collapses to a handful of days. This is the guard on every mart that was switched from incremental append-only to a full rebuild — fct_cm360_placement_hourly and fct_dv360_reach_daily on 2026-11-03, fct_dv360_daily on 2026-11-18. A full rebuild of a one-day source writes a one-day mart and throws the history away."
 }
 
 -- An assertion FAILS if it returns rows. Empty result = healthy.
@@ -21,6 +21,23 @@ config {
 --
 -- The extracts now hold 34-44 days, so those marts were switched to full
 -- rebuilds and the restatements come through.
+--
+-- fct_dv360_daily JOINED THEM ON 2026-11-18, and its cost had been the
+-- largest of the three. Append-only held 13,311,652 impressions and
+-- 10,844.26 EUR for 2026-11-11..11-17 against 22,064,932 and 19,850.92 in
+-- the source -- 45% of a week's DV360 spend, missing from every report,
+-- for seven days. Three of those dates had been first read while the
+-- source was still filling and were frozen at a fraction of a percent.
+--
+-- WHY THE WINDOWS NO LONGER SLIDE, which is what makes all of this safe.
+-- The extractor loads its lookback into Keboola STORAGE with a primary
+-- key, and Storage keeps every row it has ever been given; the writer
+-- then replaces the BigQuery table with the whole of Storage. So the day
+-- count below grows by one per day rather than sliding forward. Measured
+-- 2026-11-18: kebooladv.fct_dv360_lineitem 44 days from 2026-10-06, the
+-- same first day it had on 11-17 with 43. A narrow extractor lookback is
+-- therefore NOT a narrow window -- which is exactly why this assertion
+-- counts the days in staging rather than reading any Keboola setting.
 --
 -- THAT MAKES THIS ASSERTION THE SAFETY NET. If Keboola ever reverts to a
 -- narrow window, the next rebuild silently replaces a month of history
@@ -57,6 +74,11 @@ WITH windows AS (
   UNION ALL
   SELECT 'stg_dv360_reach', COUNT(DISTINCT date)
   FROM ${ref("stg_dv360_reach")}
+  WHERE date IS NOT NULL
+
+  UNION ALL
+  SELECT 'stg_dv360_lineitem', COUNT(DISTINCT date)
+  FROM ${ref("stg_dv360_lineitem")}
   WHERE date IS NOT NULL
 )
 SELECT

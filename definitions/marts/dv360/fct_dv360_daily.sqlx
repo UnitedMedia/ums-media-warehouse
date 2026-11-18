@@ -1,9 +1,10 @@
 config {
-  type: "incremental",
+  type: "table",
   schema: constants.SCHEMAS.dv360_marts,
   name: "fct_dv360_daily",
   tags: ["dv360", "marts"],
-  description: "DV360 backbone fact: line item x day. The source of truth for spend, and the only fact carrying invalid clicks, TrueView views, Total_Conversions and USD spend.",
+  dependencies: ["assert_keboola_window"],
+  description: "DV360 backbone fact: line item x day. The source of truth for spend, and the only fact carrying invalid clicks, TrueView views, Total_Conversions and USD spend. Rebuilt in full on every run since 2026-11-18 -- see assert_keboola_window for what makes that safe.",
   bigquery: {
     partitionBy: "date",
     clusterBy: ["advertiser_id", "campaign_id", "line_item_id"]
@@ -15,27 +16,58 @@ config {
 }
 
 
--- INCREMENTAL, APPEND-ONLY. The Keboola extract holds ONE DAY at a time
--- (confirmed 2026-10-05: fct_dv360_lineitem_daily_v5 had a single date,
--- cm360_hourly likewise). A full rebuild therefore wrote a one-day mart and
--- threw the rest away, which is exactly what had happened by 5 Oct.
+-- SWITCHED FROM INCREMENTAL APPEND-ONLY TO A FULL REBUILD ON 2026-11-18,
+-- the same move fct_cm360_placement_hourly and fct_dv360_reach_daily made
+-- on 2026-11-03, for the same reason and with the same safety net.
 --
--- The predicate loads any date NOT ALREADY in the table, rather than
--- `date > MAX(date)`. That distinction matters: if Keboola ever backfills
--- June to September, a MAX(date) predicate would skip all of it, because
--- every backfilled date is older than what is already here.
+-- WHAT APPEND-ONLY DID HERE. The predicate was
+-- `date NOT IN (SELECT DISTINCT date FROM self)`, so a date entered this
+-- table exactly once and was never looked at again. DV360 does not finish
+-- counting a day the moment it ends -- the figures climb for hours. Any day
+-- this model happened to read while the source was still filling kept
+-- whatever sliver was there at that instant, permanently.
 --
--- Append-only rather than a uniqueKey MERGE, deliberately. Half the grain
--- columns here are nullable (country, app_url, creative_asset ...), and
--- BigQuery MERGE joins with `=`, which never matches NULL to NULL — so a
--- null-keyed row would be re-inserted on every single run, forever.
--- Loading each date exactly once cannot duplicate anything.
+-- IT WENT WRONG IN THE WEEK OF 2026-11-11. Measured on 2026-11-18, against
+-- the source, before the repair:
 --
--- THE TRADE-OFF: a date already loaded is never reloaded, so an upstream
--- RESTATEMENT of an existing day is ignored. DV360 revises conversions for
--- several days after delivery. When a restatement or backfill matters, run
--- this table once with FULL REFRESH and it rebuilds from whatever the
--- source currently holds.
+--   11-13    131 impressions held, 2,365,616 in the source
+--   11-16     19,520 held, 3,249,438 in the source
+--   11-17      1,538 held, 2,659,518 in the source
+--   11-11  3,494,164 held, 3,951,989 in the source
+--
+-- Across 11-11..11-17 the table carried 13,311,652 impressions against
+-- 22,064,932, and 10,844.26 EUR against 19,850.92. DV360 reporting was
+-- missing 45% of its spend for a week. Nothing caught it: the grain was
+-- unique, nothing was null, and the newest date was current, so
+-- assert_source_freshness was green throughout. It surfaced only because
+-- one campaign was compared by hand against FINAL_TABLES.MASTER_TABLE.
+--
+-- A full refresh fixed it, and also repaired the 2026-10-05..10-17 window
+-- that stg_dv360_lineitem notes as damaged -- those partitions had been
+-- written before the QUALIFY existed and append-only could never revisit
+-- them. That is the second restatement this model silently refused.
+--
+-- WHY A FULL REBUILD IS SAFE NOW. Append-only was written on 2026-10-05,
+-- when the Keboola extract held ONE DAY at a time and a full rebuild had
+-- already destroyed the history once. That premise is gone. The extractor
+-- loads the last few days into Keboola STORAGE with a primary key, and
+-- Storage keeps everything it has ever been given -- the writer then
+-- replaces the BigQuery table with the whole of it. Measured 2026-11-18:
+-- kebooladv.fct_dv360_lineitem holds 44 days, 2026-10-06 to 2026-11-18,
+-- and grows by one each day rather than sliding. A rebuild can no longer
+-- lose what it rebuilds from.
+--
+-- THE COST OF THE SWITCH, PAID ONCE. The mart had accumulated 2026-09-28
+-- to 2026-10-05 -- eight days the source has never held, because Storage
+-- itself starts on 10-06. The first full rebuild dropped them: 599 rows,
+-- 21,297,117 impressions, 39,723.47 EUR, 45 campaigns. They are kept in
+-- OTHERS.backup_dv360_daily_20260928_20261005 and come back for good only
+-- if Keboola backfills that range into Storage.
+--
+-- assert_keboola_window IS THE GUARD, and this model depends on it so a
+-- failure skips the rebuild rather than running it. If the extract ever
+-- collapses back to a handful of days, the assertion turns red and this
+-- table keeps yesterday's content instead of being replaced by a stub.
 
 SELECT
   date,
@@ -57,7 +89,4 @@ SELECT
   SUM(spend_usd)             AS spend_usd
 FROM ${ref("stg_dv360_lineitem")}
 WHERE date IS NOT NULL
-${when(incremental(),
-  `AND date NOT IN (SELECT DISTINCT date FROM ${self()}
-                    WHERE ${constants.allPartitions()})`)}
 GROUP BY 1,2,3,4,5,6
