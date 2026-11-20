@@ -1,7 +1,7 @@
 config {
   type: "assertion",
   tags: ["meta", "monitoring"],
-  description: "fct_meta_placement_daily must total what fct_meta_ad_daily holds, per day. The guard that the first placement feed needed and did not have — it ran for two months holding 0.7% of delivery while every assertion in the project passed."
+  description: "fct_meta_placement_daily must total what fct_meta_ad_daily holds, per day. The guard that the first placement feed needed and did not have — it ran for two months holding 0.7% of delivery while every assertion in the project passed. The current day and the first day of the window are excluded; both are partial by construction."
 }
 
 -- An assertion FAILS if it returns rows. Empty result = healthy.
@@ -52,14 +52,45 @@ config {
 --
 -- THE CURRENT DAY IS EXCLUDED ENTIRELY. It is partial in both feeds by
 -- definition and would fire every morning for no reason at all.
+--
+-- SO IS THE FIRST DAY OF THE PLACEMENT WINDOW, since 2026-11-20, and for
+-- the same reason: it is partial by construction, not by fault.
+--
+-- The feed stopped on 2026-11-11 and was backfilled on 2026-11-18. The
+-- backfill landed 2026-10-12 with TWO accounts out of 67 -- 267 rows
+-- against roughly 14,000 on each following day, 91,363 impressions
+-- against 17,576,175 at ad level, a ratio of 0.0052. From 10-13 onward
+-- the ratio is exactly 1.0000 on every single day. The extractor walks
+-- the account list, and on the boundary day it stopped two accounts in.
+--
+-- THIS DOES NOT HEAL ITSELF, which is why it needed handling here rather
+-- than waiting. The Keboola extractor loads into Storage under a primary
+-- key and Storage keeps every row it is ever given, so the window grows
+-- at the end and never slides at the front. 2026-10-12 stays in this
+-- table permanently, and without this exclusion the assertion would have
+-- been red every day forever -- which is how a channel ends up with an
+-- alert nobody reads.
+--
+-- IT COSTS ONE DAY OF COVERAGE, at the edge. Every other day keeps the
+-- 0.5% check. If the feed is ever re-extracted for its first day, this
+-- exclusion silently becomes a no-op rather than hiding anything.
 
-WITH plasament AS (
+WITH margine AS (
+  -- The first day the placement feed holds. Partial by construction:
+  -- the extractor stops partway through the account list on it.
+  SELECT MIN(date) AS prima_zi
+  FROM ${ref("fct_meta_placement_daily")}
+  WHERE date < CURRENT_DATE()
+),
+
+plasament AS (
   SELECT
     date                      AS zi,
     SUM(impressions)          AS impresii,
     SUM(clicks)               AS clickuri
   FROM ${ref("fct_meta_placement_daily")}
   WHERE date < CURRENT_DATE()
+    AND date > (SELECT prima_zi FROM margine)
   GROUP BY 1
 ),
 
@@ -69,7 +100,7 @@ nivel_ad AS (
     SUM(impressions)          AS impresii,
     SUM(clicks)               AS clickuri
   FROM ${ref("fct_meta_ad_daily")}
-  WHERE date >= (SELECT MIN(date) FROM ${ref("fct_meta_placement_daily")} WHERE date < CURRENT_DATE())
+  WHERE date > (SELECT prima_zi FROM margine)
     AND date < CURRENT_DATE()
   GROUP BY 1
 )
