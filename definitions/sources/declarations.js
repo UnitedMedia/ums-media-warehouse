@@ -595,9 +595,23 @@ const GOOGLE_ADS_TABLES = [
   "ad",              // ad type, status, URLs, ad_strength and policy
                      // approval. NO creative text — Weld syncs 23 columns
                      // and none of them is a headline or description.
-  "ad_group_criterion", // keywords and the FULL Quality Score: score,
-                     // expected CTR, ad relevance, landing page. Current
-                     // state, no date.
+  // ad_group_criterion IS DELIBERATELY NOT DECLARED, since 2026-11-20.
+  // It held keyword text, match type and the full Quality Score, and it
+  // was the only source of any of them -- keyword_stats carries the
+  // criterion_id and no text at all. Weld stopped syncing it on
+  // 2026-10-08 and the account owner confirmed it had been switched off
+  // on purpose: 4.5M rows for a label nobody was reading.
+  //
+  // Six weeks passed before anyone noticed, because nothing breaks when
+  // an entity sync stops -- the money stays right and only the names go
+  // missing. By 2026-11-20, 408,760.85 EUR of November keyword spend sat
+  // on keywords with no text. stg_gads_keyword, dim_gads_keyword,
+  // v_keyword_daily and v_keyword_quality were removed with it rather
+  // than left half-empty.
+  //
+  // IF IT EVER COMES BACK, those four models are in the history of this
+  // commit, and assert_gads_dimension_coverage needs its keyword branch
+  // restored at the same time.
   "audience_stats",  // audience performance, keyed on criterion_id. The
                      // audience NAME is not in it — that needs user_list,
                      // user_interest or topic, which are not declared yet.

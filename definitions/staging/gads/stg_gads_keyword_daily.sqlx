@@ -3,9 +3,9 @@ config {
   schema: constants.SCHEMAS.gads_staging,
   name: "stg_gads_keyword_daily",
   tags: ["gads", "staging"],
-  description: "Google Ads keyword performance BY DAY, at keyword x device x network. The history dim_gads_keyword has never had — that table is a Quality Score snapshot with no date column at all.",
+  description: "Google Ads keyword performance BY DAY, at keyword x device x network. The keyword is a bare criterion_id since 2026-11-20 — there is no longer any source of keyword text in this warehouse.",
   columns: {
-    criterion_id: "Unique only WITH adgroup_id, the same rule dim_gads_keyword follows. Join on both or rows fan out.",
+    criterion_id: "Unique only WITH adgroup_id. A NUMBER AND NOTHING ELSE since 2026-11-20, when google_ads.ad_group_criterion was dropped — nothing left in this project can turn it into the keyword someone actually bid on.",
     device: "Part of the grain: MOBILE, DESKTOP, TABLET, CONNECTED_TV, OTHER.",
     ad_network_type: "Part of the grain. Same nine values campaign_stats uses."
   }
@@ -17,9 +17,18 @@ config {
 -- below are therefore no-ops that exist to make that explicit, and to
 -- survive Weld changing its mind.
 --
--- This finally gives v_keyword_quality something to join to. Quality Score
--- has no date, so it could never be put on a daily chart; now the score
--- can label a keyword whose performance over time lives here.
+-- NOTHING READS THIS ANY MORE, since 2026-11-20. It fed
+-- fct_gads_keyword_daily, which fed v_keyword_daily, which labelled each
+-- criterion_id with its keyword text and Quality Score from
+-- dim_gads_keyword. google_ads.ad_group_criterion was the only source of
+-- either, Weld had been syncing 4.5M rows for it, and the account owner
+-- switched it off on purpose, so those three models were removed.
+--
+-- What is left here is spend against identifiers no one can read. It is
+-- kept because keyword_stats is still synced and still correct, so
+-- restoring the labels is a matter of declaring one source again rather
+-- than rebuilding the chain. If that is not going to happen, this and
+-- fct_gads_keyword_daily should go too.
 
 SELECT
   DATE(date)                                        AS date,

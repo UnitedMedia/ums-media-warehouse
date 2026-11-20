@@ -3,7 +3,7 @@ config {
   schema: constants.SCHEMAS.gads_marts,
   name: "fct_gads_keyword_daily",
   tags: ["gads", "marts"],
-  description: "Google Ads keyword performance at day x keyword x device x network. Join dim_gads_keyword on BOTH adgroup_id and criterion_id for Quality Score — criterion_id alone is not unique.",
+  description: "Google Ads keyword performance at day x keyword x device x network. NO REPORTING VIEW READS THIS since 2026-11-20 — v_keyword_daily went with google_ads.ad_group_criterion, and the keyword is now a bare criterion_id. See stg_gads_keyword_daily.",
   bigquery: {
     partitionBy: "date",
     clusterBy: ["account_id", "campaign_id", "adgroup_id"]

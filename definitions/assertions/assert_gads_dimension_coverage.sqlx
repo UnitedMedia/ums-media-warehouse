@@ -41,9 +41,16 @@ config {
 --
 -- CAMPAIGNS AND AD GROUPS USE is_entity_missing, which their dimensions
 -- already carry because they are built from DELIVERY and left-join the
--- entity table. Keywords have no such flag: dim_gads_keyword is built
--- FROM the entity table, so a stranded keyword is absent rather than
--- flagged, and the fact has to be checked against it directly.
+-- entity table. A dimension built FROM an entity table instead would
+-- need checking against its fact directly, since a stranded row would be
+-- absent rather than flagged.
+--
+-- KEYWORDS WERE THE THIRD BRANCH AND ARE GONE, 2026-11-20. They were
+-- what this assertion was written for, and the same day it was written
+-- the account owner confirmed google_ads.ad_group_criterion had been
+-- switched off on purpose -- 4.5M rows for a label nobody read. The
+-- keyword models went with the source rather than stay half-empty, so
+-- there is nothing left to check. Restore this branch if it returns.
 --
 -- THE CURRENT DAY IS EXCLUDED on both sides, the same as every other
 -- assertion here: entity syncs and stats syncs land hours apart, so today
@@ -82,23 +89,9 @@ grupuri AS (
   WHERE f.date BETWEEN (SELECT de_la FROM fereastra) AND (SELECT pana_la FROM fereastra)
 ),
 
-cuvinte AS (
-  SELECT
-    'keyword',
-    'google_ads.ad_group_criterion',
-    SUM(f.spend),
-    SUM(IF(d.criterion_id IS NULL, f.spend, 0))
-  FROM ${ref("fct_gads_keyword_daily")} f
-  LEFT JOIN ${ref("dim_gads_keyword")} d
-    ON d.criterion_id = f.criterion_id
-   AND d.adgroup_id   = f.adgroup_id
-  WHERE f.date BETWEEN (SELECT de_la FROM fereastra) AND (SELECT pana_la FROM fereastra)
-),
-
 toate AS (
   SELECT * FROM campanii
   UNION ALL SELECT * FROM grupuri
-  UNION ALL SELECT * FROM cuvinte
 )
 
 SELECT

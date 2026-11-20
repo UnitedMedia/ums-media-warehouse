@@ -443,19 +443,14 @@ WITH gaps AS (
 
   UNION ALL
 
-  -- Google Ads: keywords Google rates 4 or below
-  SELECT
-    '${constants.CHANNEL.gads}',
-    'gads_low_quality_keyword',
-    quality_landing_page,
-    'Keywords with a Quality Score of 4 or below, grouped by their landing page component. Low quality raises what you pay per click. Where the landing page component is BELOW_AVERAGE the fix is outside the media team.',
-    COUNT(*),
-    CAST(NULL AS FLOAT64)
-  FROM ${ref("dim_gads_keyword")}
-  WHERE quality_score IS NOT NULL AND quality_score <= 4
-  GROUP BY quality_landing_page
-
-  UNION ALL
+  -- gads_low_quality_keyword WAS HERE AND WAS REMOVED ON 2026-11-20. It
+  -- counted keywords Google rates 4 or below, grouped by the landing page
+  -- component, and read dim_gads_keyword. Quality Score came from
+  -- google_ads.ad_group_criterion alone; Weld had been syncing 4.5M rows
+  -- for it and the account owner switched it off deliberately, so the
+  -- keyword models were removed rather than left reporting on a source
+  -- frozen since 2026-10-08. Nothing else in the warehouse carries a
+  -- platform quality rating, so this gap has no replacement.
 
   -- Core: spend that cannot be converted to euros
   SELECT
