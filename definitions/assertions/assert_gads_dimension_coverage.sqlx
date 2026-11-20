@@ -1,0 +1,115 @@
+config {
+  type: "assertion",
+  tags: ["gads", "monitoring"],
+  description: "Recent Google Ads spend must sit on entities that still exist in their dimension. The guard on a FROZEN ENTITY SYNC — the one failure in this stack that no other assertion can see, because the facts stay perfect while the labels stop arriving."
+}
+
+-- An assertion FAILS if it returns rows. Empty result = healthy.
+--
+-- WHAT IT WATCHES, AND WHY NOTHING ELSE DOES.
+-- Every other Google Ads assertion reads the STATS tables: freshness,
+-- grain, device reconciliation, ad-group coverage. The entity tables --
+-- campaign, ad_group, ad, ad_group_criterion -- are the blind spot. When
+-- one of them stops syncing, nothing breaks. Spend still totals, grain
+-- stays unique, dates stay current. New entities simply arrive with no
+-- name, no type and no quality score, and every report keeps the money
+-- while losing the label on it.
+--
+-- google_ads.ad_group_criterion stopped on 2026-10-08 and was found on
+-- 2026-11-20 by hand, six weeks later. By then 408,760.85 EUR of November
+-- keyword spend -- 22.6% of it -- sat on keywords with no text, no match
+-- type and no Quality Score.
+--
+-- WHY SPEND AND NOT ROW COUNT. A frozen dimension strands the newest
+-- entities, and new entities are where the budget goes. Measured
+-- 2026-11-20 on keywords: 15.6% of rows carried 22.6% of spend. Counting
+-- rows understates what the gap costs.
+--
+-- WHY THE LAST SEVEN DAYS AND NOT ALL OF HISTORY. The rate on a whole
+-- quarter is diluted by the months when the sync was fine, so a fresh
+-- freeze would take weeks to cross any threshold. On a recent window it
+-- climbs immediately. Measured 2026-11-20, keywords:
+--
+--   before 2026-10-08 (sync alive)     0.12%
+--   2026-10-09..10-21                  7.12%
+--   8-30 days back                    20.73%
+--   last 7 days                       22.36%
+--
+-- 0.12% is the floor this reaches when everything works, so the ceiling
+-- of 2% is more than an order of magnitude above the noise and would have
+-- fired within days of the freeze rather than after six weeks.
+--
+-- CAMPAIGNS AND AD GROUPS USE is_entity_missing, which their dimensions
+-- already carry because they are built from DELIVERY and left-join the
+-- entity table. Keywords have no such flag: dim_gads_keyword is built
+-- FROM the entity table, so a stranded keyword is absent rather than
+-- flagged, and the fact has to be checked against it directly.
+--
+-- THE CURRENT DAY IS EXCLUDED on both sides, the same as every other
+-- assertion here: entity syncs and stats syncs land hours apart, so today
+-- always shows a gap that is timing rather than loss.
+--
+-- ADS ARE NOT CHECKED. fct_gads_ad_daily carries ad_id, but an ad that
+-- Google serves inside a Performance Max asset group has no entity row by
+-- design, so the figure would never reach zero and the threshold would
+-- have to be loosened until it stopped meaning anything.
+
+WITH fereastra AS (
+  SELECT
+    DATE_SUB(CURRENT_DATE(), INTERVAL 7 DAY) AS de_la,
+    DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY) AS pana_la
+),
+
+campanii AS (
+  SELECT
+    'campaign'                                              AS entitate,
+    'google_ads.campaign'                                   AS tabela_sursa,
+    SUM(f.spend)                                            AS cost_total,
+    SUM(IF(d.is_entity_missing, f.spend, 0))                AS cost_orfan
+  FROM ${ref("fct_gads_campaign_daily")} f
+  JOIN ${ref("dim_gads_campaign")} d USING (campaign_id)
+  WHERE f.date BETWEEN (SELECT de_la FROM fereastra) AND (SELECT pana_la FROM fereastra)
+),
+
+grupuri AS (
+  SELECT
+    'ad_group',
+    'google_ads.ad_group',
+    SUM(f.spend),
+    SUM(IF(d.is_entity_missing, f.spend, 0))
+  FROM ${ref("fct_gads_ad_group_daily")} f
+  JOIN ${ref("dim_gads_ad_group")} d ON d.adgroup_id = f.adgroup_id
+  WHERE f.date BETWEEN (SELECT de_la FROM fereastra) AND (SELECT pana_la FROM fereastra)
+),
+
+cuvinte AS (
+  SELECT
+    'keyword',
+    'google_ads.ad_group_criterion',
+    SUM(f.spend),
+    SUM(IF(d.criterion_id IS NULL, f.spend, 0))
+  FROM ${ref("fct_gads_keyword_daily")} f
+  LEFT JOIN ${ref("dim_gads_keyword")} d
+    ON d.criterion_id = f.criterion_id
+   AND d.adgroup_id   = f.adgroup_id
+  WHERE f.date BETWEEN (SELECT de_la FROM fereastra) AND (SELECT pana_la FROM fereastra)
+),
+
+toate AS (
+  SELECT * FROM campanii
+  UNION ALL SELECT * FROM grupuri
+  UNION ALL SELECT * FROM cuvinte
+)
+
+SELECT
+  entitate,
+  tabela_sursa,
+  ROUND(cost_total, 2)                                   AS cost_ultimele_7_zile,
+  ROUND(cost_orfan, 2)                                   AS cost_fara_dimensiune,
+  ROUND(SAFE_DIVIDE(cost_orfan, cost_total), 4)          AS pondere,
+  ${dataform.projectConfig.vars.gadsOrphanSpendCeiling}  AS prag,
+  'A Google Ads entity sync has stopped. The spend is still correct and still counted -- what is missing is the name, type and status on the newest entities, so reports show budget against rows nobody can identify. Check when tabela_sursa was last written in Weld; it will not recover on its own.' AS actiune
+FROM toate
+WHERE cost_total > 0
+  AND SAFE_DIVIDE(cost_orfan, cost_total) > ${dataform.projectConfig.vars.gadsOrphanSpendCeiling}
+ORDER BY pondere DESC

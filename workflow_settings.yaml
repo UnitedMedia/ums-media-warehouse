@@ -41,6 +41,14 @@ vars:
   # and is excluded from that check.
   gadsAdGroupCoverageFloor: "0.98"
 
+  # Share of recent Google Ads spend allowed to sit on entities that have
+  # no row in their dimension table. A frozen entity sync shows up here as
+  # a figure that climbs day after day: measured 2026-11-20, keywords ran
+  # at 0.12% before ad_group_criterion stopped on 2026-10-08, 7.12% in the
+  # fortnight after, and 22.36% over the last seven days. 2% sits far above
+  # the noise and would have fired within days of the freeze.
+  gadsOrphanSpendCeiling: "0.02"
+
 
   # Allowed absolute divergence in Meta spend between raw and mart, in
   # account currency. Anything above this means de-duplication changed

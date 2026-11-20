@@ -1,12 +1,34 @@
 config {
   type: "assertion",
   tags: ["gads", "monitoring"],
-  description: "Outside Performance Max, ad group spend should account for essentially all campaign spend. PMax is excluded because it has no ad groups by design. A gap anywhere else means the ad-group and ad views are understating more than the known PMax blind spot."
+  description: "Outside Performance Max, ad group spend should account for essentially all campaign spend. PMax is excluded because it has no ad groups by design, and so are the last two days, which Google is still attributing. A gap anywhere else means the ad-group and ad views are understating more than the known PMax blind spot."
 }
 
--- Today is excluded on both sides: ad_group_stats syncs about two hours
--- after campaign_stats, so the current day always shows a harmless
--- difference that is timing, not missing data.
+-- THE LAST TWO DAYS ARE EXCLUDED on both sides. This used to exclude only
+-- today, on the stated grounds that ad_group_stats syncs about two hours
+-- after campaign_stats. The sync lag is real but it is not the whole
+-- story: Google itself finishes attributing spend to ad groups a day or
+-- two after the click, so a closed day can still be short at ad-group
+-- level long after both tables have landed.
+--
+-- Measured 2026-11-20 across every DEMAND_GEN campaign:
+--
+--   2026-11-01..11-17   coverage 1.0000 on every single day
+--   2026-11-18          0.9998
+--   2026-11-19          0.9927
+--
+-- The gap closes backwards as Google catches up. On 11-19 it was 133.16
+-- EUR on the Discover network for one campaign, against 4.11 attributed;
+-- YouTube on the same campaign-day matched to the cent.
+--
+-- WHY ONE LAGGING DAY FAILED THE WHOLE CAMPAIGN. The ratio below is
+-- computed over a campaign's WHOLE LIFETIME, not per day, so a small
+-- campaign is dominated by its worst day. Campaign 23949144698 had spent
+-- 1,251.49 EUR in total; the 129.05 EUR unattributed on 11-19 alone
+-- dragged its lifetime coverage to 0.8969 and tripped the 0.98 floor.
+--
+-- With the two-day exclusion, measured the same day: 1,346 campaigns
+-- checked, none failing.
 
 WITH campaign_level AS (
   SELECT f.campaign_id, SUM(f.spend) AS spend
@@ -14,13 +36,13 @@ WITH campaign_level AS (
   JOIN ${ref("dim_gads_campaign")} d USING (campaign_id)
   WHERE d.advertising_channel_type != 'PERFORMANCE_MAX'
     AND d.advertising_channel_type IS NOT NULL
-    AND f.date < CURRENT_DATE()
+    AND f.date < DATE_SUB(CURRENT_DATE(), INTERVAL 2 DAY)
   GROUP BY 1
 ),
 ad_group_level AS (
   SELECT campaign_id, SUM(spend) AS spend
   FROM ${ref("fct_gads_ad_group_daily")}
-  WHERE date < CURRENT_DATE()
+  WHERE date < DATE_SUB(CURRENT_DATE(), INTERVAL 2 DAY)
   GROUP BY 1
 )
 SELECT
