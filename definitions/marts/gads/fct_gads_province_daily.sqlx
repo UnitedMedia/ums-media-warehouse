@@ -1,0 +1,68 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.gads_marts,
+  name: "fct_gads_province_daily",
+  tags: ["gads", "marts"],
+  description: "Google Ads delivery by PROVINCE: day x ad group x province x location type x device x network. One level below fct_gads_geo_daily, which is country. NEVER sum across location_type — LOCATION_OF_PRESENCE and AREA_OF_INTEREST are two views of the same click.",
+  bigquery: {
+    partitionBy: "date",
+    clusterBy: ["account_id", "campaign_id", "geo_target_id"]
+  },
+  assertions: {
+    uniqueKey: ["date", "adgroup_id", "geo_target_id", "location_type", "device", "ad_network_type"],
+    nonNull: ["date", "geo_target_id"]
+  },
+  columns: {
+    geo_target_id: "Resolves through dim_gads_geo, the same dimension fct_gads_geo_daily uses — the province ids were added to it on 2026-11-23 so both facts share one lookup.",
+    country_geo_target_id: "The country this province sits in, carried from the source so a province can be rolled up without a second join.",
+    location_type: "PART OF THE GRAIN. The same asymmetry fct_gads_geo_daily documents: presence covers all delivery, interest only exists where the query named a place.",
+    spend: "AD GROUP spend, so Performance Max is absent. Never total Google Ads money from here — use fct_gads_campaign_daily."
+  }
+}
+
+-- THE SIBLING OF fct_gads_geo_daily, not a replacement. That one is
+-- country, from ad_group_country_stats; this is province, from
+-- ad_group_province_stats. They are two grains of the same delivery, so a
+-- province total should roll up INTO its country, never alongside it.
+--
+-- DO NOT EXPECT IT TO MATCH THE COUNTRY FACT ROW FOR ROW. Google assigns
+-- a province only where it can; delivery it can place in a country but not
+-- below stays in the country table and has no province row here. Treat
+-- this as a drill-down that may not sum to its parent, not as a
+-- reconciliation target.
+--
+-- GRAIN VERIFIED AT SOURCE 2026-11-23: 260,376 rows for 260,376 keys,
+-- 474 provinces, 147 days from 2026-06-30, zero NULL provinces.
+--
+-- THE NAME 'PROVINCE' IS GOOGLE'S, AND IT IS NOT ROMANIAN COUNTIES. It is
+-- whatever sub-country level each market uses, and the money here is
+-- mostly foreign: measured 2026-11-23, Vojvodina in Serbia led at
+-- 3,627.17 EUR, then England, then provinces of Belgium and the
+-- Netherlands.
+
+SELECT
+  date,
+  account_id,
+  campaign_id,
+  adgroup_id,
+  geo_target_id,
+  country_geo_target_id,
+  location_type,
+  device,
+  ad_network_type,
+
+  SUM(impressions)                         AS impressions,
+  SUM(clicks)                              AS clicks,
+  SUM(interactions)                        AS interactions,
+  SUM(conversions)                         AS conversions,
+  SUM(conversions_value)                   AS conversions_value,
+  SUM(view_through_conversions)            AS view_through_conversions,
+  SUM(spend)                               AS spend,
+
+  SUM(active_view_impressions)             AS active_view_impressions,
+  SUM(active_view_measurable_impressions)  AS active_view_measurable_impressions,
+  SUM(active_view_measurable_spend)        AS active_view_measurable_spend
+FROM ${ref("stg_gads_province_daily")}
+WHERE date IS NOT NULL
+  AND geo_target_id IS NOT NULL
+GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9

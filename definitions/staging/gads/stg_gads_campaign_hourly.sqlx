@@ -1,0 +1,63 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.gads_staging,
+  name: "stg_gads_campaign_hourly",
+  tags: ["gads", "staging"],
+  description: "Google Ads campaign x day x HOUR x device x network. The only source of time-of-day anywhere in the Google Ads stack, and the finest time grain the channel offers.",
+  columns: {
+    hour: "0-23, in the ACCOUNT's time zone, not UTC and not the viewer's. stg_gads_account carries time_zone; a report comparing hours across accounts in different zones is comparing different clocks.",
+    device: "Part of the grain: MOBILE, DESKTOP, TABLET, CONNECTED_TV, OTHER.",
+    ad_network_type: "Part of the grain, the same nine values stg_gads_campaign_daily documents.",
+    spend: "cost_micros converted out of micros, in the account's own currency."
+  }
+}
+
+-- _weld_deleted_at IS NULL is NOT optional. Weld soft-deletes rows in
+-- google_ads and without the filter they keep contributing spend forever.
+-- Measured 2026-11-23: 1,093 soft-deleted rows here.
+--
+-- GRAIN VERIFIED 2026-11-23: 4,643,819 rows for 4,643,819 keys on date +
+-- hour + campaign + device + ad_network_type. No QUALIFY, deliberately --
+-- an arbitrary tiebreak on a clean table silently deletes real rows, the
+-- rule this repo settled on in stg_tiktok_campaign_daily.
+--
+-- IT TOTALS campaign_stats, which is what makes it trustworthy rather
+-- than merely present. Measured the same day across all 155 shared days:
+-- every day inside 0.5%, ratios 1.0000 to 1.0013. So this is the same
+-- money as stg_gads_campaign_daily, cut by hour -- NEVER union the two,
+-- and never add them together.
+--
+-- NO PERFORMANCE MAX PROBLEM HERE, unlike the ad-group tables. This reads
+-- campaign level, so PMax is included and the spend is complete.
+--
+-- WHY NOT ad_group_hourly_stats. It exists, it is 2.3 GB against 1.5 GB
+-- here, and it buys an ad-group split that nobody schedules on. Day-part
+-- decisions are made per campaign. account_hourly_stats exists too and is
+-- coarser than anything worth modelling.
+
+SELECT
+  DATE(date)                        AS date,
+  CAST(hour AS INT64)               AS hour,
+  CAST(account_id AS STRING)        AS account_id,
+  account_descriptive_name          AS account_name,
+  CAST(campaign_id AS STRING)       AS campaign_id,
+  campaign_name,
+  device,
+  ad_network_type,
+
+  impressions,
+  clicks,
+  interactions,
+  video_views,
+  conversions,
+  conversions_value,
+  view_through_conversions,
+  ${metrics.micros("cost_micros")}  AS spend,
+
+  active_view_impressions,
+  active_view_measurable_impressions,
+  ${metrics.micros("active_view_measurable_cost_micros")} AS active_view_measurable_spend,
+
+  interaction_event_types           AS src_interaction_event_types
+FROM ${ref({ schema: constants.DATASETS.gads, name: "campaign_hourly_stats" })}
+WHERE _weld_deleted_at IS NULL

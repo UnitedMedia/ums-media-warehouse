@@ -1,0 +1,58 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.gads_marts,
+  name: "fct_gads_campaign_hourly",
+  tags: ["gads", "marts"],
+  description: "Google Ads delivery by HOUR: day x hour x campaign x device x network. The only time-of-day fact in the project for this channel. Its daily totals equal fct_gads_campaign_daily — the same money, cut finer, so never union or add the two.",
+  bigquery: {
+    partitionBy: "date",
+    clusterBy: ["account_id", "campaign_id", "hour"]
+  },
+  assertions: {
+    uniqueKey: ["date", "hour", "campaign_id", "device", "ad_network_type"],
+    nonNull: ["date", "hour", "campaign_id"]
+  },
+  columns: {
+    hour: "0-23 in the ACCOUNT's time zone. stg_gads_account carries time_zone, and a chart that pools hours from accounts in different zones is averaging different clocks.",
+    spend: "COMPLETE campaign spend, Performance Max included, because this reads campaign level and not ad groups."
+  }
+}
+
+-- WHY HOUR IS A FACT AND NOT A COLUMN ON THE DAILY ONE. Twenty-four rows
+-- per campaign-day-device-network multiplies the daily grain by 24, so
+-- folding it into fct_gads_campaign_daily would make every existing query
+-- 24 times more expensive to answer a question almost none of them ask.
+-- Separate table, separate cost.
+--
+-- IT IS THE SAME SPEND AS fct_gads_campaign_daily. Verified at source on
+-- 2026-11-23 across all 155 shared days: every day inside 0.5%, ratios
+-- 1.0000 to 1.0013. Summing both together doubles Google Ads.
+--
+-- NO CONVERSION LAG WARNING NEEDED beyond the usual: conversions are
+-- attributed to the hour of the CLICK, so a late conversion lands on an
+-- hour that is already in the past. The figure for a recent hour grows
+-- for days afterwards, exactly as it does on the daily fact.
+
+SELECT
+  date,
+  hour,
+  account_id,
+  campaign_id,
+  device,
+  ad_network_type,
+
+  SUM(impressions)                         AS impressions,
+  SUM(clicks)                              AS clicks,
+  SUM(interactions)                        AS interactions,
+  SUM(video_views)                         AS video_views,
+  SUM(conversions)                         AS conversions,
+  SUM(conversions_value)                   AS conversions_value,
+  SUM(view_through_conversions)            AS view_through_conversions,
+  SUM(spend)                               AS spend,
+
+  SUM(active_view_impressions)             AS active_view_impressions,
+  SUM(active_view_measurable_impressions)  AS active_view_measurable_impressions,
+  SUM(active_view_measurable_spend)        AS active_view_measurable_spend
+FROM ${ref("stg_gads_campaign_hourly")}
+WHERE date IS NOT NULL
+GROUP BY 1, 2, 3, 4, 5, 6

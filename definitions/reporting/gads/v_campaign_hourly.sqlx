@@ -1,0 +1,65 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.gads_reporting,
+  name: "v_campaign_hourly",
+  tags: ["gads", "reporting"],
+  description: "Google Ads performance by HOUR OF DAY. The only time-of-day view in the project for this channel. Its daily totals equal v_daily — the same money cut finer, so never put the two in one total.",
+  columns: {
+    hour: "0-23 in the ACCOUNT's time zone, carried here as account_time_zone. Pooling hours across accounts in different zones averages different clocks, which is the one mistake this view makes easy to catch and easy to make.",
+    account_time_zone: "From the account entity. Check it before comparing hours across accounts.",
+    day_of_week: "1 = Sunday through 7 = Saturday, BigQuery's own numbering. Combine with hour for a day-part heatmap.",
+    spend: "COMPLETE campaign spend, Performance Max included — this reads campaign level, not ad groups. Unlike v_geo_daily and v_province_daily, this one does total Google Ads money."
+  }
+}
+
+-- Rate metrics below are row-grain. In Looker rebuild them as calculated
+-- fields over the additive columns -- see CATALOG.md.
+--
+-- THE HOUR IS THE ACCOUNT'S, NOT YOURS. Google reports in each account's
+-- configured time zone. Accounts here are not all in the same one, so a
+-- chart of "spend by hour" across several accounts is stacking clocks that
+-- do not agree. Filter to one account, or group by account_time_zone, or
+-- accept that the peak is smeared.
+--
+-- RECENT HOURS KEEP GROWING. Conversions are attributed to the hour of the
+-- CLICK, so an hour from yesterday gains conversions for days afterwards.
+-- The same caveat as the daily view, just more visible at this grain.
+--
+-- IT TOTALS v_daily EXACTLY. Verified at source 2026-11-23 across all 155
+-- shared days, ratios 1.0000 to 1.0013. That makes it a safe cross-check
+-- and an easy double-count: never union the two.
+
+SELECT
+  f.date,
+  f.hour,
+  EXTRACT(DAYOFWEEK FROM f.date)   AS day_of_week,
+  DATE_TRUNC(f.date, WEEK(MONDAY)) AS week,
+  DATE_TRUNC(f.date, MONTH)        AS month,
+
+  f.account_id,
+  c.account_name,
+  c.currency,
+  c.time_zone                      AS account_time_zone,
+  f.campaign_id,
+  c.campaign_name,
+  c.advertising_channel_type,
+  c.bidding_strategy_type,
+
+  f.device,
+  f.ad_network_type,
+
+  f.impressions,
+  f.clicks,
+  f.interactions,
+  f.video_views,
+  f.conversions,
+  f.conversions_value,
+  f.spend,
+
+  ${metrics.cpm("f.spend", "f.impressions")}        AS cpm,
+  ${metrics.ctr("f.clicks", "f.impressions")}       AS ctr,
+  ${metrics.cpc("f.spend", "f.clicks")}             AS cpc,
+  ${metrics.cpa("f.spend", "f.conversions")}        AS cpa,
+  ${metrics.roas("f.conversions_value", "f.spend")} AS roas
+FROM ${ref("fct_gads_campaign_hourly")} f
+LEFT JOIN ${ref("dim_gads_campaign")} c ON c.campaign_id = f.campaign_id

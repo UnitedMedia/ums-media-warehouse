@@ -3,7 +3,7 @@ config {
   schema: constants.SCHEMAS.gads_marts,
   name: "dim_gads_geo",
   tags: ["gads", "marts"],
-  description: "One row per location that has actually delivered, with its resolved name. Delivery-driven rather than built from the full 274k-row geo_target list — the same lesson as dim_tiktok_campaign and dim_gads_campaign.",
+  description: "One row per location that has actually delivered, with its resolved name. Covers COUNTRIES and PROVINCES since 2026-11-23, so fct_gads_geo_daily and fct_gads_province_daily share one lookup — geo_target_type separates them. Delivery-driven rather than built from the full 274k-row geo_target list, the same lesson as dim_tiktok_campaign and dim_gads_campaign.",
   bigquery: {
     clusterBy: ["geo_target_id", "country_code"]
   },
@@ -22,16 +22,41 @@ config {
 -- ever appear in delivery, so building the dimension from the FACT keeps
 -- it small and keeps a missing name visible instead of hidden among
 -- 273,000 irrelevant rows.
+--
+-- IT NOW COVERS TWO GRAINS, since 2026-11-23. stg_gads_geo_daily delivers
+-- countries, stg_gads_province_daily delivers provinces, and both are
+-- numeric geo_target ids looked up in the same table -- so one dimension
+-- serves both facts rather than a second near-identical copy existing for
+-- the finer grain. geo_target_type tells them apart: 'Country' against
+-- 'Province'.
+--
+-- THE TWO ID SETS DO NOT OVERLAP, which is what makes the UNION safe. A
+-- country id never appears as a province id, so no row here sums lifetime
+-- figures across both facts. Only the province fact's own geo_target_id is
+-- taken; its country_geo_target_id is deliberately left out, since those
+-- same countries already arrive through stg_gads_geo_daily and counting
+-- them twice would inflate lifetime_spend.
 
-WITH delivered AS (
+WITH livrat AS (
+  SELECT geo_target_id, date, impressions, spend
+  FROM ${ref("stg_gads_geo_daily")}
+  WHERE geo_target_id IS NOT NULL
+
+  UNION ALL
+
+  SELECT geo_target_id, date, impressions, spend
+  FROM ${ref("stg_gads_province_daily")}
+  WHERE geo_target_id IS NOT NULL
+),
+
+delivered AS (
   SELECT
     geo_target_id,
     MIN(date)        AS first_active_date,
     MAX(date)        AS last_active_date,
     SUM(impressions) AS lifetime_impressions,
     SUM(spend)       AS lifetime_spend
-  FROM ${ref("stg_gads_geo_daily")}
-  WHERE geo_target_id IS NOT NULL
+  FROM livrat
   GROUP BY geo_target_id
 )
 SELECT

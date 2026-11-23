@@ -1,0 +1,65 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.gads_staging,
+  name: "stg_gads_province_daily",
+  tags: ["gads", "staging"],
+  description: "Google Ads delivery by PROVINCE: ad group x province x location type x device x network x day. One level below stg_gads_geo_daily, and the only sub-country geography in this project.",
+  columns: {
+    geo_target_id: "Google's numeric location id, EXTRACTED from a resource name — see the note below. dim_gads_geo resolves it to a name, the same lookup stg_gads_geo_daily uses.",
+    location_type: "PART OF THE GRAIN, and the thing people get wrong. LOCATION_OF_PRESENCE is where the user actually was; AREA_OF_INTEREST is a place they were searching about. The same click appears under both, so summing across location_type DOUBLE COUNTS.",
+    spend: "AD GROUP spend, so Performance Max is absent. Never total Google Ads money from here."
+  }
+}
+
+-- province IS A RESOURCE NAME, NOT AN ID. The source stores
+-- 'geoTargetConstants/21213' where ad_group_country_stats stores a bare
+-- 21213. Joining it to geo_target as-is returns a column of NULLs that
+-- looks exactly like a missing lookup, which is how this was nearly
+-- written off as unusable on 2026-11-23. The trailing number is extracted
+-- here so everything downstream sees the same shape as
+-- stg_gads_geo_daily, and dim_gads_geo resolves both.
+--
+-- location_type is not an attribute, it is a second lens on the same
+-- delivery -- the identical rule stg_gads_geo_daily carries. Always
+-- filter to one.
+--
+-- _weld_deleted_at IS NULL is NOT optional, as everywhere in google_ads.
+-- Measured 2026-11-23: 4 soft-deleted rows.
+--
+-- GRAIN VERIFIED 2026-11-23: 260,376 rows for 260,376 keys on date + ad
+-- group + province + location type + device + network. 474 distinct
+-- provinces, no NULLs, 147 days from 2026-06-30.
+--
+-- THIS IS NOT ROMANIAN COUNTIES, whatever the word province suggests. It
+-- is whatever sub-country level the targeted market uses, and the spend
+-- is mostly outside Romania: measured 2026-11-23, Vojvodina in Serbia led
+-- at 3,627.17 EUR, then England, then Belgian and Dutch provinces.
+
+SELECT
+  DATE(date)                        AS date,
+  CAST(account_id AS STRING)        AS account_id,
+  account_descriptive_name          AS account_name,
+  CAST(campaign_id AS STRING)       AS campaign_id,
+  campaign_name,
+  CAST(ad_group_id AS STRING)       AS adgroup_id,
+  ad_group_name                     AS adgroup_name,
+
+  REGEXP_EXTRACT(CAST(province AS STRING), r'(\d+)$') AS geo_target_id,
+  CAST(country_criterion_id AS STRING)                AS country_geo_target_id,
+  location_type,
+  device,
+  ad_network_type,
+
+  impressions,
+  clicks,
+  interactions,
+  conversions,
+  conversions_value,
+  view_through_conversions,
+  ${metrics.micros("cost_micros")}  AS spend,
+
+  active_view_impressions,
+  active_view_measurable_impressions,
+  ${metrics.micros("active_view_measurable_cost_micros")} AS active_view_measurable_spend
+FROM ${ref({ schema: constants.DATASETS.gads, name: "ad_group_province_stats" })}
+WHERE _weld_deleted_at IS NULL

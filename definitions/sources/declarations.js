@@ -664,6 +664,40 @@ const GOOGLE_ADS_TABLES = [
                                // EFFECTIVE target, which resolves whether a
                                // target came from the ad group or was
                                // inherited from the campaign.
+
+  // PHASE 4 — hour of day and sub-country geography. Declared 2026-11-23
+  // from a dimension audit: the warehouse could answer neither "when in
+  // the day did this run" nor "which region did it reach", and both
+  // tables had been sitting in google_ads unread the whole time.
+  "campaign_hourly_stats",     // 4.6M rows, 1.5 GB. campaign x day x HOUR
+                               // x device x network. Verified 2026-11-23:
+                               // zero duplicate keys, and its daily totals
+                               // match campaign_stats on all 155 shared
+                               // days, ratio 1.0000-1.0013.
+                               //
+                               // ad_group_hourly_stats and
+                               // account_hourly_stats exist too and are NOT
+                               // declared: 2.3 GB and 182 MB for the same
+                               // question at a finer and a coarser grain.
+                               // Campaign is where hour-of-day decisions
+                               // are actually made.
+  "ad_group_province_stats",   // 260k rows. ad group x day x PROVINCE x
+                               // location type x device x network -- the
+                               // level below ad_group_country_stats, and
+                               // the only sub-country geography in the
+                               // whole project.
+                               //
+                               // province IS A RESOURCE NAME, not an id:
+                               // 'geoTargetConstants/21213'. It resolves
+                               // against geo_target only after the trailing
+                               // number is extracted, which is why a naive
+                               // join returns nothing but NULLs.
+                               //
+                               // 474 distinct provinces, zero NULL, 147
+                               // days from 2026-06-30, no duplicate keys.
+                               // Mostly NOT Romania: measured 2026-11-23 the
+                               // largest was Vojvodina in Serbia, then
+                               // England, then Belgian and Dutch provinces.
 ];
 
 // ---------------------------------------------------------------------
