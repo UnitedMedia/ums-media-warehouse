@@ -681,23 +681,23 @@ const GOOGLE_ADS_TABLES = [
                                // question at a finer and a coarser grain.
                                // Campaign is where hour-of-day decisions
                                // are actually made.
-  "ad_group_province_stats",   // 260k rows. ad group x day x PROVINCE x
-                               // location type x device x network -- the
-                               // level below ad_group_country_stats, and
-                               // the only sub-country geography in the
-                               // whole project.
-                               //
-                               // province IS A RESOURCE NAME, not an id:
-                               // 'geoTargetConstants/21213'. It resolves
-                               // against geo_target only after the trailing
-                               // number is extracted, which is why a naive
-                               // join returns nothing but NULLs.
-                               //
-                               // 474 distinct provinces, zero NULL, 147
-                               // days from 2026-06-30, no duplicate keys.
-                               // Mostly NOT Romania: measured 2026-11-23 the
-                               // largest was Vojvodina in Serbia, then
-                               // England, then Belgian and Dutch provinces.
+  // ad_group_province_stats IS DELIBERATELY NOT DECLARED. It was modelled
+  // on 2026-11-23 and removed the same day, before it ever ran.
+  //
+  // The table is real and clean -- 260k rows, 474 provinces, 147 days, no
+  // duplicate keys -- and it is the only sub-country geography Google Ads
+  // offers here. What it is not is relevant. Measured that day on
+  // November: 3,320,966.21 EUR of ad-group spend, of which 3,320,253.22
+  // has a country breakdown and 5,234.56 has a province one. 0.16%.
+  //
+  // AND NONE OF IT IS ROMANIA. The province spend was Serbia 3,627.17,
+  // Belgium 818.27, Netherlands 436.43, UK 153.50, Spain 122.62, Italy
+  // 76.57. Google reports a province only where targeting was set below
+  // country level, and the Romanian campaigns target the whole country,
+  // so there is nothing to break down and never will be.
+  //
+  // Declare it if a market is ever bought at province level. Until then a
+  // model for 0.16% of spend is a report nobody opens.
 ];
 
 // ---------------------------------------------------------------------

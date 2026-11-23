@@ -8,7 +8,7 @@ config {
     hour: "0-23 in the ACCOUNT's time zone, carried here as account_time_zone. Pooling hours across accounts in different zones averages different clocks, which is the one mistake this view makes easy to catch and easy to make.",
     account_time_zone: "From the account entity. Check it before comparing hours across accounts.",
     day_of_week: "1 = Sunday through 7 = Saturday, BigQuery's own numbering. Combine with hour for a day-part heatmap.",
-    spend: "COMPLETE campaign spend, Performance Max included — this reads campaign level, not ad groups. Unlike v_geo_daily and v_province_daily, this one does total Google Ads money."
+    spend: "COMPLETE campaign spend, Performance Max included — this reads campaign level, not ad groups. Unlike v_geo_daily, this one does total Google Ads money."
   }
 }
 
