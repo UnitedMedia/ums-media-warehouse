@@ -5,6 +5,7 @@ config {
   tags: ["gads", "reporting"],
   description: "Primary Google Ads Looker Studio source. Campaign x day with account, channel type, real booked flight dates and every calculated metric. COMPLETE spend, including Performance Max.",
   columns: {
+    average_cost: "Google Ads' own 'Average cost' — spend per INTERACTION, not per click. Equal to cpc on Search, where an interaction is a click; on Video it is cost per view and on Demand Gen cost per engagement, so comparing it across advertising_channel_type compares different events.",
     spend: "Account currency — break out by currency before summing across accounts.",
     conversions: "Fractional. Google splits an attributed conversion across touchpoints.",
     viewable_rate: "Against MEASURABLE impressions, which is Google's own definition — unlike CM360, where the denominator is missing and the rate reads low.",
@@ -48,6 +49,7 @@ SELECT
   ${metrics.ctr("f.clicks", "f.impressions")}                 AS ctr,
   ${metrics.cpc("f.spend", "f.clicks")}                       AS cpc,
   ${metrics.interactionRate("f.interactions", "f.impressions")} AS interaction_rate,
+  ${metrics.averageCost("f.spend", "f.interactions")}         AS average_cost,
   ${metrics.viewRate("f.video_views", "f.impressions")}       AS video_view_rate,
   ${metrics.viewableRate("f.active_view_impressions", "f.active_view_measurable_impressions")} AS viewable_rate,
   ${metrics.cpa("f.spend", "f.conversions")}                  AS cpa,

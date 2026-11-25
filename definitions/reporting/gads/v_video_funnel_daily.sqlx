@@ -5,6 +5,7 @@ config {
   tags: ["gads", "reporting"],
   description: "The Google Ads video completion funnel: 25 / 50 / 75 / 100 percent rates and TrueView views, by campaign, day and network. Spend comes from fct_gads_campaign_device_daily, the only Google Ads money source. Use v_video_daily instead when you need to compare ad FORMATS — that one is ad-level, this one has the funnel.",
   columns: {
+    engagement_rate: "Engagements per impression. Measured 2026-11-25: VIDEO 0.3167, DEMAND_GEN 0.0664, MULTI_CHANNEL 0.0948, DISPLAY 0.0008, and exactly zero on SEARCH and SHOPPING. VIDEO carries 94% of all engagements, where the event is effectively the same as an interaction. Filter advertising_channel_type before averaging — a video view and a banner expand are not the same thing.",
     quartile_25_rate: "NON-ADDITIVE. Correct for this row and meaningless averaged across rows: the denominator is video impressions, which is not synced, so there is no weight to average by. Set Looker aggregation to MAX and keep campaign, day and network on the chart.",
     completion_rate: "quartile_100_rate. The headline number.",
     retention_25_to_100: "quartile_100_rate / quartile_25_rate — of the viewers who got past 25 percent, the share who finished. Both rates share the same hidden denominator, so it cancels and this ratio is exact.",
@@ -69,6 +70,7 @@ SELECT
   ${metrics.cpm("m.spend", "m.impressions")}           AS cpm,
   ${metrics.cpa("m.spend", "f.video_trueview_views")}  AS cost_per_trueview_view,
   ${metrics.cpa("m.spend", "f.engagements")}           AS cost_per_engagement,
+  ${metrics.engagementRate("f.engagements", "m.impressions")} AS engagement_rate,
   ${metrics.cpa("m.spend", "f.all_conversions")}       AS cost_per_all_conversion
 FROM ${ref("fct_gads_campaign_video_daily")} f
 LEFT JOIN spend_by_network m
