@@ -8,6 +8,9 @@ config {
     average_cost: "Google Ads' own 'Average cost' — spend per INTERACTION, not per click. Equal to cpc on Search, where an interaction is a click; on Video it is cost per view and on Demand Gen cost per engagement, so comparing it across advertising_channel_type compares different events.",
     spend: "Account currency — break out by currency before summing across accounts.",
     conversions: "Fractional. Google splits an attributed conversion across touchpoints.",
+    conversion_rate: "Conversions per INTERACTION, which is Google's own denominator. Changed 2026-11-27 — it divided by clicks until then, which overstated the rate 8.4x on Performance Max and matched exactly on Search. Any saved Looker figure from before that date is not comparable.",
+    value_per_conversion: "conversions_value / conversions. Value EARNED per conversion — not cpa, which is money SPENT per conversion.",
+    roas: "conversions_value / spend. This is Google's 'Conv. value / cost' column.",
     viewable_rate: "Against MEASURABLE impressions, which is Google's own definition — unlike CM360, where the denominator is missing and the rate reads low.",
     is_test_account: "TRUE means this is not real money. Filter it out of anything client-facing."
   }
@@ -53,7 +56,8 @@ SELECT
   ${metrics.viewRate("f.video_views", "f.impressions")}       AS video_view_rate,
   ${metrics.viewableRate("f.active_view_impressions", "f.active_view_measurable_impressions")} AS viewable_rate,
   ${metrics.cpa("f.spend", "f.conversions")}                  AS cpa,
-  ${metrics.ctr("f.conversions", "f.clicks")}                 AS conversion_rate,
+  ${metrics.conversionRate("f.conversions", "f.interactions")} AS conversion_rate,
+  ${metrics.valuePerConversion("f.conversions_value", "f.conversions")} AS value_per_conversion,
   ${metrics.roas("f.conversions_value", "f.spend")}           AS roas
 FROM ${ref("fct_gads_campaign_daily")} f
 LEFT JOIN ${ref("dim_gads_campaign")} d USING (campaign_id)

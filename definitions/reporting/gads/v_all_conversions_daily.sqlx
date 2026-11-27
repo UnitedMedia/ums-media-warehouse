@@ -1,0 +1,75 @@
+config {
+  type: "view",
+  schema: constants.SCHEMAS.gads_reporting,
+  name: "v_all_conversions_daily",
+  tags: ["gads", "reporting"],
+  description: "Google Ads ALL CONVERSIONS by campaign and day, with spend, across every channel type. The wider conversion set Google reports as 'All conv.' — a DIFFERENT measure from the conversions column in v_daily, not a restatement of it. Use v_daily for the primary conversion columns.",
+  columns: {
+    all_conversions: "Wider than v_daily.conversions. Both are shown here side by side so the gap is visible; NEVER add them, and never put them on one chart without a label.",
+    conversions: "The primary column, carried from fct_gads_campaign_daily so the two measures can be compared at the same grain. 1-25 November 2026: 391,027 conversions against 1,405,867 all conversions, a ratio of 3.595.",
+    all_conversion_rate: "All conversions per INTERACTION — Google's denominator, the same one v_daily.conversion_rate uses since 2026-11-27. Not per click.",
+    cost_per_all_conversion: "spend / all_conversions. Reads far lower than v_daily.cpa, by construction, because the denominator is wider.",
+    all_conversions_value_per_cost: "Google's 'All conv. value / cost'. The all-conversions twin of v_daily.roas.",
+    spend: "Account currency, from fct_gads_campaign_daily — the only Google Ads money source. Break out by currency before summing across accounts.",
+    engagements: "Campaign-day total, summed across networks. v_video_funnel_daily has the per-network split."
+  }
+}
+
+-- JOINED LEFT FROM THE MONEY SIDE, ON PURPOSE.
+--
+-- fct_gads_campaign_daily is the complete spend table and
+-- fct_gads_campaign_all_conversions_daily is not quite: 94 campaign-days
+-- over 1-25 November 2026 have spend and no all-conversions row, worth
+-- 2,969.04 EUR of 5,211,603.99 (0.057%). An INNER join would silently drop
+-- that spend and make this view disagree with v_daily on the total.
+--
+-- So every spend row survives and all_conversions is NULL where the source
+-- had nothing. NULL here means "not delivered", not zero — do not
+-- IFNULL it to 0, or a missing sync becomes a reported result.
+--
+-- THE TWO CONVERSION COLUMNS COME FROM DIFFERENT SOURCE TABLES.
+-- conversions from google_ads.campaign_stats, all_conversions from
+-- google_ads.youtube_ads, synced separately. Both restate for days as the
+-- attribution window closes, and they do not restate in step: 463
+-- campaign-days currently show all_conversions BELOW conversions. That
+-- resolves itself. It is the reason there is no assertion on the
+-- inequality, and the reason the ratio is only meaningful over a settled
+-- window.
+
+SELECT
+  f.date,
+  DATE_TRUNC(f.date, WEEK(MONDAY)) AS week,
+  DATE_TRUNC(f.date, MONTH)        AS month,
+
+  f.account_id,
+  d.account_name,
+  d.currency,
+  d.is_test_account,
+  f.campaign_id,
+  d.campaign_name,
+  d.advertising_channel_type,
+  d.campaign_status,
+
+  f.impressions,
+  f.clicks,
+  f.interactions,
+  f.spend,
+
+  f.conversions,
+  f.conversions_value,
+  f.view_through_conversions,
+
+  a.all_conversions,
+  a.all_conversions_value,
+  a.engagements,
+
+  ${metrics.conversionRate("a.all_conversions", "f.interactions")} AS all_conversion_rate,
+  ${metrics.cpa("f.spend", "a.all_conversions")}                   AS cost_per_all_conversion,
+  ${metrics.valuePerConversion("a.all_conversions_value", "a.all_conversions")} AS value_per_all_conversion,
+  ${metrics.roas("a.all_conversions_value", "f.spend")}            AS all_conversions_value_per_cost
+FROM ${ref("fct_gads_campaign_daily")} f
+LEFT JOIN ${ref("fct_gads_campaign_all_conversions_daily")} a
+  ON  a.date        = f.date
+  AND a.campaign_id = f.campaign_id
+LEFT JOIN ${ref("dim_gads_campaign")} d
+  ON d.campaign_id = f.campaign_id

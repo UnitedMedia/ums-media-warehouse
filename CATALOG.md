@@ -53,13 +53,12 @@ correct no matter how Looker rolls it up; a ratio stored in a table does not.
 | Google Ads by device and network | `gads_reporting.v_device_daily` |
 | Google Ads by ad group or ad | `gads_reporting.v_ad_group_daily`, `gads_reporting.v_ad_daily` |
 | **Budget vs actual spend, pacing** | `gads_reporting.v_pacing` |
-| **Keyword Quality Score** | `gads_reporting.v_keyword_quality` |
 | Google Ads by audience segment | `gads_reporting.v_audience_daily` |
 | **What people typed into Google** | `gads_reporting.v_search_terms` |
-| **Google Ads keyword performance over time** | `gads_reporting.v_keyword_daily` |
 | **Google Ads by country / city** | `gads_reporting.v_geo_daily` (filter `location_type`) |
 | **Google Ads video / YouTube by format** | `gads_reporting.v_video_daily` |
 | **Google Ads video completion funnel (25/50/75/100%)** | `gads_reporting.v_video_funnel_daily` |
+| **Google Ads "All conversions" (the wider set)** | `gads_reporting.v_all_conversions_daily` |
 | Teads spend, viewability, video completion | `teads_reporting.v_daily` |
 | Teads unique viewers | `teads_reporting.v_reach_daily` |
 | Taboola spend, clicks, viewability | `taboola_reporting.v_daily` |
@@ -589,10 +588,10 @@ keywords and search terms follow.
 | **`v_pacing`** | campaign × day | **Booked budget against actual spend**, with Google's own recommended budget, target CPA/ROAS and real flight dates. Nothing else in this warehouse can do this. |
 | `v_ad_group_daily` | ad group × day | **Excludes Performance Max.** Compare ad groups; never total money. |
 | `v_ad_daily` | ad × day | Same PMax blind spot. The only Google view with `video_views`. Also carries `ad_strength`, `policy_approval_status` and `is_not_serving`. |
-| **`v_keyword_quality`** | keyword | **Quality Score 1–10 and its three components.** A snapshot, not a history — the source carries no date. |
 | `v_audience_daily` | ad group × audience × day | Audience performance. **Segments have no name** — only a criterion id. |
 | **`v_video_daily`** | video ad × day | Video and YouTube ads only, by format: TrueView in-stream, responsive, non-skippable, bumper, efficient reach, in-display, YouTube audio. Cost per view and view rate. Formats, not the funnel. |
-| **`v_video_funnel_daily`** | campaign × network × day | **The completion funnel.** 25/50/75/100% rates, TrueView views, engagements, all-conversions. Rates are NON-ADDITIVE — see below. |
+| **`v_video_funnel_daily`** | campaign × network × day | **The completion funnel.** 25/50/75/100% rates, TrueView views, engagements, all-conversions. Rates are NON-ADDITIVE — see below. **All-conversions here covers video rows only** — use `v_all_conversions_daily` for the complete figure. |
+| **`v_all_conversions_daily`** | campaign × day | **Google's "All conv." columns, complete across every channel type**: all conversions, their value, all-conversion rate, cost per all conversion, value per all conversion, all conv. value / cost. Shown beside the primary `conversions` so the gap is visible. **Never add the two.** |
 
 **Caveats that matter:**
 
@@ -676,8 +675,14 @@ keywords and search terms follow.
   ads count a view on essentially every impression; skippable ones do not.
   Compare within a format.
 - **Audience segments have no name**, only a criterion id.
-- **Quality Score has no history** — `ad_group_criterion` carries no date, so
-  `v_keyword_quality` is today's snapshot and cannot be trended.
+- **There is no Quality Score at all any more.** `ad_group_criterion` was
+  un-synced on 2026-11-26 — 398 MB and 4.5M rows of keyword text for a column
+  that carried no date and so could never be trended. `dim_gads_keyword`,
+  `v_keyword_quality` and `v_keyword_daily` went with it.
+- **`conversion_rate` changed denominator on 2026-11-27.** It divided
+  conversions by CLICKS; it now divides by INTERACTIONS, which is Google's own
+  definition. Identical on Search and Shopping, 8.4x lower on Performance Max.
+  Saved Looker figures from before that date are not comparable.
 - **Budget and bidding have no history** — those source tables carry no date, so
   `v_pacing` applies today's budget to past days. Read trends, not exact
   past-day variance.
@@ -694,8 +699,9 @@ keywords and search terms follow.
 | `fct_gads_geo_daily` | day × ad group × geo × location type × device × network | **Never sum across `location_type`.** |
 | `dim_gads_geo` | location | Delivery-driven, so only places that actually ran. Names from `geo_target`. |
 | `fct_gads_search_term_daily` | day × campaign × ad group × term × match type × status | Breakdown of ad group spend. PMax has no search terms. |
-| `fct_gads_keyword_daily` | day × keyword × device × network | Join `dim_gads_keyword` on **both** adgroup_id and criterion_id. |
-| `fct_gads_campaign_video_daily` | campaign × network × day | Video funnel. **Carries no spend by design** — its source duplicates `campaign_stats` exactly. |
+| `fct_gads_keyword_daily` | day × keyword × device × network | Keyword delivery. **No keyword-name dimension** — `dim_gads_keyword` and both keyword views were dropped 2026-11-26 with `ad_group_criterion`, which was 398 MB for text nobody read. Criterion ids only. |
+| `fct_gads_campaign_video_daily` | campaign × network × day | Video funnel. **Carries no spend by design** — its source duplicates `campaign_stats` exactly. Filters to rows with a quartile rate, so it holds only 7.7% of all-conversions. |
+| `fct_gads_campaign_all_conversions_daily` | campaign × day | All-conversions and engagements, **unfiltered** — the same source without the video quartile filter. No spend; join `fct_gads_campaign_daily`. |
 | `dim_gads_campaign` | campaign | Campaign, account, currency, **real booked flight dates**, budget, recommended budget and bid strategy targets. Driven by delivery. |
 | `dim_gads_ad_group` | ad group | Delivery-driven; names resolve from the fact when the entity sync lags. |
 
@@ -1098,7 +1104,6 @@ that soft-deletes rows.
 | `ad_group_stats` | `stg_gads_ad_group_daily` | Excludes PMax by construction — PMax has no ad groups. |
 | `ad` | `stg_gads_ad` | Ad type, status, URLs, ad strength, policy approval. **No creative text** — 23 columns, none a headline or description. |
 | `ad_stats` | `stg_gads_ad_daily` | The only stats table with `video_views` at ad level. |
-| `ad_group_criterion` | `stg_gads_keyword` | Keywords and the full Quality Score: score, expected CTR, ad relevance, landing page. |
 | `audience_stats` | `stg_gads_audience_daily` | Keyed on `criterion_id`. The audience NAME needs `user_list` / `user_interest` / `topic`, none declared. |
 | `ad_group_bidding_strategy` | `stg_gads_ad_group_bidding` | 63k rows. Ad-group bid overrides plus the EFFECTIVE target and whether it was set here or inherited from the campaign. No date. |
 | `ad_group_country_stats` | `stg_gads_geo_daily` | 404k rows. **The only geography in the Google Ads stack.** Carries `location_type`. |

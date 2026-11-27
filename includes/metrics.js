@@ -82,6 +82,42 @@ function engagementRate(engagements, impressions) {
   return `SAFE_DIVIDE(${engagements}, ${impressions})`;
 }
 
+// Google Ads' "Conv. rate": conversions per INTERACTION, not per click.
+//
+// This is the denominator Google itself uses, and it is NOT clicks. The
+// project used ctr(conversions, clicks) here until 2026-11-27, which is
+// right only where an interaction IS a click. Measured over 1-25 November
+// 2026, conversions / clicks against conversions / interactions:
+//
+//   SEARCH          2,448,163 EUR   0.0891   0.0891   identical
+//   PERFORMANCE_MAX 1,433,574 EUR   0.0708   0.0084   8.4x overstated
+//   VIDEO             680,202 EUR   0.0100   0.0000
+//   DEMAND_GEN        424,461 EUR   0.0592   0.0371
+//   MULTI_CHANNEL      39,904 EUR   0.2827   0.1224
+//   DISPLAY           175,773 EUR   0.0112   0.0108
+//   SHOPPING            4,968 EUR   0.0153   0.0153   identical
+//
+// Search and Shopping agree to four decimals because clicks / interactions
+// is exactly 1.000 there. On PMax it is 0.119 -- a click is one interaction
+// in eight -- so dividing by clicks reported a rate 8.4 times Google's own
+// on 1.43M EUR of spend, and nobody caught it because the Search figure
+// always matched.
+//
+// Same trap as averageCost. Where a source carries no interactions column
+// at all -- search_term_stats is the only one -- clicks is a correct
+// substitute, because search terms exist only on Search and Shopping.
+function conversionRate(conversions, interactions) {
+  return `SAFE_DIVIDE(${conversions}, NULLIF(${interactions}, 0))`;
+}
+
+// Conversion value per conversion. Same shape as cpa, deliberately not the
+// same function: cpa divides MONEY SPENT by conversions, this divides the
+// VALUE EARNED. Reading one as the other inverts the sign of every
+// decision made on it.
+function valuePerConversion(conversionValue, conversions) {
+  return `SAFE_DIVIDE(${conversionValue}, NULLIF(${conversions}, 0))`;
+}
+
 // Viewability, against whatever denominator the source can give.
 //
 // CM360 passes impressions, because the Keboola report does not deliver
@@ -142,7 +178,7 @@ function parseTiktokHour(col) {
 module.exports = {
   cpm, ctr, interactionRate, completionRate, viewRate, cpa, cpc,
   viewableRate, frequency, roas,
-  averageCost, engagementRate,
+  averageCost, engagementRate, conversionRate, valuePerConversion,
   parseSlashDate, parseCm360Date, parseTiktokDate, parseTiktokHour,
   micros,
 };

@@ -1,0 +1,77 @@
+config {
+  type: "table",
+  schema: constants.SCHEMAS.gads_marts,
+  name: "fct_gads_campaign_all_conversions_daily",
+  tags: ["gads", "marts"],
+  description: "Google Ads ALL CONVERSIONS at campaign x day, complete across every channel type. NO SPEND — join fct_gads_campaign_daily for money, which is the only Google Ads spend source.",
+  bigquery: {
+    partitionBy: "date",
+    clusterBy: ["account_id", "campaign_id"]
+  },
+  assertions: {
+    uniqueKey: ["date", "campaign_id"],
+    nonNull: ["date", "campaign_id"]
+  },
+  columns: {
+    all_conversions: "WIDER than fct_gads_campaign_daily.conversions: it counts conversion actions the advertiser excluded from the primary column. A DIFFERENT measure, never a restatement, and never to be added to conversions.",
+    all_conversions_value: "The value side of the same wider set. Pair it only with all_conversions.",
+    engagements: "Additive. Summed across networks, so this is the campaign-day total — the per-network split stays in fct_gads_campaign_video_daily.",
+    date: "Partition key."
+  }
+}
+
+-- WHY THIS TABLE EXISTS.
+--
+-- all_conversions arrives only in google_ads.youtube_ads, which despite the
+-- name covers all seven advertising channel types. It reached reporting
+-- through fct_gads_campaign_video_daily, and that table filters
+-- `video_quartile_p_25_rate IS NOT NULL` so it stays a video funnel.
+--
+-- That filter is correct for video and catastrophic for all_conversions.
+-- Measured 1-25 November 2026 on stg_gads_campaign_network_daily:
+--
+--   channel type      all_conversions   reaching the video mart
+--   PERFORMANCE_MAX           555,902         0        0.0%
+--   SEARCH                    514,263        37        0.0%
+--   DEMAND_GEN                260,922    67,855       26.0%
+--   VIDEO                      33,148    33,148      100.0%
+--   MULTI_CHANNEL              26,386     5,071       19.2%
+--   DISPLAY                    14,508     2,312       15.9%
+--   SHOPPING                      738         0        0.0%
+--   TOTAL                   1,405,867   108,423        7.7%
+--
+-- PMax and Search carry 76% of all conversions and neither has a video
+-- quartile, so both were invisible. This table takes the same staging view
+-- without the video filter.
+--
+-- SUMMING ACROSS NETWORK IS SAFE HERE, and only because every column kept
+-- below is additive. The quartile rates are NOT, their denominator is not
+-- synced, and they are deliberately absent — fct_gads_campaign_video_daily
+-- remains the only place they live, at the only grain where they are true.
+--
+-- GRAIN VERIFIED 2026-11-27 over 1-25 November: 19,515 rows, 19,515
+-- distinct date x campaign keys, zero NULL all_conversions.
+--
+-- COVERAGE against the money table: 94 campaign-days in
+-- fct_gads_campaign_daily have no row here, worth 2,969.04 EUR of
+-- 5,211,603.99 — 0.057%. Join LEFT from the money side, never INNER.
+--
+-- all_conversions IS NOT ALWAYS >= conversions. 463 campaign-days over the
+-- same window run the other way, 5,742 conversions in total, because the
+-- two columns come from different tables synced at different times and an
+-- attribution window keeps restating both. It is sync skew, not a defect,
+-- and it settles. Do not build an assertion on the inequality.
+
+SELECT
+  date,
+  account_id,
+  campaign_id,
+  advertising_channel_type,
+
+  SUM(all_conversions)       AS all_conversions,
+  SUM(all_conversions_value) AS all_conversions_value,
+  SUM(engagements)           AS engagements
+FROM ${ref("stg_gads_campaign_network_daily")}
+WHERE date IS NOT NULL
+  AND campaign_id IS NOT NULL
+GROUP BY 1, 2, 3, 4
